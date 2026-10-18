@@ -1,0 +1,380 @@
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { advance, feedBug, loadState, move, newState, phase, releaseBug, relocateBug, removeOrganism, saveState, sow, water, waterSoil, renameBox, TERRARIUM_MAX_NAME_LENGTH, TERRARIUM_ANT_ACTION_INTERVAL_MS, TERRARIUM_BUG_ACTION_INTERVAL_MS } from '../src/state.ts';
+
+const dirs: string[] = [];
+afterEach(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
+
+describe('terrarium state', () => {
+  it('catches up growth and drying across a local night', () => {
+    const start = Date.parse('2026-06-01T16:00:00Z');
+    const state = newState(start);
+    expect(phase(start, 'Asia/Shanghai')).toBe('night');
+    const changes = advance(state, start + 15 * 60 * 60_000, 'Asia/Shanghai');
+    expect(changes.some(change => change.kind === 'phase')).toBe(true);
+    expect(changes.some(change => change.kind === 'stage')).toBe(true);
+    expect(changes.some(change => change.kind === 'dry')).toBe(false);
+    expect(state.plants[0].stage).toBeGreaterThan(0);
+    expect(advance(state, start + 15 * 60 * 60_000, 'Asia/Shanghai')).toEqual([]);
+    const later = advance(state, start + 45 * 60 * 60_000, 'Asia/Shanghai');
+    expect(later.filter(change => change.kind === 'dry')).toHaveLength(2);
+    expect(state.plants.every(plant => plant.dry)).toBe(true);
+    water(state, 'fern');
+    expect(state.plants[0].dry).toBe(false);
+  });
+
+  it('moves objects only into available cells', () => {
+    const state = newState(0);
+    expect(move(state, 'coin', 0, 2)).toMatchObject({ x: 0, y: 2 });
+    expect(() => move(state, 'coin', 2, 1)).toThrow('occupied');
+    expect(() => move(state, 'coin', 0, 0)).toThrow('plant');
+    expect(() => move(state, 'coin', 5, 0)).toThrow('5×5');
+    expect(() => move(state, 'coin', NaN, 1)).toThrow('5×5');
+  });
+
+  it('persists state and rejects invalid saved positions', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'terrarium-'));
+    dirs.push(dir);
+    const file = join(dir, 'data', 'state.json');
+    const state = await loadState(file, 100);
+    move(state, 'coin', 1, 2);
+    await saveState(file, state);
+    expect(await loadState(file, 200)).toEqual(state);
+    const invalid = JSON.parse(await readFile(file, 'utf8'));
+    invalid.items[0].x = 5; invalid.items[0].y = 0;
+    await writeFile(file, JSON.stringify(invalid));
+    await expect(loadState(file, 200)).rejects.toThrow('Invalid terrarium state');
+  });
+
+  it('migrates the saved two-plant state', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'terrarium-v1-')); dirs.push(dir);
+    const file = join(dir, 'state.json');
+    await writeFile(file, JSON.stringify({ version: 1, updatedAtMs: 100, plants: [
+      { id: 'fern', moisture: 45, growthHours: 1, stage: 0, dry: false },
+      { id: 'clover', moisture: 50, growthHours: 2, stage: 1, dry: false },
+    ], items: [{ id: 'coin', x: 1, y: 1 }, { id: 'pebble', x: 2, y: 1 }] }));
+    const state = await loadState(file, 200);
+    expect(state.version).toBe(newState(0).version);
+    expect(state.plants[1]).toMatchObject({ id: 'clover', x: 4, stage: 1 });
+    expect(state.seeds).toEqual([]);
+  });
+});
+
+it('sprouts seeds and lets predators hunt aphids', () => {
+  const start = Date.parse('2026-06-01T00:00:00Z');
+  const state = newState(start);
+  sow(state, 'basil', 2, 2);
+  releaseBug(state, 'aphid', 1, 1);
+  releaseBug(state, 'spider', 1, 1);
+  const changes = advance(state, start + 4 * 60 * 60_000, 'Asia/Shanghai');
+  expect(changes.some(c => c.kind === 'sprout')).toBe(true);
+  expect(changes.some(c => c.kind === 'hunt')).toBe(true);
+  expect(state.plants.some(p => p.species === 'basil')).toBe(true);
+  expect(state.bugs.some(b => b.species === 'aphid')).toBe(false);
+});
+
+it('lets the keeper feed, relocate and remove organisms', () => {
+  const state = newState(0);
+  const bug = releaseBug(state, 'beetle', 1, 1);
+  bug.energy = 15;
+  expect(feedBug(state, bug.id).energy).toBe(50);
+  expect(relocateBug(state, bug.id, 3, 4)).toMatchObject({ x: 3, y: 4 });
+  expect(() => relocateBug(state, bug.id, 5, 0)).toThrow('5×5');
+  const seed = sow(state, 'bean', 2, 2);
+  expect(removeOrganism(state, seed.id)).toMatchObject({ id: seed.id, species: 'bean' });
+  expect(removeOrganism(state, bug.id)).toMatchObject({ id: bug.id, species: 'beetle' });
+  expect(removeOrganism(state, 'fern')).toMatchObject({ id: 'fern', species: 'fern' });
+  expect(() => removeOrganism(state, 'missing')).toThrow('Unknown organism');
+});
+
+it('reports hunger and allows mature well-fed bug pairs to reproduce', () => {
+  const hour = 60 * 60_000;
+  const start = Date.parse('2026-06-01T00:00:00Z');
+  const state = newState(start);
+  state.plants = [];
+  const first = releaseBug(state, 'aphid', 4, 4);
+  const second = releaseBug(state, 'aphid', 4, 4);
+  first.ageHours = 23; second.ageHours = 23;
+  first.energy = 75; second.energy = 75;
+  const changes = advance(state, start + hour, 'Asia/Shanghai');
+  expect(changes.some(change => change.kind === 'birth')).toBe(true);
+  expect(state.bugs).toHaveLength(3);
+  expect(state.bugs[2]).toMatchObject({ species: 'aphid', energy: 45 });
+  const child = state.bugs[2];
+  child.energy = 20.1;
+  relocateBug(state, child.id, 4, 4);
+  const hunger = advance(state, start + hour + 10 * 60_000, 'Asia/Shanghai');
+  expect(hunger.some(change => change.kind === 'hungry' && change.text.includes(child.id))).toBe(true);
+});
+
+it('waters soil locally and spreads water to adjacent plots over time', () => {
+  const start = Date.parse('2026-06-01T00:00:00Z');
+  const state = newState(start);
+  const control = structuredClone(state);
+  const neighbor = state.soil[1].moisture;
+  water(state, 'fern');
+  expect(state.soil[0].moisture).toBe(state.plants[0].moisture);
+  expect(state.soil[1].moisture).toBe(neighbor);
+  advance(state, start + 60 * 60_000, 'Asia/Shanghai');
+  advance(control, start + 60 * 60_000, 'Asia/Shanghai');
+  expect(state.soil[1].moisture).toBeGreaterThan(control.soil[1].moisture);
+  expect(state.soil[1].moisture - control.soil[1].moisture).toBeGreaterThan(state.soil[24].moisture - control.soil[24].moisture);
+  removeOrganism(state, 'fern');
+  const moisture = state.soil[0].moisture;
+  sow(state, 'bean', 0, 0);
+  expect(state.soil[0].moisture).toBe(moisture);
+});
+
+it.each(['moss', 'basil'] as const)('makes shade affect %s growth and evaporation', species => {
+  const start = Date.parse('2026-06-01T00:00:00Z');
+  const shaded = newState(start);
+  const sunny = newState(start);
+  const seed = sow(shaded, species, 2, 2);
+  sow(sunny, species, 2, 2);
+  move(sunny, 'pebble', 4, 4);
+  advance(shaded, start + 6 * 60 * 60_000, 'Asia/Shanghai');
+  advance(sunny, start + 6 * 60 * 60_000, 'Asia/Shanghai');
+  const shadedPlant = shaded.plants.find(p => p.id === seed.id)!;
+  const sunnyPlant = sunny.plants.find(p => p.id === seed.id)!;
+  expect(shadedPlant.moisture).toBeGreaterThan(sunnyPlant.moisture);
+  expect(species === 'moss' ? shadedPlant.growthHours : sunnyPlant.growthHours).toBeGreaterThan(0);
+  expect(species === 'moss' ? sunnyPlant.growthHours : shadedPlant.growthHours).toBe(0);
+});
+
+it('withholds germination in dry soil and damages waterlogged plants', () => {
+  const start = Date.parse('2026-06-01T00:00:00Z');
+  const dry = newState(start);
+  dry.soil.forEach(cell => { cell.moisture = 0; });
+  sow(dry, 'bean', 2, 2);
+  advance(dry, start + 3 * 60 * 60_000, 'Asia/Shanghai');
+  expect(dry.seeds[0].ageHours).toBe(0);
+  waterSoil(dry, 2, 2);
+  waterSoil(dry, 2, 2);
+  advance(dry, start + 6 * 60 * 60_000, 'Asia/Shanghai');
+  expect(dry.seeds).toHaveLength(0);
+  expect(dry.plants.some(plant => plant.species === 'bean')).toBe(true);
+  const wet = newState(start);
+  wet.soil.forEach(cell => { cell.moisture = 100; });
+  advance(wet, start + 60 * 60_000, 'Asia/Shanghai');
+  expect(wet.plants.every(plant => plant.health < 100 && plant.growthHours === 0 && !plant.dry)).toBe(true);
+});
+
+it('migrates v2 soil from plant moisture and preserves organisms and positions', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-v2-')); dirs.push(dir);
+  const file = join(dir, 'state.json');
+  const original = newState(100);
+  const seed = sow(original, 'moss', 2, 2);
+  const bug = releaseBug(original, 'beetle', 3, 2);
+  const { soil: _soil, history: _history, ...old } = original;
+  old.plants[0].moisture = 12;
+  await writeFile(file, JSON.stringify({ ...old, version: 2 }));
+  const state = await loadState(file, 200);
+  expect(state.soil[0].moisture).toBe(old.plants[0].moisture);
+  expect(state.plants[0].dry).toBe(true);
+  expect(state.seeds).toEqual([seed]);
+  expect(state.bugs).toEqual([bug]);
+  expect(state.items).toEqual(old.items);
+  expect(state.history[0].plants[0].moisture).toBe(old.plants[0].moisture);
+  await saveState(file, state);
+  expect(await loadState(file, 300)).toEqual(state);
+});
+
+it('retains bounded hourly history through downtime and rejects corrupt samples', async () => {
+  const { TERRARIUM_MAX_HISTORY } = await import('../src/habitat.ts');
+  const start = Date.parse('2026-06-01T00:00:00Z');
+  const state = newState(start);
+  advance(state, start + 10 * 24 * 60 * 60_000, 'Asia/Shanghai');
+  expect(state.history).toHaveLength(TERRARIUM_MAX_HISTORY);
+  expect(state.history.at(-1)?.recordedAtMs).toBe(state.updatedAtMs);
+  expect(state.history.every((sample, i) => i === 0 || sample.recordedAtMs - state.history[i - 1].recordedAtMs === 60 * 60_000)).toBe(true);
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-history-')); dirs.push(dir);
+  const file = join(dir, 'state.json');
+  await saveState(file, state);
+  expect(await loadState(file, state.updatedAtMs)).toEqual(state);
+  state.history[0].soilMoisture[0] = NaN;
+  await saveState(file, state);
+  await expect(loadState(file, state.updatedAtMs)).rejects.toThrow('Invalid terrarium state');
+});
+
+it('records at the hourly boundary and stops daytime growth at dusk', () => {
+  const start = Date.parse('2026-06-01T09:59:00Z');
+  const state = newState(start);
+  advance(state, start + 2 * 60_000, 'Asia/Shanghai');
+  expect(state.history.at(-1)?.recordedAtMs).toBe(start + 60_000);
+  expect(state.plants[0].growthHours).toBeCloseTo(1 / 60);
+});
+
+
+it('loads v3 history with legacy timestamps and saves canonical timestamps without losing data', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-legacy-history-')); dirs.push(dir);
+  const file = join(dir, 'state.json');
+  const start = Date.parse('2026-06-01T00:00:00Z');
+  const expected = newState(start);
+  sow(expected, 'moss', 2, 2);
+  releaseBug(expected, 'beetle', 3, 2);
+  advance(expected, start + 2 * 60 * 60_000, 'Asia/Shanghai');
+  const legacy = { ...expected, history: expected.history.map(({ recordedAtMs, ...sample }, i) =>
+    i === 1 ? { ...sample, recordedAtMs } : { ...sample, atMs: recordedAtMs }) };
+  await writeFile(file, JSON.stringify(legacy));
+  const loaded = await loadState(file, start + 3 * 60 * 60_000);
+  expect(loaded).toEqual(expected);
+  await saveState(file, loaded);
+  expect(JSON.parse(await readFile(file, 'utf8'))).toEqual(expected);
+  expect(await loadState(file, start)).toEqual(expected);
+  legacy.history[0] = { ...legacy.history[0], atMs: NaN };
+  await writeFile(file, JSON.stringify(legacy));
+  await expect(loadState(file, start)).rejects.toThrow('Invalid terrarium state');
+});
+
+
+it('round trips Unicode names and rejects invalid names in saved state', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-name-')); dirs.push(dir);
+  const file = join(dir, 'state.json');
+  const state = newState(100);
+  expect(state.name).toBeUndefined();
+  renameBox(state, '🌱'.repeat(TERRARIUM_MAX_NAME_LENGTH));
+  await saveState(file, state);
+  expect(await loadState(file, 200)).toEqual(state);
+  const invalid = { ...state, name: 'line\nbreak' };
+  await writeFile(file, JSON.stringify(invalid));
+  await expect(loadState(file, 200)).rejects.toThrow('Invalid terrarium state');
+});
+
+it('lays eggs, reserves capacity, hatches juveniles and round trips older and expanded saves', async () => {
+  const { migrateState, validState } = await import('../src/state.ts');
+  const start = Date.parse('2026-06-01T00:00:00Z'), hour = 3600000;
+  const state = newState(start);
+  for (let i = 0; i < 2; i++) { const bug = releaseBug(state, 'beetle', 4, 4); bug.ageHours = 23; bug.energy = 100; }
+  const events = advance(state, start + hour, 'Asia/Shanghai');
+  expect(events.filter(event => event.kind === 'egg')).toHaveLength(1);
+  expect(state.eggs).toHaveLength(2); expect(state.bugs).toHaveLength(2);
+  expect(state.eggs!.every(egg => egg.hatchesAtMs === start + 5 * hour)).toBe(true);
+  expect(migrateState(JSON.parse(JSON.stringify(state)))).toEqual(state);
+  expect(advance(state, start + 5 * hour - 1, 'Asia/Shanghai').some(event => event.kind === 'birth')).toBe(false);
+  expect(advance(state, start + 5 * hour, 'Asia/Shanghai').filter(event => event.kind === 'birth')).toHaveLength(2);
+  expect(state.bugs.slice(2).every(bug => bug.ageHours === 0 && bug.energy === 45)).toBe(true);
+  expect(state.eggs).toEqual([]); expect(validState(state)).toBe(true);
+  const old = newState(start); expect(migrateState(JSON.parse(JSON.stringify(old)))).toEqual(old);
+  const full = newState(start);
+  for (let i = 0; i < 11; i++) { const bug = releaseBug(full, 'beetle', 4, 4); bug.ageHours = 23; bug.energy = 100; }
+  advance(full, start + hour, 'Asia/Shanghai');
+  expect(full.eggs).toHaveLength(1);
+  expect(() => releaseBug(full, 'ant', 0, 0)).toThrow('capacity');
+  removeOrganism(full, full.eggs![0].id);
+  expect(releaseBug(full, 'ant', 0, 0).species).toBe('ant');
+});
+
+it('moves ants every ten seconds, digs and stores food while other bugs act every minute', async () => {
+  const { TERRARIUM_ANT_ACTION_INTERVAL_MS, TERRARIUM_BUG_ACTION_INTERVAL_MS, dropLandFood, validState } = await import('../src/state.ts');
+  const start = Date.parse('2026-06-01T00:00:00Z'), state = newState(start);
+  state.plants = [];
+  const ant = releaseBug(state, 'ant', 0, 0), beetle = releaseBug(state, 'beetle', 4, 4);
+  const queen = releaseBug(state, 'ant', 4, 4); queen.role = 'queen'; ant.role = 'worker';
+  dropLandFood(state, 1, 0, 5);
+  expect(advance(state, start + TERRARIUM_ANT_ACTION_INTERVAL_MS - 1, 'Asia/Shanghai')).toEqual([]);
+  expect(state.nests).toBeUndefined();
+  const first = advance(state, start + TERRARIUM_ANT_ACTION_INTERVAL_MS, 'Asia/Shanghai');
+  expect(first.some(event => event.kind === 'nest')).toBe(true);
+  expect(state.nests).toMatchObject([{ x: 0, y: 0, depth: 1, food: 0 }]);
+  expect(beetle).toMatchObject({ x: 4, y: 4 });
+  advance(state, start + TERRARIUM_BUG_ACTION_INTERVAL_MS - 1, 'Asia/Shanghai');
+  expect(beetle).toMatchObject({ x: 4, y: 4 });
+  advance(state, start + TERRARIUM_BUG_ACTION_INTERVAL_MS, 'Asia/Shanghai');
+  expect(beetle.x !== 4 || beetle.y !== 4).toBe(true);
+  expect(state.nests![0].depth).toBe(5);
+  ant.energy = 90;
+  advance(state, start + 30 * TERRARIUM_ANT_ACTION_INTERVAL_MS, 'Asia/Shanghai');
+  expect(state.nests![0].food).toBeGreaterThan(0);
+  const { enterNest } = await import('../src/colony.ts');
+  enterNest(ant, state.nests![0]); ant.carrying = 0; state.nests![0].food = 10;
+  ant.energy = 15;
+  advance(state, start + 31 * TERRARIUM_ANT_ACTION_INTERVAL_MS, 'Asia/Shanghai');
+  expect(ant.energy).toBeGreaterThan(34); expect(state.nests![0].food).toBe(9);
+  expect(validState(state)).toBe(true);
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-ant-')); dirs.push(dir);
+  const file = join(dir, 'state.json'); await saveState(file, state);
+  expect(await loadState(file, start)).toEqual(state);
+  expect(() => dropLandFood(state, 0, 0, 11)).toThrow('1..10');
+  expect(() => dropLandFood(state, 5, 0, 1)).toThrow('5×5');
+});
+
+it('lets ants harvest plants and validates eggs, carrying, nests and food at the save boundary', async () => {
+  const { TERRARIUM_ANT_ACTION_INTERVAL_MS, dropLandFood, validState } = await import('../src/state.ts');
+  const start = Date.parse('2026-06-01T00:00:00Z'), state = newState(start);
+  const ant = releaseBug(state, 'ant', 0, 0); ant.energy = 90;
+  const queen = releaseBug(state, 'ant', 0, 0); queen.role = 'queen'; ant.role = 'worker';
+  const health = state.plants[0].health;
+  advance(state, start + 40 * TERRARIUM_ANT_ACTION_INTERVAL_MS, 'Asia/Shanghai');
+  expect(state.plants[0].health).toBeLessThan(health); expect(state.nests![0].food).toBeGreaterThan(0);
+  const food = dropLandFood(state, 4, 4, 10);
+  const invalid = [
+    { ...state, nests: [{ ...state.nests![0], food: 101 }] },
+    { ...state, food: [{ ...food, portions: 0 }] },
+    { ...state, eggs: [{ id: 'egg-invalid', species: 'ant', x: 0, y: 0, laidAtMs: start, hatchesAtMs: start }] },
+    { ...state, bugs: [{ ...ant, carrying: 6 }] },
+  ];
+  for (const value of invalid) expect(validState(value)).toBe(false);
+  removeOrganism(state, food.id); expect(state.food).toEqual([]);
+  const solitary = newState(start); solitary.plants = []; dropLandFood(solitary, 0, 0, 1);
+  advance(solitary, start + 48 * 3600000, 'Asia/Shanghai'); expect(solitary.food).toEqual([]);
+});
+
+it('incubates ant eggs for six hours without accelerating other bugs', async () => {
+  const { TERRARIUM_ANT_ACTION_INTERVAL_MS, validState } = await import('../src/state.ts');
+  const start = Date.parse('2026-06-01T00:00:00Z'), hour = 3600000, state = newState(start);
+  for (let i = 0; i < 2; i++) { const ant = releaseBug(state, 'ant', 0, 0); ant.ageHours = 23; ant.energy = 100; }
+  state.nests = [{ id: 'nest-3', x: 0, y: 0, depth: 5, food: 100 }]; state.nextId = 4;
+  const changes = advance(state, start + hour, 'Asia/Shanghai');
+  expect(changes.some(change => change.kind === 'egg')).toBe(true);
+  expect(state.eggs).toHaveLength(2); expect(state.eggs![0].hatchesAtMs).toBe(start + 7 * hour);
+  advance(state, start + 7 * hour - TERRARIUM_ANT_ACTION_INTERVAL_MS, 'Asia/Shanghai'); expect(state.bugs).toHaveLength(2);
+  const hatched = advance(state, start + 7 * hour, 'Asia/Shanghai');
+  expect(hatched.filter(change => change.kind === 'birth')).toHaveLength(2); expect(state.bugs).toHaveLength(4);
+  expect(validState(state)).toBe(true);
+});
+
+it('acts only once at each boundary when polling starts between action times', () => {
+  const start = Date.parse('2026-06-01T00:00:00Z');
+  const state = newState(start + 3_500); state.plants = [];
+  const worker = releaseBug(state, 'ant', 0, 0); worker.role = 'worker';
+  const queen = releaseBug(state, 'ant', 4, 4); queen.role = 'queen';
+  const beetle = releaseBug(state, 'beetle', 2, 2);
+  const before = start + TERRARIUM_ANT_ACTION_INTERVAL_MS - 1;
+  advance(state, before, 'UTC'); expect(state.nests).toBeUndefined();
+  const first = before + 1;
+  advance(state, first, 'UTC'); expect(state.nests![0].depth).toBe(1);
+  expect(advance(state, first, 'UTC')).toEqual([]);
+  advance(state, first + 1, 'UTC'); expect(state.nests![0].depth).toBe(1);
+  advance(state, first + TERRARIUM_ANT_ACTION_INTERVAL_MS, 'UTC'); expect(state.nests![0].depth).toBe(2);
+  advance(state, start + TERRARIUM_BUG_ACTION_INTERVAL_MS - 1, 'UTC'); expect(beetle).toMatchObject({ x: 2, y: 2 });
+  advance(state, start + TERRARIUM_BUG_ACTION_INTERVAL_MS, 'UTC'); expect(beetle).toMatchObject({ x: 2, y: 1 });
+  advance(state, start + TERRARIUM_BUG_ACTION_INTERVAL_MS + 1, 'UTC'); expect(beetle).toMatchObject({ x: 2, y: 1 });
+});
+
+it('keeps mixed bug actions, aging and energy equal during catch-up and ten-second polling', () => {
+  const start = Date.parse('2026-06-01T00:00:00Z') + 3_500;
+  const state = newState(start); state.plants = [];
+  const queen = releaseBug(state, 'ant', 0, 0); queen.role = 'queen';
+  const worker = releaseBug(state, 'ant', 4, 4); worker.role = 'worker';
+  const beetle = releaseBug(state, 'beetle', 2, 2);
+  const polled = structuredClone(state);
+  const end = start + 2 * 3_600_000;
+  const changes = advance(state, end, 'UTC');
+  const polledChanges = [];
+  for (let now = start + TERRARIUM_ANT_ACTION_INTERVAL_MS; now < end; now += TERRARIUM_ANT_ACTION_INTERVAL_MS) polledChanges.push(...advance(polled, now, 'UTC'));
+  polledChanges.push(...advance(polled, end, 'UTC'));
+  expect(polledChanges).toEqual(changes);
+  expect(polled.nests).toEqual(state.nests);
+  expect(polled.bugs.map(({ energy: _energy, ageHours: _age, ...bug }) => bug)).toEqual(state.bugs.map(({ energy: _energy, ageHours: _age, ...bug }) => bug));
+  for (const bug of state.bugs) {
+    const other = polled.bugs.find(other => other.id === bug.id)!;
+    expect(other.ageHours).toBeCloseTo(bug.ageHours, 9);
+    expect(other.energy).toBeCloseTo(bug.energy, 9);
+    expect(bug.ageHours).toBeCloseTo(2, 9);
+    expect(bug.energy).toBeCloseTo(56, 9);
+  }
+  expect(beetle.ageHours).toBeCloseTo(2, 9);
+  expect(state.history.map(sample => sample.recordedAtMs)).toEqual(polled.history.map(sample => sample.recordedAtMs));
+});

@@ -1,0 +1,64 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { expect, it } from 'vitest';
+import { TERRARIUM_MAX_HISTORY } from '../src/habitat.ts';
+import { newState, releaseBug } from '../src/state.ts';
+import { enterNest } from '../src/colony.ts';
+
+it('authenticates reports and computes the displayed score', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-server-'));
+  const credentialsFile = join(dir, 'credentials.json');
+  await writeFile(credentialsFile, JSON.stringify({ gold: 'test-token' }));
+  process.env.TERRARIUM_DATA_FILE = join(dir, 'leaderboard.json');
+  process.env.TERRARIUM_CREDENTIALS_FILE = credentialsFile;
+  process.env.PORT = '0';
+  const { start, score } = await import('../server/index.ts');
+  const server = await start();
+  try {
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing port');
+    const base = 'http://127.0.0.1:' + address.port;
+    const state = newState(Date.now());
+    const report = JSON.stringify({ id: 'gold', state, phase: 'day' });
+    expect((await fetch(base + '/api/reports', { method: 'PUT', body: report, headers: { authorization: 'Bearer wrong' } })).status).toBe(401);
+    const response = await fetch(base + '/api/reports', { method: 'PUT', body: report, headers: { authorization: 'Bearer test-token' } });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ score: score(state) });
+    const ranking = await (await fetch(base + '/api/leaderboard')).json() as Array<{ id: string; score: number; phase: string }>;
+    expect(ranking).toMatchObject([{ id: 'gold', score: score(state), phase: 'day' }]);
+    const page = await (await fetch(base)).text();
+    expect(page).toContain('scene.js');
+    const scene = await fetch(base + '/scene.js');
+    expect(scene.status).toBe(200);
+    expect(scene.headers.get('cache-control')).toBe('no-store');
+    expect(await scene.text()).toContain('function createScene(');
+    const colony = structuredClone(state);
+    colony.nests = [{ id: 'nest-fixture', x: 0, y: 0, depth: 1, food: 0 }];
+    const queen = releaseBug(colony, 'ant', 0, 0); queen.role = 'queen'; enterNest(queen, colony.nests[0]);
+    const reportColony = (value: unknown) => fetch(base + '/api/reports', { method: 'PUT', body: JSON.stringify({ id: 'gold', state: value }), headers: { authorization: 'Bearer test-token' } });
+    expect((await reportColony(colony)).status).toBe(200);
+    const savedColony = await (await fetch(base + '/api/boxes/gold')).json() as { state: typeof state };
+    expect(savedColony.state.bugs).toEqual(colony.bugs);
+    expect((await reportColony({ ...colony, bugs: [{ ...queen, inside: { nestId: 'missing', x: 0, y: 0 } }] })).status).toBe(400);
+    expect((await reportColony(state)).status).toBe(200);
+    const { soil: _soil, history: _history, ...legacy } = state;
+    const legacyResponse = await fetch(base + '/api/reports', { method: 'PUT', body: JSON.stringify({ id: 'gold', state: { ...legacy, version: 2 } }), headers: { authorization: 'Bearer test-token' } });
+    expect(legacyResponse.status).toBe(200);
+    const migrated = await (await fetch(base + '/api/boxes/gold')).json() as { state: typeof state };
+    expect(migrated.state.soil[0].moisture).toBe(state.plants[0].moisture);
+    state.plants = Array.from({ length: 12 }, (_, i) => ({ ...state.plants[0], id: `plant-${i}`, x: i % 5, y: Math.floor(i / 5) }));
+    state.history = Array.from({ length: TERRARIUM_MAX_HISTORY }, (_, i) => ({ recordedAtMs: state.updatedAtMs - (TERRARIUM_MAX_HISTORY - 1 - i) * 3600000, soilMoisture: state.soil.map(cell => cell.moisture), plants: state.plants.map(({ id, species, moisture, health, stage, growthHours }) => ({ id, species, moisture, health, stage, growthHours })) }));
+    const fullReport = JSON.stringify({ id: 'gold', state });
+    expect(fullReport.length).toBeGreaterThan(65536);
+    expect((await fetch(base + '/api/reports', { method: 'PUT', body: fullReport, headers: { authorization: 'Bearer test-token' } })).status).toBe(200);
+    const full = await (await fetch(base + '/api/boxes/gold')).json() as { state: typeof state };
+    expect(full.state.history).toEqual(state.history);
+    state.history[0].soilMoisture[0] = -1;
+    expect((await fetch(base + '/api/reports', { method: 'PUT', body: JSON.stringify({ id: 'gold', state }), headers: { authorization: 'Bearer test-token' } })).status).toBe(400);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    delete process.env.TERRARIUM_DATA_FILE; delete process.env.TERRARIUM_CREDENTIALS_FILE; delete process.env.PORT;
+    await rm(dir, { recursive: true, force: true });
+  }
+});

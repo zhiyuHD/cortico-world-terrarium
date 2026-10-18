@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f5f5ed">
+<title>生态箱 · 观察站</title>
+<style>
+:root{font-family:Inter,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;color:#253f35;background:#f5f5ed;font-synthesis:none;--muted:#748076;--line:#dde3d7;--green:#355a45;--accent:#e8eddf}
+*{box-sizing:border-box}body{margin:0}button,input{font:inherit}button{cursor:pointer}button{color:inherit}button:focus-visible,input:focus-visible{outline:3px solid #88a77d;outline-offset:4px}[hidden]{display:none!important}
+.wrap{width:min(1240px,100% - 80px);margin:auto}header{border-bottom:1px solid var(--line)}.nav{height:88px;display:flex;align-items:center;justify-content:space-between}.brand{display:flex;align-items:center;gap:12px;font-size:19px;font-weight:700;letter-spacing:1px}.mark{width:34px;height:38px;border:1.5px solid var(--green);border-radius:12px 12px 15px 15px;position:relative;overflow:hidden}.mark:before{content:"";position:absolute;width:16px;height:21px;border-radius:0 90% 0 90%;background:#64815b;left:9px;top:9px;transform:rotate(-20deg)}.mark:after{content:"";position:absolute;height:22px;width:1px;background:#f5f5ed;left:17px;top:15px;transform:rotate(15deg)}.nav-label{font:11px monospace;letter-spacing:2px;color:var(--muted)}.live{display:flex;align-items:center;gap:8px;font-size:12px;color:#6a786c}.dot{width:7px;height:7px;flex:none;border-radius:50%;background:#73945f;box-shadow:0 0 0 4px #73945f12}.live[data-state="error"] .dot{background:#bc7558}
+.hero{display:grid;grid-template-columns:1.4fr 1fr;align-items:center;min-height:310px;padding:46px 0 42px;gap:35px}.eyebrow{font:11px monospace;letter-spacing:2.5px;color:var(--muted);margin:0 0 19px}.hero h1{font-size:clamp(34px,4.5vw,56px);font-weight:500;letter-spacing:-2px;line-height:1.25;margin:0 0 18px}.hero h1 span{color:#738a61}.intro{color:var(--muted);font-size:14px;line-height:1.9;margin:0}.hero-art{height:214px;position:relative;display:flex;justify-content:center;align-items:center;gap:20px;overflow:hidden}.vessel{width:145px;height:175px;position:relative;border:1px solid #bdcbb7;border-radius:52px 52px 34px 34px;overflow:hidden;background:linear-gradient(140deg,#ffffff90,#e9efdf70);transform:rotate(-7deg)}.vessel.water{width:130px;height:150px;margin-top:35px;border-color:#b9cdd0;transform:rotate(8deg);background:linear-gradient(155deg,#ffffff90 20%,#cce0df80)}.vessel:after{content:"";position:absolute;inset:7px;border:1px solid #ffffffa0;border-radius:inherit}.soil{position:absolute;bottom:0;width:100%;height:38px;background:#c1c6a6;border-radius:40% 25% 0 0}.stem{position:absolute;width:3px;height:90px;bottom:28px;left:71px;background:#788f60;transform:rotate(-8deg)}.leaf{position:absolute;width:38px;height:21px;background:#8ea577;border-radius:0 100% 0 100%;left:-36px;top:24px;transform:rotate(12deg)}.leaf:nth-child(2){left:2px;top:4px;transform:scaleX(-1) rotate(-10deg);background:#58774f}.leaf:nth-child(3){left:2px;top:52px;transform:scaleX(-1);width:32px}.waterline{position:absolute;bottom:0;height:99px;width:100%;background:#b8d5d580;border-radius:45% 15% 0 0}.fish{position:absolute;width:28px;height:13px;border-radius:50%;background:#cda16c;left:63px;top:82px;transform:rotate(-10deg)}.fish:after{content:"";position:absolute;left:-9px;top:0;border-left:11px solid #cda16c;border-top:7px solid transparent;border-bottom:7px solid transparent}.water .stem{height:45px;left:36px;background:#7e9e8d;bottom:18px;transform:rotate(15deg)}.water .leaf{width:23px;height:13px;left:-21px;background:#94b2a1}.orbit{position:absolute;border:1px solid #dfe4d6;border-radius:50%;width:350px;height:170px;transform:rotate(-18deg);z-index:-1}.art-caption{position:absolute;bottom:1px;font:10px monospace;letter-spacing:3px;color:#8c998a}
+.overview{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);background:#fafbf5;border-radius:14px;margin-bottom:48px}.stat{padding:22px 28px;display:flex;align-items:baseline;gap:12px}.stat+.stat{border-left:1px solid var(--line)}.stat strong{font-size:30px;font-weight:500;font-variant-numeric:tabular-nums}.stat span{font-size:12px;color:var(--muted)}.section-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:23px;gap:16px}.section-title{font-size:20px;font-weight:600;margin:0;letter-spacing:.5px}.section-title small{font-size:11px;font-weight:400;color:var(--muted);letter-spacing:1px;margin-left:12px}.tools{display:flex;gap:12px;align-items:center}.tabs{display:flex;background:#e9eddf;padding:4px;border-radius:9px;gap:3px}.tab{border:0;background:none;padding:9px 17px;border-radius:6px;font-size:13px;color:#7a8577}.tab[aria-pressed="true"]{background:#fff;box-shadow:0 1px 3px #30402a0a;color:#355a45}.tab[data-kind="water"][aria-pressed="true"]{color:#376570}.search{width:190px;min-width:0;border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:transparent;color:inherit;font-size:12px}.search::placeholder{color:#8e988a}.filter-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;font-size:12px;color:var(--muted);gap:12px}.filter-row p{margin:0}
+#list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}.box{border:1px solid var(--line);border-radius:16px;background:#fffefa;overflow:hidden;min-width:0}.box-head{padding:23px 24px 18px;display:flex;align-items:center;gap:13px}.rank{font:16px monospace;color:#929d89;align-self:flex-start;padding-top:3px}.box[data-rank="1"] .rank{color:#96773a}.heading{min-width:0;flex:1}.heading h3{font-size:18px;font-weight:600;margin:0 0 6px;overflow-wrap:anywhere;line-height:1.4}.box-id{font:10px monospace;color:#8a9586;overflow-wrap:anywhere}.score{text-align:right;flex:none}.score strong{font-size:26px;font-weight:500;letter-spacing:-1px;font-variant-numeric:tabular-nums}.score span{font-size:10px;display:block;color:var(--muted);margin-top:2px}.scene-wrap{margin:0 15px;position:relative;border-radius:10px;overflow:hidden;background:#e6eddf}.scene-wrap>canvas{display:block;width:100%;height:auto;aspect-ratio:8/5}.phase{position:absolute;top:12px;right:12px;border-radius:20px;background:#fffdf2d9;color:#647154;font-size:10px;padding:5px 9px}.box-metrics{display:grid;grid-template-columns:repeat(3,1fr);padding:18px 24px;gap:12px}.metric{font-size:11px;color:var(--muted)}.metric strong{display:block;color:#425942;font-size:18px;font-weight:500;margin-top:5px;font-variant-numeric:tabular-nums}.water-box .metric strong{color:#426872}.quality{display:flex;gap:18px;border-top:1px solid #edf0e7;padding:12px 24px;font-size:11px;color:var(--muted)}.quality b{font-weight:500;color:#426872;margin-left:5px}.box-foot{border-top:1px solid #edf0e7;padding:13px 24px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:10px;color:#929b8b}.replay-container{padding:0 24px}.replay-container:not(:empty){border-top:1px solid #edf0e7}.empty{border:1px dashed #d2dcc8;border-radius:16px;min-height:280px;text-align:center;display:grid;place-content:center;padding:35px;margin-bottom:20px}.empty-icon{font-size:30px;color:#8da17b;margin-bottom:12px}.empty h3{font-size:18px;font-weight:500;margin:0 0 12px}.empty p{font-size:13px;color:var(--muted);line-height:1.8;margin:0}.retry{margin:18px auto 0;border:1px solid var(--line);border-radius:6px;background:#fafbf5;padding:8px 16px;font-size:12px}.error-banner{background:#f4eadd;border:1px solid #e8d9c7;border-radius:8px;color:#956648;padding:12px 16px;font-size:12px;margin-bottom:16px}.error-banner button{border:0;background:none;color:inherit;text-decoration:underline;margin-left:10px}.footer{display:flex;justify-content:space-between;gap:20px;padding:30px 0;margin-top:48px;border-top:1px solid var(--line);font-size:11px;color:#8a9582;line-height:1.8}.footer span:last-child{font:10px monospace;letter-spacing:1px}
+@media(min-width:1500px){.wrap{width:1240px}}@media(max-width:800px){.wrap{width:calc(100% - 40px)}.nav{height:72px}.nav-label{display:none}.hero{min-height:270px;padding:32px 0;gap:12px}.hero-art{transform:scale(.85);transform-origin:right center;margin-left:-40px}.hero h1{font-size:37px}.intro{font-size:12px}.overview{margin-bottom:32px}.stat{padding:18px;gap:8px}.stat strong{font-size:26px}.section-top{flex-wrap:wrap}.tools{width:100%;justify-content:space-between}.search{width:180px}#list{gap:16px}.box-head{padding:18px 16px}.box-metrics{padding:16px}.quality,.box-foot{padding:12px 16px}.replay-container{padding:0 16px}.heading h3{font-size:16px}.score strong{font-size:23px}}@media(max-width:580px){.hero{grid-template-columns:1fr;min-height:0;padding:35px 0 30px}.hero-art{display:none}.hero h1{font-size:40px}.eyebrow{font-size:10px}.stat{display:block;padding:16px}.stat span{display:block;margin-top:6px;font-size:11px}.stat strong{font-size:26px}#list{grid-template-columns:1fr}.section-title small{font-size:10px}.tools{gap:10px}.tab{padding:9px 10px;white-space:nowrap}.search{width:0;flex:1}.footer{margin-top:32px;flex-wrap:wrap}.live{font-size:11px}}
+@keyframes arrive{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+@keyframes drift{0%,100%{translate:0 0}50%{translate:0 -7px}}
+@keyframes sway{from{rotate:-3deg}to{rotate:4deg}}
+@keyframes swim{0%,100%{translate:0 0;rotate:-5deg}50%{translate:-23px 5px;rotate:5deg}}
+@keyframes ripple{from{border-radius:45% 15% 0 0}to{border-radius:15% 45% 0 0}}
+@keyframes bubble{0%{translate:0 0;opacity:0}20%{opacity:.7}85%{opacity:.5}100%{translate:8px -80px;opacity:0}}
+@keyframes breathe{0%,100%{box-shadow:0 0 0 3px #73945f12}50%{box-shadow:0 0 0 6px #73945f00}}
+.hero>div:first-child{animation:arrive .7s ease-out both}.overview{animation:arrive .7s .1s ease-out both}.section-top{animation:arrive .7s .18s ease-out both}
+.vessel{animation:drift 7s ease-in-out infinite}.vessel.water{animation-duration:6s;animation-delay:-3s}.stem{transform-origin:bottom center;animation:sway 4s ease-in-out infinite alternate}.water .stem{animation-delay:-2s}.fish{animation:swim 6s ease-in-out infinite}.waterline{animation:ripple 5s ease-in-out infinite alternate}
+.vessel.water:before{content:"";position:absolute;z-index:1;left:85px;bottom:16px;width:5px;height:5px;border:1px solid #ffffffc0;border-radius:50%;box-shadow:-42px -18px 0 -1px #ffffff80;animation:bubble 4.5s 1s ease-in infinite}
+.live[data-state="online"] .dot{animation:breathe 3s ease-in-out infinite}.box{transition:transform .25s ease,box-shadow .25s ease,border-color .25s ease}.scene-wrap>canvas{transition:transform .5s ease}.tab,.search{transition:background-color .2s ease,box-shadow .2s ease,border-color .2s ease}.search:focus{background:#fffefa;border-color:#a1b395}.empty:not([hidden]),.error-banner:not([hidden]){animation:arrive .35s ease-out both}
+@media(hover:hover) and (pointer:fine){.box:hover{transform:translateY(-3px);box-shadow:0 12px 30px #354c3010;border-color:#bdcdb3}.box:hover .scene-wrap>canvas{transform:scale(1.015)}.tab:hover{background:#ffffff80}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}.box:hover,.box:hover .scene-wrap>canvas{transform:none}}
+.search-wrap{position:relative;width:190px;min-width:0}.search-wrap .search{width:100%;padding-right:34px}.clear-search{position:absolute;right:7px;top:50%;width:24px;height:24px;transform:translateY(-50%);border:0;border-radius:50%;background:transparent;cursor:pointer;color:#748076;transition:background .18s}.clear-search:before,.clear-search:after{content:"";position:absolute;left:7px;top:11px;width:10px;height:1px;background:currentColor;transform:rotate(45deg)}.clear-search:after{transform:rotate(-45deg)}.clear-search:hover{background:#e6ecdd}.clear-search:not([hidden]){animation:clear-appear .2s ease-out}@keyframes clear-appear{from{opacity:0;scale:.7}to{opacity:1;scale:1}}#sort{width:154px}#sort .pc-trigger{background:transparent;border-color:transparent;padding:7px 10px}#sort .pc-trigger:hover{background:#e9eddf}#sort .pc-trigger[aria-expanded=true]{border-color:#a1b395}.replay-container{overflow:visible}.box:has(.pc-select[data-open=true]){position:relative;z-index:2}.pc-replay .pc-select{font-size:11px}.pc-step{cursor:pointer}.pc-panel .pc-menu{max-width:min(440px,calc(100vw - 96px))}
+@media(max-width:800px){.search-wrap{width:180px}}@media(max-width:580px){.search-wrap{width:0;flex:1}.search-wrap .search{width:100%}}
+.announcements{display:grid;gap:10px;margin:0 0 28px}.announcement{overflow-wrap:anywhere;border:1px solid var(--line);background:#fffdf4;border-radius:16px;padding:16px 20px}.announcement h3{font-size:14px;margin:0 0 6px}.announcement p{font-size:13px;white-space:pre-wrap;line-height:1.8;margin:0;color:var(--muted)}.announcement time{font:10px monospace;color:var(--muted)}
+</style>
+</head>
+<body>
+<header><div class="wrap nav"><div class="brand"><span class="mark" aria-hidden="true"></span>生态箱<span class="nav-label">OBSERVATORY</span></div><div class="live" id="connection" data-state="loading"><span class="dot"></span><span id="connection-label">连接中</span></div></div></header>
+<main class="wrap">
+<section id="announcements" class="announcements" aria-label="服务端公告" aria-live="polite" hidden></section>
+<section class="hero"><div><p class="eyebrow">CORTICO / LIVING ECOSYSTEMS</p><h1>一方天地，<br>自有<span>生机。</span></h1><p class="intro">观察植物生长、虫鱼觅食，看看每个生态箱的近况。</p></div><div class="hero-art" aria-hidden="true"><div class="orbit"></div><div class="vessel"><div class="soil"></div><div class="stem"><i class="leaf"></i><i class="leaf"></i><i class="leaf"></i></div></div><div class="vessel water"><div class="waterline"></div><div class="stem"><i class="leaf"></i></div><div class="fish"></div></div><span class="art-caption">LAND & WATER</span></div></section>
+<section class="overview" aria-label="生态箱概览"><div class="stat"><strong id="box-count">—</strong><span id="box-count-label">地箱</span></div><div class="stat"><strong id="plant-count">—</strong><span>植物</span></div><div class="stat"><strong id="animal-count">—</strong><span id="animal-count-label">虫子</span></div></section>
+<section aria-labelledby="gallery-title"><div class="section-top"><h2 class="section-title" id="gallery-title">生态箱图鉴 <small>COLLECTION</small></h2><div class="tools"><div class="tabs" role="group" aria-label="生态箱类型"><button class="tab" data-kind="land" aria-pressed="true">生态箱·地</button><button class="tab" data-kind="water" aria-pressed="false">生态箱·水</button></div><div class="search-wrap"><input class="search" id="search" type="text" role="searchbox" placeholder="搜索名称或 ID" aria-label="搜索生态箱名称或 ID"><button id="clear-search" class="clear-search" aria-label="清除搜索" hidden></button></div></div></div>
+<div class="filter-row"><p id="status" role="status">正在读取生态箱…</p><div id="sort"></div></div>
+<div class="error-banner" id="error" role="alert" hidden><span></span><button id="retry">重新连接</button></div>
+<div class="empty" id="empty" hidden><div class="empty-icon" aria-hidden="true">♧</div><h3 id="empty-title"></h3><p id="empty-copy"></p></div>
+<div id="list"></div>
+</section>
+<footer class="footer"><span>每 5 秒同步上报状态 · 捕食记录支持现场回放</span><span>CORTICO · OBSERVATORY</span></footer>
+</main>
+<script type="module">
+import { createScene, createWaterScene, createPublicSelect, createPublicReplayControls } from './scene.js?v=0.7.3-colony';
+const $=id=>document.getElementById(id);
+const sort=createPublicSelect($('sort'),'排列方式',()=>render());sort.setOptions([{value:'score',label:'按积分排序'},{value:'recent',label:'按上报时间排序'}]);
+const scenes=new Map();let kind='land',entries=[],loaded=false,requestVersion=0,loading=false;
+const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)'),animations=new Set();
+function animate(node,frames,options){
+ if(reducedMotion.matches)return;
+ const animation=node.animate(frames,options);animations.add(animation);
+ animation.onfinish=animation.oncancel=()=>animations.delete(animation);
+}
+reducedMotion.addEventListener('change',()=>{if(reducedMotion.matches)for(const animation of animations)animation.cancel()});
+function setCount(id,value){
+ const node=$(id),text=String(value);if(node.textContent===text)return;
+ node.textContent=text;animate(node,[{opacity:.35,transform:'translateY(5px)'},{opacity:1,transform:'translateY(0)'}],{duration:350,easing:'ease-out'});
+}
+const dateFormat=new Intl.DateTimeFormat('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+function el(tag,className,text){const node=document.createElement(tag);node.className=className;if(text!==undefined)node.textContent=text;return node}
+function clearViews(){for(const view of scenes.values()){view.scene.dispose();view.replay.dispose();view.article.remove()}scenes.clear()}
+function render(){
+ const water=kind==='water';
+ setCount('box-count',loaded?entries.length:'—');setCount('plant-count',loaded?entries.reduce((sum,e)=>sum+e.state.plants.length,0):'—');setCount('animal-count',loaded?entries.reduce((sum,e)=>sum+(water?e.state.fish:e.state.bugs).length,0):'—');
+ $('box-count-label').textContent=water?'水箱':'地箱';$('animal-count-label').textContent=water?'鱼':'虫子';
+ const query=$('search').value.trim().toLocaleLowerCase();$('clear-search').hidden=!$('search').value;
+ const ranking=new Map([...entries].sort((a,b)=>b.score-a.score||a.id.localeCompare(b.id)).map((entry,index)=>[entry.id,index+1]));
+ const rows=entries.filter(entry=>((entry.state.name??'')+' '+entry.id).toLocaleLowerCase().includes(query)).sort(sort.value==='recent'?(a,b)=>Date.parse(b.reportedAt)-Date.parse(a.reportedAt)||a.id.localeCompare(b.id):(a,b)=>ranking.get(a.id)-ranking.get(b.id));
+ $('status').textContent=loaded?(query?'找到 '+rows.length+' 个生态箱':'共 '+entries.length+' 个'+(water?'水箱':'地箱')):'正在读取生态箱…';
+ const empty=loaded&&!rows.length;$('empty').hidden=!empty;
+ if(empty){$('empty-title').textContent=query?'没有找到这个生态箱':water?'水域静候第一位住客':'这里还没有生态箱';$('empty-copy').textContent=query?'试试其他名称或 ID。':'认领并上报后，生态箱会出现在这里。'}
+ const ids=new Set(rows.map(entry=>entry.id));
+ for(const [id,view] of scenes)if(!ids.has(id)){view.scene.dispose();view.replay.dispose();view.article.remove();scenes.delete(id)}
+ rows.forEach((entry,index)=>{
+  let view=scenes.get(entry.id);
+  const isNew=!view;
+  if(!view){
+   const article=el('article','box'+(water?' water-box':'')),head=el('div','box-head'),rank=el('span','rank'),heading=el('div','heading'),title=el('h3',''),id=el('div','box-id','ID / '+entry.id),score=el('div','score'),points=el('strong',''),sceneWrap=el('div','scene-wrap'),canvas=document.createElement('canvas'),phase=el('span','phase'),metrics=el('div','box-metrics'),quality=el('div','quality'),replayContainer=el('div','replay-container'),foot=el('div','box-foot'),time=el('time','');
+   canvas.width=800;canvas.height=500;canvas.setAttribute('role','img');score.append(points,el('span','','生态积分'));heading.append(title,id);head.append(rank,heading,score);sceneWrap.append(canvas,phase);foot.append(el('span','',water?'WATER / 水生生态':'LAND / 陆生生态'),time);article.append(head,sceneWrap,metrics,quality,replayContainer,foot);
+   view={article,rank,title,points,canvas,phase,metrics,quality,time,scene:water?createWaterScene(canvas):createScene(canvas),replay:createPublicReplayControls(replayContainer,water?createWaterScene:createScene)};scenes.set(entry.id,view);
+  }
+  const state=entry.state,rank=ranking.get(entry.id);view.article.dataset.rank=rank;view.rank.textContent=String(rank).padStart(2,'0');view.title.textContent=state.name??entry.id;view.points.textContent=Number(entry.score).toLocaleString('zh-CN',{maximumFractionDigits:1});view.canvas.setAttribute('aria-label',view.title.textContent+'的'+(water?'水箱':'地箱')+'场景');view.phase.textContent=entry.phase==='night'?'夜晚':'白天';
+  const metrics=water?[['水生植物',state.plants.length],['鱼',state.fish.length],['饲料',state.food.reduce((sum,food)=>sum+food.portions,0)]]:[['植物',state.plants.length],['虫子',state.bugs.length],['种子 / 虫卵',state.seeds.length+' / '+(state.eggs?.length??0)]];
+  view.metrics.replaceChildren(...metrics.map(([label,value])=>{const node=el('div','metric',label);node.append(el('strong','',String(value)));return node}));view.quality.hidden=!water;
+  if(!water){view.quality.hidden=!(state.nests?.length);view.quality.textContent=(state.nests??[]).map(nest=>'蚁巢 '+nest.depth+' 层 · 储粮 '+nest.food+'/'+(nest.depth*20)).join(' · ')}
+  if(water)view.quality.replaceChildren(...[['含氧量',state.oxygen],['水质',state.cleanliness]].map(([label,value])=>{const node=el('span','',label);node.append(el('b','',value.toFixed(1)));return node}));
+  view.time.dateTime=entry.reportedAt;view.time.textContent=dateFormat.format(new Date(entry.reportedAt))+' 上报';if($('list').children[index]!==view.article)$('list').insertBefore(view.article,$('list').children[index]??null);view.scene.setState({...state,phase:entry.phase??'day'});view.replay.setReplays(state.replays??[]);
+  if(isNew)animate(view.article,[{opacity:0,transform:'translateY(16px)'},{opacity:1,transform:'translateY(0)'}],{duration:480,delay:Math.min(index,5)*65,easing:'cubic-bezier(.2,.7,.3,1)',fill:'backwards'});
+ });
+}
+let publicAnnouncements=[];
+async function loadAnnouncements(){
+ try{
+  const response=await fetch('/api/announcements/public?view=latest',{signal:AbortSignal.timeout(10000),cache:'no-store'});if(!response.ok)return;
+  const {announcements:next}=await response.json();if(JSON.stringify(next)===JSON.stringify(publicAnnouncements))return;
+  const oldIds=new Set(publicAnnouncements.map(notice=>notice.id));publicAnnouncements=next;const root=$('announcements');root.hidden=!next.length;
+  root.replaceChildren(...[...next].reverse().map(notice=>{const article=el('article','announcement'),title=el('h3','',notice.title||'服务端公告'),text=el('p','',notice.text),time=el('time','',dateFormat.format(new Date(notice.createdAt)));time.dateTime=notice.createdAt;article.append(title,text,time);if(!oldIds.has(notice.id))animate(article,[{opacity:0,transform:'translateY(-8px)'},{opacity:1,transform:'translateY(0)'}],{duration:320,easing:'ease-out'});return article}));
+ }catch{}
+}
+async function load(){
+ const version=++requestVersion,requestedKind=kind;loading=true;
+ try{
+  const response=await fetch('/api/leaderboard?kind='+requestedKind,{signal:AbortSignal.timeout(10000),cache:'no-store'});if(!response.ok)throw Error('HTTP '+response.status);
+  const rows=await response.json();if(version!==requestVersion)return;
+  entries=rows;loaded=true;$('error').hidden=true;$('connection').dataset.state='online';$('connection-label').textContent='同步中 · 每 5 秒';render();
+ }catch(error){if(version!==requestVersion)return;$('error').hidden=false;$('error').querySelector('span').textContent=loaded?'连接中断，保留上次同步的状态。':'暂时无法读取生态箱。';$('connection').dataset.state='error';$('connection-label').textContent='连接中断';if(!loaded)$('status').textContent='等待重新连接';}
+ finally{if(version===requestVersion)loading=false}
+}
+document.querySelectorAll('.tab').forEach(button=>button.addEventListener('click',()=>{if(kind===button.dataset.kind)return;kind=button.dataset.kind;document.querySelectorAll('.tab').forEach(tab=>tab.setAttribute('aria-pressed',String(tab===button)));entries=[];loaded=false;clearViews();$('error').hidden=true;render();void load()}));
+$('search').addEventListener('input',render);$('clear-search').addEventListener('click',()=>{$('search').value='';$('search').focus();render()});$('retry').addEventListener('click',()=>void load());
+void loadAnnouncements();setInterval(()=>void loadAnnouncements(),5000);
+void load();setInterval(()=>{if(!loading)void load()},5000);
+window.addEventListener('pagehide',()=>{sort.dispose();clearViews();for(const animation of animations)animation.cancel()});
+</script>
+</body>
+</html>
