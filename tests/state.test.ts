@@ -1,8 +1,9 @@
+import { TERRARIUM_PLANT_LOW_HEALTH, TERRARIUM_PLANT_RECOVERED_HEALTH } from '../src/habitat.ts';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { advance, feedBug, loadState, move, newState, phase, releaseBug, relocateBug, removeOrganism, saveState, sow, water, waterSoil, renameBox, TERRARIUM_MAX_NAME_LENGTH, TERRARIUM_ANT_ACTION_INTERVAL_MS, TERRARIUM_BUG_ACTION_INTERVAL_MS } from '../src/state.ts';
+import { advance, feedBug, loadState, move, newState, phase, releaseBug, relocateBug, removeOrganism, saveState, sow, water, waterSoil, waterArea, renameBox, TERRARIUM_MAX_NAME_LENGTH, TERRARIUM_ANT_ACTION_INTERVAL_MS, TERRARIUM_BUG_ACTION_INTERVAL_MS } from '../src/state.ts';
 
 const dirs: string[] = [];
 afterEach(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
@@ -377,4 +378,77 @@ it('keeps mixed bug actions, aging and energy equal during catch-up and ten-seco
   }
   expect(beetle.ageHours).toBeCloseTo(2, 9);
   expect(state.history.map(sample => sample.recordedAtMs)).toEqual(polled.history.map(sample => sample.recordedAtMs));
+});
+
+it('waters an inclusive rectangle once per cell and plant, including seeds and empty cells', () => {
+  const state = newState(0);
+  sow(state, 'basil', 1, 1);
+  state.soil.forEach(cell => { cell.moisture = 90; });
+  state.plants[0].health = 50;
+  const untouched = structuredClone(state.soil[4]);
+  const cells = waterArea(state, 0, 0, 1, 1);
+  expect(cells.map(({ x, y, moisture }) => ({ x, y, moisture }))).toEqual([
+    { x: 0, y: 0, moisture: 100 }, { x: 1, y: 0, moisture: 100 },
+    { x: 0, y: 1, moisture: 100 }, { x: 1, y: 1, moisture: 100 },
+  ]);
+  expect(state.plants[0]).toMatchObject({ moisture: 100, health: 55 });
+  expect(state.soil[4]).toEqual(untouched);
+  expect(state.seeds).toHaveLength(1);
+  expect(waterArea(state, 0, 0, 4, 4)).toHaveLength(state.soil.length);
+  expect(state.soil.every(cell => cell.moisture === 100)).toBe(true);
+});
+
+it('rejects invalid rectangles without partially watering any cell', () => {
+  const state = newState(0), initial = structuredClone(state);
+  for (const args of [[-1, 0, 2, 2], [0, 0, 5, 2], [2, 0, 1, 2], [0, 2, 2, 1], [0, 0, 1.5, 2], [NaN, 0, 1, 1]]) {
+    expect(() => waterArea(state, ...args as [number, number, number, number])).toThrow('corners');
+    expect(state).toEqual(initial);
+  }
+});
+
+it('warns once on low health from drought and rearms only after sufficient recovery', () => {
+  const start = Date.parse('2026-06-01T06:00:00Z'), state = newState(start);
+  state.soil.forEach(cell => { cell.moisture = 0; });
+  const plant = state.plants[0]; plant.health = TERRARIUM_PLANT_LOW_HEALTH + .1;
+  const changes = advance(state, start + 60 * 60_000, 'UTC');
+  expect(changes.filter(c => c.kind === 'health')).toHaveLength(1);
+  expect(changes.find(c => c.kind === 'health')?.text).toContain(plant.id);
+  expect(changes.find(c => c.kind === 'health')?.text).toContain('(0,0)');
+  expect(plant.healthWarning).toBe(true);
+  expect(advance(state, state.updatedAtMs + 60_000, 'UTC').filter(c => c.kind === 'health')).toEqual([]);
+  water(state, plant.id);
+  expect(plant.healthWarning).toBe(true);
+  while (plant.health < TERRARIUM_PLANT_RECOVERED_HEALTH) water(state, plant.id);
+  expect(plant.healthWarning).toBeUndefined();
+  plant.health = TERRARIUM_PLANT_LOW_HEALTH;
+  expect(advance(state, state.updatedAtMs + 60_000, 'UTC').filter(c => c.kind === 'health')).toHaveLength(1);
+});
+
+it('warns for pest damage after bug actions and emits death instead of a critical warning for dead plants', () => {
+  const start = Date.parse('2026-06-01T06:00:00Z'), state = newState(start);
+  const plant = state.plants[0]; plant.health = TERRARIUM_PLANT_LOW_HEALTH + 1;
+  releaseBug(state, 'aphid', plant.x, plant.y);
+  expect(advance(state, start + TERRARIUM_BUG_ACTION_INTERVAL_MS, 'UTC').filter(c => c.kind === 'health')).toHaveLength(1);
+  expect(plant.health).toBeLessThan(TERRARIUM_PLANT_LOW_HEALTH);
+  delete plant.healthWarning; plant.health = 1;
+  const changes = advance(state, state.updatedAtMs + TERRARIUM_BUG_ACTION_INTERVAL_MS, 'UTC');
+  expect(changes.filter(c => c.kind === 'health')).toHaveLength(0);
+  expect(changes.some(c => c.kind === 'death' && c.text.includes(plant.id))).toBe(true);
+  expect(state.plants.some(p => p.id === plant.id)).toBe(false);
+});
+
+it('loads older critical plants and persists warning deduplication across saves', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-health-')); dirs.push(dir);
+  const file = join(dir, 'state.json'), state = newState(0);
+  state.plants[0].health = TERRARIUM_PLANT_LOW_HEALTH;
+  await saveState(file, state);
+  const old = await loadState(file, 0);
+  expect(advance(old, TERRARIUM_BUG_ACTION_INTERVAL_MS, 'UTC').filter(c => c.kind === 'health')).toHaveLength(1);
+  await saveState(file, old);
+  const restored = await loadState(file, old.updatedAtMs);
+  expect(restored.plants[0].healthWarning).toBe(true);
+  expect(advance(restored, restored.updatedAtMs + TERRARIUM_BUG_ACTION_INTERVAL_MS, 'UTC').filter(c => c.kind === 'health')).toHaveLength(0);
+  const invalid = JSON.parse(await readFile(file, 'utf8'));
+  invalid.plants[0].healthWarning = 'true'; await writeFile(file, JSON.stringify(invalid));
+  await expect(loadState(file, 0)).rejects.toThrow('Invalid terrarium state');
 });

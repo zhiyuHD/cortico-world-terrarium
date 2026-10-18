@@ -211,6 +211,22 @@ it('advances ants every 10 seconds while reads preserve files and synchronize bo
     const afterWrite = JSON.parse(await readFile(serverFile, 'utf8'));
     expect(afterWrite[landClient.id!].state).toEqual(written);
     expect(requests).toEqual({ ...beforeWrite, reports: beforeWrite.reports + 1 });
+    const beforeArea = { ...requests };
+    const area = await call('terrarium_water_area', { x1: 0, y1: 0, x2: 4, y2: 4 });
+    expect(area.soil).toHaveLength(25);
+    expect(requests).toEqual({ ...beforeArea, reports: beforeArea.reports + 1 });
+    const areaSaved = await loadState(file, Date.now());
+    expect(JSON.parse(await readFile(serverFile, 'utf8'))[landClient.id!].state).toEqual(areaSaved);
+    const beforePanel = { ...requests };
+    await panel.invoke!('garden', 'water', [{ x1: 0, y1: 0, x2: 1, y2: 1 }]);
+    expect(requests).toEqual({ ...beforePanel, reports: beforePanel.reports + 1 });
+    const panelSaved = await loadState(file, Date.now());
+    expect(panelSaved.soil[0].moisture).toBe(Math.min(100, areaSaved.soil[0].moisture + 35));
+    expect(panelSaved.soil[4]).toEqual(areaSaved.soil[4]);
+    expect(JSON.parse(await readFile(serverFile, 'utf8'))[landClient.id!].state).toEqual(panelSaved);
+    await expect(call('terrarium_water_area', { x1: 0, y1: 0, x2: 9, y2: 4 })).rejects.toThrow('corners');
+    await expect(panel.invoke!('water', 'water', [{ x1: 0, y1: 0, x2: 4, y2: 4 }])).rejects.toThrow('Unknown');
+    expect(await loadState(file, Date.now())).toEqual(panelSaved);
     const beforeInvalid = { ...requests };
     await expect(call('terrarium_release_bug', { species: 'missing', x: 0, y: 0 })).rejects.toThrow('Unknown bug species');
     expect(requests).toEqual(beforeInvalid);
@@ -317,4 +333,32 @@ it('retries a failed background save on the next maintenance cycle', async () =>
     await world.stop(); vi.useRealTimers();
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+it('delivers critical plant events once across a restart and keeps unclaimed watering unavailable', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-critical-world-')), file = join(dir, 'state.json');
+  const start = Date.parse('2026-06-01T06:00:00Z'); let now = start;
+  const events: Array<{ event: Omit<EventEnvelope, 'cursor'>; options?: PushOptions }> = [];
+  const host = { log: { warn() {} }, async pushEvent(event: Omit<EventEnvelope, 'cursor'>, options?: PushOptions) { events.push({ event, options }); return { ...event, cursor: events.length }; } } as unknown as WorldHost;
+  const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: '' }, timezone: 'UTC', stateFile: file, now: () => now });
+  const context = {} as ToolCallContext;
+  const area = world.tools().find(tool => tool.name === 'terrarium_water_area')!;
+  try {
+    await world.start(host);
+    await expect(area.handler({ x1: 0, y1: 0, x2: 4, y2: 4 }, context)).rejects.toThrow('not claimed');
+    await expect(world.webUi().invoke!('garden', 'water', [{ x1: 0, y1: 0, x2: 4, y2: 4 }])).rejects.toThrow('not claimed');
+    await expect(readFile(file)).rejects.toMatchObject({ code: 'ENOENT' });
+    await world.stop();
+    const state = newState(start); state.plants[0].health = 10;
+    await saveState(file, state); now += 60_000;
+    await world.start(host);
+    const critical = events.filter(({ event }) => event.type === 'terrarium.plant' && event.text.includes('濒危'));
+    expect(critical).toHaveLength(1);
+    expect(critical[0]).toMatchObject({ event: { source: 'terrarium', origin: 'internal', senderKey: 'terrarium' }, options: { trigger: 'debounce' } });
+    await world.stop(); now += 60_000;
+    await world.start(host);
+    expect(events.filter(({ event }) => event.text.includes('濒危'))).toHaveLength(1);
+    await area.handler({ x1: 0, y1: 0, x2: 4, y2: 4 }, context);
+    expect((await loadState(file, now)).plants[0].healthWarning).toBe(true);
+  } finally { await world.stop(); await rm(dir, { recursive: true, force: true }); }
 });

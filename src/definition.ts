@@ -7,6 +7,7 @@ export const TERRARIUM: WorldDefinition<TerrariumConfigSection> = {
   create: ctx => new TerrariumWorld({ cfg: ctx.cfg, timezone: ctx.timezone, stateFile: `${ctx.dataDir}/terrarium/land/state.json`, waterStateFile: `${ctx.dataDir}/terrarium/water/state.json`, reportToken: ctx.secret('CORTICO_TERRARIUM_REPORT_TOKEN') }),
   describe: {
     tools: describeTools([...TERRARIUM_TOOL_DECLS, ...TERRARIUM_AQUATIC_TOOL_DECLS], {
+      terrarium_water_area: { zh: '给地箱内的矩形区域批量浇水，只保存上报一次。', en: 'Waters a land rectangle with one save and report.' },
       terrarium_feedback: { zh: '向服务端管理员提交意见反馈，不公开展示。', en: 'Sends private feedback to the service administrator.' },
       terrarium_sync: { zh: '立即完整上报指定生态箱，返回同步状态及错误。', en: 'Uploads a full snapshot and returns sync status and errors.' },
       terrarium_drop_food: { zh: '向地箱投放食物，供蚂蚁搬运储存。', en: 'Drops land food for ants to gather and store.' },
@@ -38,7 +39,7 @@ export const TERRARIUM: WorldDefinition<TerrariumConfigSection> = {
       { type: 'terrarium.announcement', description: { zh: '服务端向所有客户端或本客户端发布的外部公告。', en: 'An external service announcement for all clients or this client.' } },
       { type: 'terrarium.overtaken', description: { zh: '自己的地榜或水榜名次下降，附带关闭提醒的工具用法。', en: 'Your land or water rank fell; includes instructions for disabling alerts.' } },
       { type: 'terrarium.phase', description: { zh: '生态箱昼夜切换。', en: 'The terrarium changed between day and night.' } },
-      { type: 'terrarium.plant', description: { zh: '植物长出新阶段或土壤变干。', en: 'A plant reached a new growth stage or its soil became dry.' } },
+      { type: 'terrarium.plant', description: { zh: '植物长出新阶段、土壤变干或健康降至濒危。', en: 'A plant grew, its soil became dry, or its health became critical.' } },
       { type: 'terrarium.ecosystem', description: { zh: '种子发芽、陆生或水生生物死亡。', en: 'A seed sprouted or an organism died.' } },
       { type: 'terrarium.hunt', description: { zh: '虫子或鱼捕食了猎物。', en: 'A bug or fish hunted its prey.' } },
       { type: 'terrarium.birth', description: { zh: '幼虫出生或虫卵孵化。', en: 'Young bugs were born or eggs hatched.' } },

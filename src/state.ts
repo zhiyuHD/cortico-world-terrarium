@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { ensureQueen, enterNest, walkInside, validColony, TERRARIUM_NEST_ENTRANCE, TERRARIUM_NEST_STORAGE, TERRARIUM_NEST_NURSERY, type NestPosition } from './colony.ts';
-import { daylight, TERRARIUM_MAX_HISTORY, TERRARIUM_PLANT_REQUIREMENTS, type HistorySample, type PlantSpecies, type SoilCell } from './habitat.ts';
+import { daylight, TERRARIUM_MAX_HISTORY, TERRARIUM_PLANT_LOW_HEALTH, TERRARIUM_PLANT_RECOVERED_HEALTH, TERRARIUM_PLANT_REQUIREMENTS, type HistorySample, type PlantSpecies, type SoilCell } from './habitat.ts';
 
 import { captureFrame, TERRARIUM_MAX_REPLAYS, TERRARIUM_REPLAY_RETENTION_MS, type HuntReplay } from './replay.ts';
 
@@ -9,7 +9,7 @@ export type PlantId = string;
 export type ItemId = 'coin' | 'pebble';
 export type SeedSpecies = 'moss' | 'basil' | 'bean';
 export type BugSpecies = 'aphid' | 'beetle' | 'spider' | 'ant';
-export interface PlantState { id: PlantId; species: PlantSpecies; x: number; y: number; moisture: number; growthHours: number; stage: number; dry: boolean; health: number }
+export interface PlantState { id: PlantId; species: PlantSpecies; x: number; y: number; moisture: number; growthHours: number; stage: number; dry: boolean; health: number; healthWarning?: boolean }
 export interface SeedState { id: string; species: SeedSpecies; x: number; y: number; ageHours: number }
 export interface BugState { id: string; species: BugSpecies; x: number; y: number; ageHours: number; energy: number; carrying?: number; role?: 'queen' | 'worker'; inside?: NestPosition }
 export interface EggState { id: string; species: 'beetle' | 'spider' | 'ant'; x: number; y: number; laidAtMs: number; hatchesAtMs: number; inside?: NestPosition }
@@ -17,7 +17,7 @@ export interface NestState { id: string; x: number; y: number; depth: number; fo
 export interface LandFood { id: string; x: number; y: number; portions: number; droppedAtMs: number }
 export interface ItemState { id: ItemId; x: number; y: number }
 export interface TerrariumState { version: 3; name?: string; eggs?: EggState[]; nests?: NestState[]; food?: LandFood[]; replays?: HuntReplay[]; soil: SoilCell[]; history: HistorySample[]; updatedAtMs: number; nextId: number; plants: PlantState[]; seeds: SeedState[]; bugs: BugState[]; items: ItemState[] }
-export interface Change { kind: 'stage' | 'dry' | 'phase' | 'sprout' | 'hunt' | 'death' | 'birth' | 'hungry' | 'egg' | 'nest'; text: string }
+export interface Change { kind: 'stage' | 'dry' | 'health' | 'phase' | 'sprout' | 'hunt' | 'death' | 'birth' | 'hungry' | 'egg' | 'nest'; text: string }
 
 export const TERRARIUM_MAX_NAME_LENGTH = 64;
 
@@ -324,7 +324,14 @@ export function advance(state: TerrariumState, nowMs: number, timezone: string):
       state.bugs.push(child);
       changes.push({ kind: 'birth', text: `${egg.id} 孵化为幼虫 ${child.id}（${child.species}），位置 (${child.x},${child.y})。` });
     }
-    for (const plant of [...state.plants]) if (plant.health <= 0) { state.plants.splice(state.plants.indexOf(plant), 1); changes.push({ kind: 'death', text: `${plant.id} 枯死了。` }); }
+    for (const plant of [...state.plants]) {
+      if (plant.health <= 0) { state.plants.splice(state.plants.indexOf(plant), 1); changes.push({ kind: 'death', text: `${plant.id} 枯死了。` }); }
+      else if (plant.health <= TERRARIUM_PLANT_LOW_HEALTH && !plant.healthWarning) {
+        plant.healthWarning = true;
+        const needs = TERRARIUM_PLANT_REQUIREMENTS[plant.species];
+        changes.push({ kind: 'health', text: `${plant.id}（${plant.species}）濒危：健康 ${plant.health.toFixed(1)}/100，位置 (${plant.x},${plant.y})，土壤水分 ${plant.moisture.toFixed(1)}（适宜 ${needs.minMoisture}–${needs.maxMoisture}）。请检查水分和虫害；浇水恢复 5 健康，但水分过高也会损伤植物。` });
+      } else if (plant.health >= TERRARIUM_PLANT_RECOVERED_HEALTH) delete plant.healthWarning;
+    }
     if (hourlyStep) recordHistory(state, end);
   }
   if (state.replays) state.replays = state.replays.filter(replay => replay.recordedAtMs >= nowMs - TERRARIUM_REPLAY_RETENTION_MS);
@@ -348,8 +355,16 @@ export function waterSoil(state: TerrariumState, x: number, y: number): SoilCell
     plant.moisture = cell.moisture;
     plant.dry = plant.moisture < TERRARIUM_PLANT_REQUIREMENTS[plant.species].minMoisture;
     plant.health = Math.min(100, plant.health + 5);
+    if (plant.health >= TERRARIUM_PLANT_RECOVERED_HEALTH) delete plant.healthWarning;
   }
   return cell;
+}
+
+export function waterArea(state: TerrariumState, x1: number, y1: number, x2: number, y2: number): SoilCell[] {
+  if (!inGrid(x1, y1) || !inGrid(x2, y2) || x1 > x2 || y1 > y2) throw new Error('Area must be ordered corners within the 5×5 grid');
+  const cells: SoilCell[] = [];
+  for (let y = y1; y <= y2; y++) for (let x = x1; x <= x2; x++) cells.push(waterSoil(state, x, y));
+  return cells;
 }
 
 export function move(state: TerrariumState, id: ItemId, x: number, y: number): ItemState {
@@ -433,7 +448,7 @@ export function validState(value: unknown): value is TerrariumState {
   const state = value as Partial<TerrariumState>;
   return state.version === 3 && (state.name === undefined || validName(state.name)) && validHabitat(state) && validReplays(state) && Number.isFinite(state.updatedAtMs) && Number.isSafeInteger(state.nextId) && state.nextId! >= 1 &&
     Array.isArray(state.plants) && state.plants.length <= 12 &&
-    state.plants.every(p => p && typeof p.id === 'string' && p.id.length <= 32 && ['fern', 'clover', 'moss', 'basil', 'bean'].includes(p.species) && inGrid(p.x, p.y) && Number.isFinite(p.moisture) && p.moisture >= 0 && p.moisture <= 100 && Number.isFinite(p.growthHours) && p.growthHours >= 0 && Number.isInteger(p.stage) && p.stage >= 0 && p.stage <= 3 && typeof p.dry === 'boolean' && Number.isFinite(p.health) && p.health >= 0 && p.health <= 100) &&
+    state.plants.every(p => p && typeof p.id === 'string' && p.id.length <= 32 && ['fern', 'clover', 'moss', 'basil', 'bean'].includes(p.species) && inGrid(p.x, p.y) && Number.isFinite(p.moisture) && p.moisture >= 0 && p.moisture <= 100 && Number.isFinite(p.growthHours) && p.growthHours >= 0 && Number.isInteger(p.stage) && p.stage >= 0 && p.stage <= 3 && typeof p.dry === 'boolean' && Number.isFinite(p.health) && p.health >= 0 && p.health <= 100 && (p.healthWarning === undefined || typeof p.healthWarning === 'boolean')) &&
     Array.isArray(state.seeds) && state.seeds.length <= 12 && state.plants.length + state.seeds.length <= 12 && state.seeds.every(s => s && typeof s.id === 'string' && ['moss', 'basil', 'bean'].includes(s.species) && inGrid(s.x, s.y) && Number.isFinite(s.ageHours) && s.ageHours >= 0) &&
     Array.isArray(state.bugs) && state.bugs.length <= 12 && state.bugs.every(b => b && typeof b.id === 'string' && ['aphid', 'beetle', 'spider', 'ant'].includes(b.species) && inGrid(b.x, b.y) && Number.isFinite(b.energy) && b.energy >= 0 && b.energy <= 100 && (b.carrying === undefined || (b.species === 'ant' && Number.isInteger(b.carrying) && b.carrying >= 0 && b.carrying <= 5)) && Number.isFinite(b.ageHours) && b.ageHours >= 0) &&
     (state.eggs === undefined || (Array.isArray(state.eggs) && state.eggs.length <= 12 && state.eggs.every(egg => egg && typeof egg.id === 'string' && egg.id.length <= 32 && ['beetle', 'spider', 'ant'].includes(egg.species) && inGrid(egg.x, egg.y) && Number.isFinite(egg.laidAtMs) && egg.laidAtMs <= state.updatedAtMs! && Number.isFinite(egg.hatchesAtMs) && egg.hatchesAtMs > egg.laidAtMs && egg.hatchesAtMs <= egg.laidAtMs + 6 * HOUR_MS))) &&

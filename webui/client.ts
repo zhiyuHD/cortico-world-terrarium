@@ -1,3 +1,4 @@
+import { createWateringControls } from './watering.ts';
 import { createFeedbackControls } from './feedback.ts';
 import { createSyncControls } from './sync.ts';
 import type { TerrariumSyncStatus } from '../src/leaderboard.ts';
@@ -6,14 +7,14 @@ import type { HuntReplay } from '../src/replay.ts';
 import type { WebUiClientBundle, WebUiPanelContext } from 'cortico/web/shared/client-panel.ts';
 import { pick } from 'cortico/core/language.ts';
 import { createScene, createReplayControls, type SceneState } from './scene.ts';
-import { daylight, TERRARIUM_PLANT_REQUIREMENTS, type HistorySample, type PlantSpecies, type SoilCell } from '../src/habitat.ts';
+import { daylight, TERRARIUM_PLANT_LOW_HEALTH, TERRARIUM_PLANT_REQUIREMENTS, type HistorySample, type PlantSpecies, type SoilCell } from '../src/habitat.ts';
 import { drawHistory } from './history.ts';
 import './style.css';
 
 function mount(ctx: WebUiPanelContext): void {
   const copy = pick(ctx.language, {
-    zh: { loading: '读取中', refresh: '刷新', day: '白天', night: '夜晚', fern: '蕨草', clover: '三叶草', stage: '阶段', moisture: '水分', dry: '土壤变干', scene: '的生态箱', seed: '种子', bug: '虫子', egg: '卵', nest: '蚁巢', food: '储粮', depth: '层', light: '当前光照', soil: '土壤水分', history: '小时历史 · 最近七天', health: '健康', empty: '等待第二个小时样本', needs: '生长条件（水分 / 白天光照）', plot: '格子' },
-    en: { loading: 'Loading', refresh: 'Refresh', day: 'Day', night: 'Night', fern: 'Fern', clover: 'Clover', stage: 'stage', moisture: 'moisture', dry: 'dry soil', scene: ' terrarium', seed: 'seeds', bug: 'bugs', egg: 'eggs', nest: 'ant nest', food: 'stored food', depth: 'levels', light: 'Current light', soil: 'Soil moisture', history: 'Hourly history · Last seven days', health: 'Health', empty: 'Waiting for a second hourly sample', needs: 'Growth conditions (moisture / daylight)', plot: 'Cell' },
+    zh: { loading: '读取中', refresh: '刷新', day: '白天', night: '夜晚', fern: '蕨草', clover: '三叶草', stage: '阶段', moisture: '水分', dry: '土壤变干', scene: '的生态箱', seed: '种子', bug: '虫子', egg: '卵', nest: '蚁巢', food: '储粮', depth: '层', light: '当前光照', soil: '土壤水分', history: '小时历史 · 最近七天', health: '健康', empty: '等待第二个小时样本', needs: '生长条件（水分 / 白天光照）', plot: '格子', critical: '濒危' },
+    en: { loading: 'Loading', refresh: 'Refresh', day: 'Day', night: 'Night', fern: 'Fern', clover: 'Clover', stage: 'stage', moisture: 'moisture', dry: 'dry soil', scene: ' terrarium', seed: 'seeds', bug: 'bugs', egg: 'eggs', nest: 'ant nest', food: 'stored food', depth: 'levels', light: 'Current light', soil: 'Soil moisture', history: 'Hourly history · Last seven days', health: 'Health', empty: 'Waiting for a second hourly sample', needs: 'Growth conditions (moisture / daylight)', plot: 'Cell', critical: 'Critical' },
   });
   const card = ctx.ui.sheet({ title: '生态箱·地', en: 'Terrarium · Land' });
   const name = ctx.ui.h('h2', '');
@@ -34,7 +35,8 @@ function mount(ctx: WebUiPanelContext): void {
   const grid = ctx.ui.h('div', 'terrarium-grid');
   const cellStatus = ctx.ui.h('div', 'terrarium-cell-status');
   const requirements = ctx.ui.h('div', 'terrarium-requirements');
-  habitat.append(grid, cellStatus, requirements);
+  const watering = createWateringControls(ctx, () => load());
+  habitat.append(grid, cellStatus, watering.el, requirements);
   const historyTitle = ctx.ui.h('h3', '', copy.history);
   const select = document.createElement('select');
   select.className = 'terrarium-select';
@@ -47,6 +49,7 @@ function mount(ctx: WebUiPanelContext): void {
     const plant = current.plants.find(plant => plant.id === selected);
     const index = selected.startsWith('soil:') ? Number(selected.slice(5)) : plant ? plant.y * 5 + plant.x : -1;
     const cell = current.soil[index];
+    watering.update(true, cell);
     cellStatus.textContent = cell ? `(${cell.x},${cell.y}) · ${copy.moisture} ${cell.moisture.toFixed(1)} · ${copy.light} ${(current.phase === 'day' ? daylight(current, cell.x, cell.y) : 0).toFixed(2)}` : '';
     grid.querySelectorAll('button').forEach((button, i) => { button.setAttribute('aria-pressed', String(i === index)); });
     chart.replaceChildren(drawHistory(current.history, selected, copy, ctx.language));
@@ -59,6 +62,7 @@ function mount(ctx: WebUiPanelContext): void {
       const response = await ctx.invoke<{ sync: TerrariumSyncStatus; claimed: boolean; id?: string; state?: SceneState & { name?: string; replays?: HuntReplay[]; soil: SoilCell[]; history: HistorySample[] } }>('state');
       if (ctx.signal.aborted) return;
       sync.update(response.sync, response.claimed);
+      watering.update(response.claimed);
       const state = response.state;
       for (const el of [canvas, replayContainer, details, habitat, historyTitle, select, chart]) el.hidden = !response.claimed;
       if (!response.claimed || !state) { status.textContent = pick(ctx.language, { zh: '未认领', en: 'Unclaimed' }); return; }
@@ -96,8 +100,8 @@ function mount(ctx: WebUiPanelContext): void {
       select.value = selected;
       requirements.replaceChildren(ctx.ui.h('div', '', copy.needs), ...Object.entries(TERRARIUM_PLANT_REQUIREMENTS).map(([species, needs]) => ctx.ui.h('div', '', `${species}: ${needs.minMoisture}–${needs.maxMoisture} / ${needs.minLight}–${needs.maxLight}`)));
       renderHistory();
-      details.replaceChildren(...state.plants.map(plant => ctx.ui.h('div', 'terrarium-plant',
-        `${plant.id === 'fern' ? copy.fern : plant.id === 'clover' ? copy.clover : plant.species} · ${copy.stage} ${plant.stage} · ${copy.moisture} ${Math.round(plant.moisture)} · HP ${Math.round(plant.health)}${plant.dry ? ` · ${copy.dry}` : ''}`)), ctx.ui.h('div', 'terrarium-plant', `${copy.seed} ${state.seeds?.length ?? 0} · ${copy.bug} ${state.bugs?.length ?? 0} · ${copy.egg} ${state.eggs?.length ?? 0}`), ...((state.nests ?? []).map(nest => ctx.ui.h('div', 'terrarium-plant', `${copy.nest} ${nest.id} (${nest.x},${nest.y}) · ${nest.depth} ${copy.depth} · ${copy.food} ${nest.food}/${nest.depth * 20}`))));
+      details.replaceChildren(...state.plants.map(plant => ctx.ui.h('div', plant.health <= TERRARIUM_PLANT_LOW_HEALTH ? 'terrarium-plant terrarium-plant-critical' : 'terrarium-plant',
+        `${plant.id === 'fern' ? copy.fern : plant.id === 'clover' ? copy.clover : plant.species} · ${copy.stage} ${plant.stage} · ${copy.moisture} ${Math.round(plant.moisture)} · HP ${Math.round(plant.health)}${plant.health <= TERRARIUM_PLANT_LOW_HEALTH ? ` · ${copy.critical}` : ''}${plant.dry ? ` · ${copy.dry}` : ''}`)), ctx.ui.h('div', 'terrarium-plant', `${copy.seed} ${state.seeds?.length ?? 0} · ${copy.bug} ${state.bugs?.length ?? 0} · ${copy.egg} ${state.eggs?.length ?? 0}`), ...((state.nests ?? []).map(nest => ctx.ui.h('div', 'terrarium-plant', `${copy.nest} ${nest.id} (${nest.x},${nest.y}) · ${nest.depth} ${copy.depth} · ${copy.food} ${nest.food}/${nest.depth * 20}`))));
     } catch (error) { if (!ctx.signal.aborted) status.textContent = error instanceof Error ? error.message : String(error); }
   };
   void load();

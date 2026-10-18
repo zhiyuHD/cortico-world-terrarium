@@ -1,6 +1,8 @@
 export type PlantSpecies = 'fern' | 'clover' | 'moss' | 'basil' | 'bean';
 export interface PlantRequirements { minMoisture: number; maxMoisture: number; minLight: number; maxLight: number }
 export interface SoilCell { x: number; y: number; moisture: number }
+export const TERRARIUM_PLANT_LOW_HEALTH = 20;
+export const TERRARIUM_PLANT_RECOVERED_HEALTH = 35;
 export interface Habitat { items: ReadonlyArray<{ id: string; x: number; y: number }> }
 
 /** Simulation conditions, expressed as soil moisture (0–100) and daylight (0–1). */

@@ -9,7 +9,7 @@ import type { ToolDef, World, WorldHost, WorldWebUiDecl } from 'cortico/core/typ
 import { daylight, TERRARIUM_MAX_HISTORY, TERRARIUM_PLANT_REQUIREMENTS } from './habitat.ts';
 import { nowIso } from 'cortico/core/util.ts';
 import { TERRARIUM_CONFIG_GROUP, type TerrariumConfigSection } from './config.ts';
-import { TERRARIUM_ANT_ACTION_INTERVAL_MS, TERRARIUM_MAX_NAME_LENGTH, renameBox, dropLandFood, newState, migrateState, advance, feedBug, move, phase, releaseBug, relocateBug, removeOrganism, saveState, sow, water, waterSoil, type BugSpecies, type ItemId, type SeedSpecies, type TerrariumState } from './state.ts';
+import { TERRARIUM_ANT_ACTION_INTERVAL_MS, TERRARIUM_MAX_NAME_LENGTH, renameBox, dropLandFood, newState, migrateState, advance, feedBug, move, phase, releaseBug, relocateBug, removeOrganism, saveState, sow, water, waterSoil, waterArea, type BugSpecies, type ItemId, type SeedSpecies, type TerrariumState } from './state.ts';
 
 import { TERRARIUM_MAX_REPLAYS } from './replay.ts';
 
@@ -32,6 +32,7 @@ export const TERRARIUM_TOOL_DECLS: ReadonlyArray<Omit<ToolDef, 'handler'>> = [
   { name: 'terrarium_leaderboard', description: 'Read the public land or water ranking, default land. Returns the top limit boxes (default 20, maximum 100), names, scores, score parts and last report times, plus your box rank even outside that limit. Reading requires no claim or token and never registers a box. Rankings use last uploaded states; land and water are separate.', tags: ['read'], parameters: { type: 'object', additionalProperties: false, properties: { habitat: { type: 'string', enum: ['land', 'water'] }, limit: { type: 'integer', minimum: 1, maximum: 100 } } } },
   { name: 'terrarium_set_rank_alerts', description: 'Enable or disable rank-drop events for your land or water box, default land. Alerts default to enabled, persist across restarts and include instructions for disabling them. Re-enabling starts a fresh baseline without alerts for changes while disabled. This tool never claims a box or changes reporting.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { habitat: { type: 'string', enum: ['land', 'water'] }, enabled: { type: 'boolean' } }, required: ['enabled'] } },
   { name: 'terrarium_drop_food', description: 'Drop 1..10 portions of land food at x,y for ants to collect and carry to their nest. At most 20 piles; food outside the nest expires after 48 hours. Ants can also gather from plants, costing one plant health per portion. Nest storage holds 20 portions per depth level, up to five levels.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 }, portions: { type: 'integer', minimum: 1, maximum: 10 } }, required: ['x', 'y', 'portions'] } },
+  { name: 'terrarium_water_area', description: 'Water an inclusive rectangle of land cells from top-left (x1,y1) to bottom-right (x2,y2), coordinates 0..4. Each cell gains 35 moisture capped at 100 and each plant gains 5 health once. Includes seed and empty plots; saves and reports once. Use (0,0)-(4,4) for all 25 cells. Check species moisture ranges first: excess water damages plants.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { x1: { type: 'integer', minimum: 0, maximum: 4 }, y1: { type: 'integer', minimum: 0, maximum: 4 }, x2: { type: 'integer', minimum: 0, maximum: 4 }, y2: { type: 'integer', minimum: 0, maximum: 4 } }, required: ['x1', 'y1', 'x2', 'y2'] } },
 ];
 
 const SYNC_TOOL: Omit<ToolDef, 'handler'> = { name: 'terrarium_sync', description: 'Immediately upload a full snapshot of your claimed land or water box, default land. Returns sync status, last server acknowledgement time and any upload error. Does not claim a box, change credentials, or enable reporting when disabled. Sync status is local transport metadata; server error text is external data.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { habitat: { type: 'string', enum: ['land', 'water'] } } } };
@@ -83,9 +84,13 @@ export class TerrariumWorld implements World {
     return {
       panels: [{ id: 'garden', title: '生态箱·地' }, { id: 'water', title: '生态箱·水' }],
       invoke: async (panel, method, args) => {
-        if (!['garden', 'water'].includes(panel) || !['state', 'sync', 'feedback'].includes(method)) throw new Error('Unknown terrarium panel method');
+        if (!['garden', 'water'].includes(panel) || !['state', 'sync', 'feedback', 'water'].includes(method) || (method === 'water' && panel !== 'garden')) throw new Error('Unknown terrarium panel method');
         return this.serial(async () => {
           const habitat = panel === 'water' ? 'water' : 'land';
+          if (method === 'water') {
+            await this.waterRectangle(args[0]);
+            return this.view('land');
+          }
           if (method === 'feedback') {
             if (!this.host) throw new Error('Terrarium is not running');
             return (habitat === 'land' ? this.leaderboard : this.waterLeaderboard).feedback(args[0], 'world');
@@ -102,6 +107,7 @@ export class TerrariumWorld implements World {
 
   tools(): ToolDef[] {
     return [
+      { ...TERRARIUM_TOOL_DECLS[14], handler: async args => this.serial(async () => JSON.stringify(await this.waterRectangle(args))) },
       { ...TERRARIUM_TOOL_DECLS[13], handler: async args => this.serial(async () => {
         await this.update();
         const food = dropLandFood(this.current(), Number(args.x), Number(args.y), Number(args.portions));
@@ -292,6 +298,16 @@ export class TerrariumWorld implements World {
     if (!status.claimed) return { ...status, claimed: false as const };
     return { ...status, claimed: true as const, state: habitat === 'land' ? this.snapshot() : { ...structuredClone(this.currentWater()), habitat: 'water' as const, phase: phase(this.now(), this.opts.timezone) } };
   }
+  private async waterRectangle(value: unknown) {
+    if (!value || typeof value !== 'object') throw new Error('Supply rectangle coordinates');
+    const { x1, y1, x2, y2 } = value as Record<string, number>;
+    if (![x1, y1, x2, y2].every(n => Number.isInteger(n) && n >= 0 && n <= 4) || x1 > x2 || y1 > y2) throw new Error('Area must be ordered corners within the 5×5 grid');
+    await this.update();
+    const soil = waterArea(this.current(), x1, y1, x2, y2);
+    await this.persist();
+    return { soil };
+  }
+
   private async reportNow(habitat: 'land' | 'water'): Promise<void> {
     await this.update();
     const state = habitat === 'land' ? this.current() : this.currentWater();
@@ -404,7 +420,7 @@ export class TerrariumWorld implements World {
       const host = this.host;
       if (!host) return;
       for (const change of changes) await host.pushEvent({
-        type: change.kind === 'egg' ? 'terrarium.egg' : change.kind === 'nest' ? 'terrarium.nest' : change.kind === 'phase' ? 'terrarium.phase' : change.kind === 'stage' || change.kind === 'dry' ? 'terrarium.plant' : change.kind === 'hunt' ? 'terrarium.hunt' : change.kind === 'birth' ? 'terrarium.birth' : change.kind === 'hungry' ? 'terrarium.hungry' : 'terrarium.ecosystem',
+        type: change.kind === 'egg' ? 'terrarium.egg' : change.kind === 'nest' ? 'terrarium.nest' : change.kind === 'phase' ? 'terrarium.phase' : change.kind === 'stage' || change.kind === 'dry' || change.kind === 'health' ? 'terrarium.plant' : change.kind === 'hunt' ? 'terrarium.hunt' : change.kind === 'birth' ? 'terrarium.birth' : change.kind === 'hungry' ? 'terrarium.hungry' : 'terrarium.ecosystem',
         source: this.id, senderKey: this.id, origin: 'internal', ts: nowIso(this.opts.timezone), text: `生态箱·地：${change.text}`,
       }, { trigger: change.kind === 'phase' ? 'piggyback' : 'debounce' });
     }

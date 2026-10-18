@@ -2,6 +2,12 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.7.8
+
+- Add terrarium_water_area for inclusive rectangles, saving and reporting the whole operation once; the land panel can water the selected neighborhood or all 25 cells.
+- Emit plant warnings at 20 health or below, including plants already critical in older saves and damage from pests. Persist warning deduplication and rearm after recovery to 35 health.
+- Mark critical plants in the land panel and retain existing soil, evaporation, credentials and box state.
+
 ## 0.7.7
 
 - Add private feedback forms to the public gallery and both World panels, with animated disclosure, submission receipts and retained text on failure.

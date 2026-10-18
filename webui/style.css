@@ -34,3 +34,14 @@
 .terrarium-feedback p { margin: 0; font-size: .85rem; overflow-wrap: anywhere; }
 @keyframes terrarium-feedback-in { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .terrarium-feedback-panel { animation: none; } .terrarium-feedback textarea, .terrarium-feedback input { transition: none; } }
+
+.terrarium-watering { display: flex; flex-direction: column; gap: 8px; flex-basis: 100%; }
+.terrarium-watering[hidden] { display: none; }
+.terrarium-watering-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.terrarium-watering-buttons button { transition: transform 160ms ease, box-shadow 160ms ease; }
+.terrarium-watering-buttons button:not(:disabled):hover { transform: translateY(-2px); box-shadow: 0 4px 12px #18313b20; }
+.terrarium-watering-buttons button:not(:disabled):active { transform: translateY(0); }
+.terrarium-watering-hint { font-size: 12px; opacity: .8; }
+.terrarium-watering-status { min-height: 1.5em; }
+.terrarium-plant-critical { border-inline-start: 3px solid #cc6045; padding-inline-start: 8px; color: var(--danger, #a43724); }
+@media (prefers-reduced-motion: reduce) { .terrarium-watering-buttons button { transition: none; } .terrarium-watering-buttons button:not(:disabled):hover { transform: none; } }
