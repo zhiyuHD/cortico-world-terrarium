@@ -50,8 +50,9 @@ it('records the same hunt times during frequent polling and offline catch-up', (
 
 it('bounds persisted replays, rejects corrupt scene data and expires old hunts', async () => {
   const state = newState(start);
-  releaseBug(state, 'spider', 4, 0);
+  const hunter = releaseBug(state, 'spider', 4, 0);
   for (let i = 1; i <= TERRARIUM_MAX_REPLAYS + 4; i++) {
+    hunter.energy = 60;
     releaseBug(state, 'aphid', 4, 0);
     advance(state, start + i * TERRARIUM_BUG_ACTION_INTERVAL_MS, 'Asia/Shanghai');
   }

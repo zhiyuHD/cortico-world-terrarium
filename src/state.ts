@@ -35,6 +35,8 @@ export function renameBox(state: Pick<TerrariumState, 'name'>, name: unknown): s
 const STAGES = [0, 2, 6, 12];
 export const TERRARIUM_BUG_ACTION_INTERVAL_MS = 60_000;
 export const TERRARIUM_ANT_ACTION_INTERVAL_MS = 10_000;
+export const TERRARIUM_PREDATOR_SENSE_RADIUS = 2;
+export const TERRARIUM_PREDATOR_SATIATED_ENERGY = 80;
 const HOUR_MS = 60 * 60_000;
 const MAX_CATCHUP_MS = 30 * 24 * HOUR_MS;
 
@@ -167,14 +169,27 @@ function actAnt(state: TerrariumState, bug: BugState, changes: Change[], damage:
 }
 
 function actBug(state: TerrariumState, bug: BugState, changes: Change[], recordedAtMs: number, currentPhase: 'day' | 'night', damage: PlantDamage): void {
+  const predator = bug.species !== 'aphid';
+  const atEntrance = (position: { x: number; y: number }): boolean => (state.nests ?? []).some(nest => nest.x === position.x && nest.y === position.y);
+  const step = (dx: number, dy: number): boolean => {
+    const next = { x: bug.x + dx, y: bug.y + dy };
+    if ((!dx && !dy) || !inGrid(next.x, next.y) || (predator && atEntrance(next))) return false;
+    bug.x = next.x; bug.y = next.y; return true;
+  };
+  if (predator && atEntrance(bug)) {
+    for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) if (step(dx, dy)) break;
+    return;
+  }
+  if (predator && bug.energy >= TERRARIUM_PREDATOR_SATIATED_ENERGY) return;
   const targets = bug.species === 'aphid' ? state.plants : state.bugs.filter(other =>
-    other.id !== bug.id && !other.inside && (bug.species === 'spider' ? other.species !== 'spider' : other.species === 'aphid'));
+    other.id !== bug.id && !other.inside && !atEntrance(other) &&
+    Math.abs(other.x - bug.x) + Math.abs(other.y - bug.y) <= TERRARIUM_PREDATOR_SENSE_RADIUS &&
+    (bug.species === 'spider' ? other.species !== 'spider' : other.species === 'aphid'));
   const target = [...targets].sort((a, b) =>
     Math.abs(a.x - bug.x) + Math.abs(a.y - bug.y) - Math.abs(b.x - bug.x) - Math.abs(b.y - bug.y) || a.id.localeCompare(b.id))[0];
   if (target) {
     const before = bug.species !== 'aphid' && Math.abs(bug.x - target.x) + Math.abs(bug.y - target.y) <= 1 ? captureFrame(state, currentPhase) : undefined;
-    if (bug.x !== target.x) bug.x += Math.sign(target.x - bug.x);
-    else if (bug.y !== target.y) bug.y += Math.sign(target.y - bug.y);
+    if (!step(Math.sign(target.x - bug.x), 0)) step(0, Math.sign(target.y - bug.y));
     if (bug.x === target.x && bug.y === target.y) {
       if (bug.species === 'aphid') { damage(target as PlantState, 3, '蚜虫取食'); bug.energy = Math.min(100, bug.energy + 5); }
       else {
@@ -188,8 +203,10 @@ function actBug(state: TerrariumState, bug: BugState, changes: Change[], recorde
     }
   } else {
     const direction = (Math.floor(bug.ageHours) + Number(bug.id.split('-')[1])) % 4;
-    bug.x = Math.max(0, Math.min(4, bug.x + [1, 0, -1, 0][direction]));
-    bug.y = Math.max(0, Math.min(4, bug.y + [0, 1, 0, -1][direction]));
+    for (let offset = 0; offset < (predator ? 4 : 1); offset++) {
+      const next = (direction + offset) % 4;
+      if (step([1, 0, -1, 0][next], [0, 1, 0, -1][next])) break;
+    }
   }
 }
 

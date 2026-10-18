@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { advance, feedBug, loadState, move, newState, phase, releaseBug, relocateBug, removeOrganism, saveState, sow, water, waterSoil, waterArea, renameBox, TERRARIUM_MAX_NAME_LENGTH, TERRARIUM_ANT_ACTION_INTERVAL_MS, TERRARIUM_BUG_ACTION_INTERVAL_MS } from '../src/state.ts';
+import { advance, feedBug, loadState, move, newState, phase, releaseBug, relocateBug, removeOrganism, saveState, sow, water, waterSoil, waterArea, renameBox, validState, TERRARIUM_PREDATOR_SENSE_RADIUS, TERRARIUM_PREDATOR_SATIATED_ENERGY, TERRARIUM_MAX_NAME_LENGTH, TERRARIUM_ANT_ACTION_INTERVAL_MS, TERRARIUM_BUG_ACTION_INTERVAL_MS } from '../src/state.ts';
 
 const dirs: string[] = [];
 afterEach(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
@@ -500,4 +500,84 @@ it('attributes plant harvesting to worker ants', () => {
   const warnings = advance(state, TERRARIUM_ANT_ACTION_INTERVAL_MS, 'UTC').filter(change => change.kind === 'health');
   expect(warnings).toHaveLength(1);
   expect(warnings[0].text).toContain('蚂蚁采集 -1.00');
+});
+
+it('keeps hatched workers safe at the entrance and moves a camping spider away during catch-up and polling', () => {
+  const start = Date.parse('2026-06-01T00:00:00Z');
+  const state = newState(start); state.plants = [];
+  state.nests = [{ id: 'nest-refuge', x: 0, y: 0, depth: 5, food: 0 }];
+  const queen = releaseBug(state, 'ant', 0, 0);
+  queen.role = 'queen'; queen.inside = { nestId: 'nest-refuge', x: 2, y: 2 };
+  const spider = releaseBug(state, 'spider', 0, 0);
+  spider.energy = TERRARIUM_PREDATOR_SATIATED_ENERGY + 1;
+  state.eggs = [{ id: 'egg-refuge', species: 'ant', x: 0, y: 0, laidAtMs: start - 6 * 3600000, hatchesAtMs: start + TERRARIUM_ANT_ACTION_INTERVAL_MS, inside: { nestId: 'nest-refuge', x: 2, y: 2 } }];
+  const polled = structuredClone(state);
+  const end = start + 5 * TERRARIUM_BUG_ACTION_INTERVAL_MS;
+  const changes = advance(state, end, 'UTC');
+  for (let now = start + TERRARIUM_ANT_ACTION_INTERVAL_MS; now <= end; now += TERRARIUM_ANT_ACTION_INTERVAL_MS) advance(polled, now, 'UTC');
+  expect(changes.some(change => change.kind === 'birth')).toBe(true);
+  expect(changes.some(change => change.kind === 'hunt')).toBe(false);
+  const worker = state.bugs.find(bug => bug.role === 'worker')!;
+  expect(worker).toMatchObject({ species: 'ant', x: 0, y: 0 });
+  expect(worker.inside).toBeUndefined();
+  expect({ x: spider.x, y: spider.y }).not.toEqual({ x: 0, y: 0 });
+  expect(polled.bugs).toEqual(state.bugs);
+  expect(validState(state)).toBe(true);
+});
+
+it('still lets a hungry spider hunt a worker away from the entrance and records the replay', () => {
+  const state = newState(0); state.plants = [];
+  state.nests = [{ id: 'nest-refuge', x: 0, y: 0, depth: 5, food: 0 }];
+  const spider = releaseBug(state, 'spider', 1, 0);
+  const queen = releaseBug(state, 'ant', 0, 0);
+  queen.role = 'queen'; queen.inside = { nestId: 'nest-refuge', x: 2, y: 2 };
+  const worker = releaseBug(state, 'ant', 2, 0); worker.role = 'worker';
+  const changes = advance(state, TERRARIUM_BUG_ACTION_INTERVAL_MS, 'UTC');
+  expect(changes.filter(change => change.kind === 'hunt')).toHaveLength(1);
+  expect(state.bugs.some(bug => bug.id === worker.id)).toBe(false);
+  expect(state.replays?.[0]).toMatchObject({ hunterId: spider.id, preyId: worker.id });
+  expect(validState(state)).toBe(true);
+});
+
+it.each(['beetle', 'spider'] as const)('lets a satiated %s rest and resume hunting after energy drains', species => {
+  const state = newState(0);
+  const hunter = releaseBug(state, species, 4, 0);
+  hunter.energy = TERRARIUM_PREDATOR_SATIATED_ENERGY + 1;
+  const prey = releaseBug(state, 'aphid', 4, 0);
+  expect(advance(state, TERRARIUM_BUG_ACTION_INTERVAL_MS, 'UTC').some(change => change.kind === 'hunt')).toBe(false);
+  expect(state.bugs.some(bug => bug.id === prey.id)).toBe(true);
+  expect(advance(state, 3600000, 'UTC').some(change => change.kind === 'hunt')).toBe(true);
+  expect(state.bugs.some(bug => bug.id === prey.id)).toBe(false);
+});
+
+it('does not kill another nearby bug immediately after feeding', () => {
+  const state = newState(0);
+  releaseBug(state, 'spider', 4, 0);
+  releaseBug(state, 'aphid', 4, 0); releaseBug(state, 'aphid', 4, 0);
+  const changes = advance(state, 2 * TERRARIUM_BUG_ACTION_INTERVAL_MS, 'UTC');
+  expect(changes.filter(change => change.kind === 'hunt')).toHaveLength(1);
+  expect(state.bugs.filter(bug => bug.species === 'aphid')).toHaveLength(1);
+});
+
+it('patrols without chasing distant prey and hunts when prey enters sensing range', () => {
+  const state = newState(0);
+  const hunter = releaseBug(state, 'spider', 0, 0);
+  const prey = releaseBug(state, 'aphid', 4, 0);
+  expect(Math.abs(hunter.x - prey.x) + Math.abs(hunter.y - prey.y)).toBeGreaterThan(TERRARIUM_PREDATOR_SENSE_RADIUS);
+  advance(state, TERRARIUM_BUG_ACTION_INTERVAL_MS, 'UTC');
+  expect(hunter).toMatchObject({ x: 0, y: 1 });
+  expect(state.bugs.some(bug => bug.id === prey.id)).toBe(true);
+  relocateBug(state, prey.id, hunter.x, hunter.y);
+  const changes = advance(state, 2 * TERRARIUM_BUG_ACTION_INTERVAL_MS, 'UTC');
+  expect(changes.some(change => change.kind === 'hunt')).toBe(true);
+});
+
+it.each(['beetle', 'spider'] as const)('prevents a %s from stepping into a nest entrance', species => {
+  const state = newState(0); state.plants = [];
+  const hunter = releaseBug(state, species, 0, 1);
+  releaseBug(state, 'aphid', 2, 1);
+  state.nests = [{ id: 'nest-refuge', x: 1, y: 1, depth: 1, food: 0 }];
+  advance(state, TERRARIUM_BUG_ACTION_INTERVAL_MS, 'UTC');
+  expect(hunter).toMatchObject({ x: 0, y: 1 });
+  expect(state.replays ?? []).toHaveLength(0);
 });

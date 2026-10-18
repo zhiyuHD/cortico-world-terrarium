@@ -2,6 +2,11 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.7.11
+
+- Limit beetle and spider prey sensing to two Manhattan steps and pause movement and hunting at 80 energy or above.
+- Shelter organisms at nest entrances; move existing surface predators away before they resume activity. Workers remain vulnerable while foraging.
+
 ## 0.7.10
 
 - Include the Coopanion application version in full, incremental and HTTP reports when launched by Coopanion; validate and persist it with the box entry.
