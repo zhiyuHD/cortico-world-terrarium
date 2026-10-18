@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { RankAlerts } from './rank-alerts.ts';
 import { LeaderboardClient } from './leaderboard.ts';
 import type { ToolDef, World, WorldHost, WorldWebUiDecl } from 'cortico/core/types.ts';
-import { daylight, TERRARIUM_MAX_HISTORY, TERRARIUM_PLANT_REQUIREMENTS } from './habitat.ts';
+import { daylight, wateringReport, TERRARIUM_MAX_HISTORY, TERRARIUM_PLANT_REQUIREMENTS } from './habitat.ts';
 import { nowIso } from 'cortico/core/util.ts';
 import { TERRARIUM_CONFIG_GROUP, type TerrariumConfigSection } from './config.ts';
 import { TERRARIUM_ANT_ACTION_INTERVAL_MS, TERRARIUM_MAX_NAME_LENGTH, renameBox, dropLandFood, newState, migrateState, advance, feedBug, move, phase, releaseBug, relocateBug, removeOrganism, saveState, sow, water, waterSoil, waterArea, type BugSpecies, type ItemId, type SeedSpecies, type TerrariumState } from './state.ts';
@@ -19,7 +19,7 @@ const ENV_PROMPT_FILE = fileURLToPath(new URL('./ENV_PROMPT.md', import.meta.url
 
 export const TERRARIUM_TOOL_DECLS: ReadonlyArray<Omit<ToolDef, 'handler'>> = [
   { name: 'terrarium_inspect', description: 'Without habitat, list claimed/unclaimed land and water boxes with their server IDs and names. Supply habitat to inspect that box: land has soil, light, plants, bugs and colonies (4x4 cells, resident ants/eggs, queen and stored food); water has oxygen, cleanliness, fish, aquatic plants and food. Inspection never claims a box.', tags: ['read'], parameters: { type: 'object', additionalProperties: false, properties: { habitat: { type: 'string', enum: ['land', 'water'] } } } },
-  { name: 'terrarium_water', description: 'Water soil by plant id OR x and y, including seed and empty plots. Adds 35 moisture points up to 100. Water diffuses to adjacent cells over time.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { plant: { type: 'string' }, x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 } }, oneOf: [{ required: ['plant'], not: { anyOf: [{ required: ['x'] }, { required: ['y'] }] } }, { required: ['x', 'y'], not: { required: ['plant'] } }] } },
+  { name: 'terrarium_water', description: 'Water soil by plant id OR x and y, including seed and empty plots. Adds 35 moisture points up to 100. Water diffuses to adjacent cells over time. Returns plant moisture ranges and explicit overwatering warnings; watering restores 5 health and does not instantly damage plants.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { plant: { type: 'string' }, x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 } }, oneOf: [{ required: ['plant'], not: { anyOf: [{ required: ['x'] }, { required: ['y'] }] } }, { required: ['x', 'y'], not: { required: ['plant'] } }] } },
   { name: 'terrarium_move', description: 'Move the coin or pebble on the 5×5 grid. The pebble shades its cell and orthogonal neighbors, reducing daylight to 35% and slowing daytime evaporation. x and y are 0..4.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { item: { type: 'string', enum: ['coin', 'pebble'] }, x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 } }, required: ['item', 'x', 'y'] } },
   { name: 'terrarium_sow', description: 'Sow moss, basil or bean in a free plot of the 5×5 grid. Seeds sprout after two daylight hours with enough soil moisture. Plants grow within their species moisture and light ranges; inspect returns those ranges. At most 12 plants and seeds.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { species: { type: 'string', enum: ['moss', 'basil', 'bean'] }, x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 } }, required: ['species', 'x', 'y'] } },
   { name: 'terrarium_release_bug', description: 'Release an aphid, beetle, spider or ant into the 5×5 grid. Ants act every ten seconds; one existing ant becomes the saved queen, workers dig a nest, collect food, enter it and store food; other bugs act every minute. Aphids eat plants, beetles hunt aphids, spiders hunt other bugs. At most 12 bugs and eggs combined.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { species: { type: 'string', enum: ['aphid', 'beetle', 'spider', 'ant'] }, x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 } }, required: ['species', 'x', 'y'] } },
@@ -32,7 +32,7 @@ export const TERRARIUM_TOOL_DECLS: ReadonlyArray<Omit<ToolDef, 'handler'>> = [
   { name: 'terrarium_leaderboard', description: 'Read the public land or water ranking, default land. Returns the top limit boxes (default 20, maximum 100), names, scores, score parts and last report times, plus your box rank even outside that limit. Reading requires no claim or token and never registers a box. Rankings use last uploaded states; land and water are separate.', tags: ['read'], parameters: { type: 'object', additionalProperties: false, properties: { habitat: { type: 'string', enum: ['land', 'water'] }, limit: { type: 'integer', minimum: 1, maximum: 100 } } } },
   { name: 'terrarium_set_rank_alerts', description: 'Enable or disable rank-drop events for your land or water box, default land. Alerts default to enabled, persist across restarts and include instructions for disabling them. Re-enabling starts a fresh baseline without alerts for changes while disabled. This tool never claims a box or changes reporting.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { habitat: { type: 'string', enum: ['land', 'water'] }, enabled: { type: 'boolean' } }, required: ['enabled'] } },
   { name: 'terrarium_drop_food', description: 'Drop 1..10 portions of land food at x,y for ants to collect and carry to their nest. At most 20 piles; food outside the nest expires after 48 hours. Ants can also gather from plants, costing one plant health per portion. Nest storage holds 20 portions per depth level, up to five levels.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 }, portions: { type: 'integer', minimum: 1, maximum: 10 } }, required: ['x', 'y', 'portions'] } },
-  { name: 'terrarium_water_area', description: 'Water an inclusive rectangle of land cells from top-left (x1,y1) to bottom-right (x2,y2), coordinates 0..4. Each cell gains 35 moisture capped at 100 and each plant gains 5 health once. Includes seed and empty plots; saves and reports once. Use (0,0)-(4,4) for all 25 cells. Check species moisture ranges first: excess water damages plants.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { x1: { type: 'integer', minimum: 0, maximum: 4 }, y1: { type: 'integer', minimum: 0, maximum: 4 }, x2: { type: 'integer', minimum: 0, maximum: 4 }, y2: { type: 'integer', minimum: 0, maximum: 4 } }, required: ['x1', 'y1', 'x2', 'y2'] } },
+  { name: 'terrarium_water_area', description: 'Water an inclusive rectangle of land cells from top-left (x1,y1) to bottom-right (x2,y2), coordinates 0..4. Each cell gains 35 moisture capped at 100 and each plant gains 5 health once. Includes seed and empty plots; saves and reports once. Use (0,0)-(4,4) for all 25 cells. Returns each watered plant, its moisture range and overwatering warnings. Excess moisture costs 0.5 health per hour; watering restores 5 health immediately.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { x1: { type: 'integer', minimum: 0, maximum: 4 }, y1: { type: 'integer', minimum: 0, maximum: 4 }, x2: { type: 'integer', minimum: 0, maximum: 4 }, y2: { type: 'integer', minimum: 0, maximum: 4 } }, required: ['x1', 'y1', 'x2', 'y2'] } },
 ];
 
 const SYNC_TOOL: Omit<ToolDef, 'handler'> = { name: 'terrarium_sync', description: 'Immediately upload a full snapshot of your claimed land or water box, default land. Returns sync status, last server acknowledgement time and any upload error. Does not claim a box, change credentials, or enable reporting when disabled. Sync status is local transport metadata; server error text is external data.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { habitat: { type: 'string', enum: ['land', 'water'] } } } };
@@ -88,8 +88,8 @@ export class TerrariumWorld implements World {
         return this.serial(async () => {
           const habitat = panel === 'water' ? 'water' : 'land';
           if (method === 'water') {
-            await this.waterRectangle(args[0]);
-            return this.view('land');
+            const watering = await this.waterRectangle(args[0]);
+            return { ...this.view('land'), watering };
           }
           if (method === 'feedback') {
             if (!this.host) throw new Error('Terrarium is not running');
@@ -140,9 +140,10 @@ export class TerrariumWorld implements World {
           if (typeof args.plant !== 'string' || args.x !== undefined || args.y !== undefined) throw new Error('Supply plant OR x and y');
         } else if (!Number.isInteger(args.x) || !Number.isInteger(args.y) || Number(args.x) < 0 || Number(args.x) > 4 || Number(args.y) < 0 || Number(args.y) > 4) throw new Error('Position must be in the 5×5 grid');
         await this.update();
-        const changed = args.plant !== undefined ? { plant: water(this.current(), String(args.plant)) } : { soil: waterSoil(this.current(), Number(args.x), Number(args.y)) };
+        const changed: { plant: ReturnType<typeof water> } | { soil: ReturnType<typeof waterSoil> } = args.plant !== undefined ? { plant: water(this.current(), String(args.plant)) } : { soil: waterSoil(this.current(), Number(args.x), Number(args.y)) };
         await this.persist();
-        return JSON.stringify(changed);
+        const cells = 'plant' in changed ? [changed.plant] : [changed.soil];
+        return JSON.stringify({ ...changed, ...wateringReport(this.current().plants, cells) });
       }) },
       { ...TERRARIUM_TOOL_DECLS[3], handler: async args => this.serial(async () => {
         await this.update();
@@ -305,7 +306,7 @@ export class TerrariumWorld implements World {
     await this.update();
     const soil = waterArea(this.current(), x1, y1, x2, y2);
     await this.persist();
-    return { soil };
+    return { soil, ...wateringReport(this.current().plants, soil) };
   }
 
   private async reportNow(habitat: 'land' | 'water'): Promise<void> {

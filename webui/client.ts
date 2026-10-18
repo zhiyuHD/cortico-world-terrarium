@@ -1,13 +1,13 @@
+import type { TerrariumState } from '../src/state.ts';
 import { createWateringControls } from './watering.ts';
 import { createFeedbackControls } from './feedback.ts';
 import { createSyncControls } from './sync.ts';
 import type { TerrariumSyncStatus } from '../src/leaderboard.ts';
 import { mountWater } from './water-client.ts';
-import type { HuntReplay } from '../src/replay.ts';
 import type { WebUiClientBundle, WebUiPanelContext } from 'cortico/web/shared/client-panel.ts';
 import { pick } from 'cortico/core/language.ts';
 import { createScene, createReplayControls, type SceneState } from './scene.ts';
-import { daylight, TERRARIUM_PLANT_LOW_HEALTH, TERRARIUM_PLANT_REQUIREMENTS, type HistorySample, type PlantSpecies, type SoilCell } from '../src/habitat.ts';
+import { daylight, TERRARIUM_PLANT_LOW_HEALTH, TERRARIUM_PLANT_REQUIREMENTS, type PlantSpecies } from '../src/habitat.ts';
 import { drawHistory } from './history.ts';
 import './style.css';
 
@@ -43,13 +43,13 @@ function mount(ctx: WebUiPanelContext): void {
   select.setAttribute('aria-label', copy.history);
   const chart = ctx.ui.h('div', '');
   let selected = 'soil:0';
-  let current: (SceneState & { name?: string; replays?: HuntReplay[]; soil: SoilCell[]; history: HistorySample[] }) | undefined;
+  let current: (SceneState & TerrariumState) | undefined;
   const renderHistory = (): void => {
     if (!current) return;
     const plant = current.plants.find(plant => plant.id === selected);
     const index = selected.startsWith('soil:') ? Number(selected.slice(5)) : plant ? plant.y * 5 + plant.x : -1;
     const cell = current.soil[index];
-    watering.update(true, cell);
+    watering.update(true, cell, current);
     cellStatus.textContent = cell ? `(${cell.x},${cell.y}) · ${copy.moisture} ${cell.moisture.toFixed(1)} · ${copy.light} ${(current.phase === 'day' ? daylight(current, cell.x, cell.y) : 0).toFixed(2)}` : '';
     grid.querySelectorAll('button').forEach((button, i) => { button.setAttribute('aria-pressed', String(i === index)); });
     chart.replaceChildren(drawHistory(current.history, selected, copy, ctx.language));
@@ -59,7 +59,7 @@ function mount(ctx: WebUiPanelContext): void {
   ctx.root.appendChild(card.el);
   const load = async (): Promise<void> => {
     try {
-      const response = await ctx.invoke<{ sync: TerrariumSyncStatus; claimed: boolean; id?: string; state?: SceneState & { name?: string; replays?: HuntReplay[]; soil: SoilCell[]; history: HistorySample[] } }>('state');
+      const response = await ctx.invoke<{ sync: TerrariumSyncStatus; claimed: boolean; id?: string; state?: SceneState & TerrariumState }>('state');
       if (ctx.signal.aborted) return;
       sync.update(response.sync, response.claimed);
       watering.update(response.claimed);

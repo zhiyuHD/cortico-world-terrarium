@@ -14,6 +14,21 @@ export const TERRARIUM_PLANT_REQUIREMENTS: Record<PlantSpecies, PlantRequirement
   bean: { minMoisture: 25, maxMoisture: 70, minLight: .7, maxLight: 1 },
 };
 
+export interface WateredPlant {
+  id: string; species: PlantSpecies; x: number; y: number; moisture: number; health: number;
+}
+
+export function wateringReport(plants: ReadonlyArray<WateredPlant>, cells: ReadonlyArray<SoilCell>) {
+  const watered = plants.filter(plant => cells.some(cell => cell.x === plant.x && cell.y === plant.y)).map(plant => {
+    const { minMoisture, maxMoisture } = TERRARIUM_PLANT_REQUIREMENTS[plant.species];
+    const moisture = cells.find(cell => cell.x === plant.x && cell.y === plant.y)!.moisture;
+    return { ...plant, moisture, minMoisture, maxMoisture, moistureStatus: moisture > maxMoisture ? 'high' as const : moisture < minMoisture ? 'low' as const : 'suitable' as const };
+  });
+  const warnings = watered.filter(plant => plant.moistureStatus !== 'suitable').map(plant =>
+    `${plant.id}（${plant.species}）(${plant.x},${plant.y}) 水分${plant.moistureStatus === 'high' ? '过高' : '过低'}：${plant.moisture.toFixed(1)}，适宜 ${plant.minMoisture}–${plant.maxMoisture}；持续超限每小时损失 0.5 健康。`);
+  return { plants: watered, warnings };
+}
+
 export function daylight(habitat: Habitat, x: number, y: number): number {
   const shaded = habitat.items.some(item => item.id === 'pebble' && Math.abs(item.x - x) + Math.abs(item.y - y) <= 1);
   return (.6 + x * .1) * (shaded ? .35 : 1);

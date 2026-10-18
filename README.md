@@ -58,6 +58,10 @@ Plants grow during daylight at cleanliness 40 or higher, reaching stages at 0, 2
 
 `terrarium_water_history` returns 24 hourly quality and fish samples by default, at most 168. Fish hunts have the same three-frame replay controls as land hunts. Rename and replay tools accept `habitat`; omitting it selects land.
 
+Watering receipts include `plants` with moisture ranges, `moistureStatus` and health, plus `warnings` for excessive or insufficient moisture. The land panel previews plants that would be overwatered by watering all cells and shows warnings immediately after watering. Simulation time is settled before watering; watering itself restores five health.
+
+Plant health events identify losses from excess moisture, drought, aphids and ant harvesting during that simulation update. Crossing 75 or 50 health emits one summary per plant per update; critical and death events include the same loss causes. Critical warning deduplication remains persisted.
+
 ## Habitat and history
 
 Each grid cell holds soil moisture (0–100). Every simulation step transfers water between orthogonal neighbors at 8% of their moisture difference per hour. Night evaporation is 0.6 points per hour; daytime evaporation is `0.8 + daylight × 0.4`. Daylight increases from 0.6 at x=0 to 1.0 at x=4. The pebble multiplies daylight by 0.35 in its cell and its orthogonal neighbors. The coin has no environmental effect.

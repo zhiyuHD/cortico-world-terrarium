@@ -115,7 +115,9 @@ function approach(bug: BugState, target: { x: number; y: number }): boolean {
 function nearest<T extends { id: string; x: number; y: number }>(bug: BugState, values: T[]): T | undefined {
   return [...values].sort((a, b) => Math.abs(a.x - bug.x) + Math.abs(a.y - bug.y) - Math.abs(b.x - bug.x) - Math.abs(b.y - bug.y) || a.id.localeCompare(b.id))[0];
 }
-function actAnt(state: TerrariumState, bug: BugState, changes: Change[]): void {
+type PlantDamage = (plant: PlantState, amount: number, cause: string) => void;
+
+function actAnt(state: TerrariumState, bug: BugState, changes: Change[], damage: PlantDamage): void {
   const nests = state.nests ??= [];
   let nest = nearest(bug, nests);
   if (!nest) {
@@ -161,10 +163,10 @@ function actAnt(state: TerrariumState, bug: BugState, changes: Change[]): void {
     return;
   }
   const plant = nearest(bug, state.plants.filter(plant => plant.health > 10));
-  if (plant && approach(bug, plant)) { plant.health--; bug.carrying = 1; }
+  if (plant && approach(bug, plant)) { damage(plant, 1, '蚂蚁采集'); bug.carrying = 1; }
 }
 
-function actBug(state: TerrariumState, bug: BugState, changes: Change[], recordedAtMs: number, currentPhase: 'day' | 'night'): void {
+function actBug(state: TerrariumState, bug: BugState, changes: Change[], recordedAtMs: number, currentPhase: 'day' | 'night', damage: PlantDamage): void {
   const targets = bug.species === 'aphid' ? state.plants : state.bugs.filter(other =>
     other.id !== bug.id && !other.inside && (bug.species === 'spider' ? other.species !== 'spider' : other.species === 'aphid'));
   const target = [...targets].sort((a, b) =>
@@ -174,7 +176,7 @@ function actBug(state: TerrariumState, bug: BugState, changes: Change[], recorde
     if (bug.x !== target.x) bug.x += Math.sign(target.x - bug.x);
     else if (bug.y !== target.y) bug.y += Math.sign(target.y - bug.y);
     if (bug.x === target.x && bug.y === target.y) {
-      if (bug.species === 'aphid') { (target as PlantState).health = Math.max(0, (target as PlantState).health - 3); bug.energy = Math.min(100, bug.energy + 5); }
+      if (bug.species === 'aphid') { damage(target as PlantState, 3, '蚜虫取食'); bug.energy = Math.min(100, bug.energy + 5); }
       else {
         const contact = captureFrame(state, currentPhase);
         state.bugs.splice(state.bugs.indexOf(target as BugState), 1);
@@ -231,6 +233,20 @@ export function advance(state: TerrariumState, nowMs: number, timezone: string):
   }
   if (nowMs <= state.updatedAtMs) return [];
   const changes: Change[] = [];
+  const initialHealth = new Map(state.plants.map(plant => [plant.id, plant.health]));
+  const losses = new Map<string, Map<string, number>>();
+  const damage: PlantDamage = (plant, amount, cause) => {
+    const loss = Math.min(plant.health, amount);
+    plant.health -= loss;
+    if (loss <= 0) return;
+    const causes = losses.get(plant.id) ?? new Map<string, number>();
+    causes.set(cause, (causes.get(cause) ?? 0) + loss);
+    losses.set(plant.id, causes);
+  };
+  const damageText = (plant: PlantState): string => {
+    const causes = losses.get(plant.id);
+    return causes ? ` 本次结算损伤：${[...causes].map(([cause, loss]) => `${cause} -${loss.toFixed(2)} 健康`).join('；')}。` : '';
+  };
   // The simulation catches up after downtime while keeping a finite work bound.
   const stepMs = state.bugs.some(bug => bug.species === 'ant') || state.eggs?.length ? TERRARIUM_ANT_ACTION_INTERVAL_MS : TERRARIUM_BUG_ACTION_INTERVAL_MS;
   const from = Math.max(state.updatedAtMs, nowMs - MAX_CATCHUP_MS);
@@ -257,7 +273,7 @@ export function advance(state: TerrariumState, nowMs: number, timezone: string):
       const light = daylight(state, plant.x, plant.y);
       const hydrated = plant.moisture >= needs.minMoisture && plant.moisture <= needs.maxMoisture;
       if (before === 'day' && hydrated && light >= needs.minLight && light <= needs.maxLight) plant.growthHours += hours;
-      if (!hydrated) plant.health = Math.max(0, plant.health - hours * .5);
+      if (!hydrated) damage(plant, hours * .5, plant.moisture < needs.minMoisture ? '水分过低' : '水分过高');
       const stage = STAGES.reduce((n, threshold, index) => plant.growthHours >= threshold ? index : n, 0);
       if (stage !== plant.stage) {
         plant.stage = stage;
@@ -302,8 +318,8 @@ export function advance(state: TerrariumState, nowMs: number, timezone: string):
       bug.ageHours += hours; bug.energy = Math.max(0, bug.energy - hours * 2);
       const interval = bug.species === 'ant' ? TERRARIUM_ANT_ACTION_INTERVAL_MS : TERRARIUM_BUG_ACTION_INTERVAL_MS;
       if (Math.floor(start / interval) !== Math.floor(end / interval)) {
-        if (bug.species === 'ant') actAnt(state, bug, changes);
-        else actBug(state, bug, changes, end, after);
+        if (bug.species === 'ant') actAnt(state, bug, changes, damage);
+        else actBug(state, bug, changes, end, after, damage);
       }
       if (bug.role === 'queen' && bug.inside && bug.ageHours >= 24 - 1e-9 && bug.ageHours < 120 && bug.energy >= 70 && Math.floor((bug.ageHours - hours + 1e-9) / 6) !== Math.floor((bug.ageHours + 1e-9) / 6)) {
         const eggs = state.eggs ??= [];
@@ -325,14 +341,20 @@ export function advance(state: TerrariumState, nowMs: number, timezone: string):
       changes.push({ kind: 'birth', text: `${egg.id} 孵化为幼虫 ${child.id}（${child.species}），位置 (${child.x},${child.y})。` });
     }
     for (const plant of [...state.plants]) {
-      if (plant.health <= 0) { state.plants.splice(state.plants.indexOf(plant), 1); changes.push({ kind: 'death', text: `${plant.id} 枯死了。` }); }
+      if (plant.health <= 0) { state.plants.splice(state.plants.indexOf(plant), 1); changes.push({ kind: 'death', text: `${plant.id} 枯死了。${damageText(plant)}` }); }
       else if (plant.health <= TERRARIUM_PLANT_LOW_HEALTH && !plant.healthWarning) {
         plant.healthWarning = true;
         const needs = TERRARIUM_PLANT_REQUIREMENTS[plant.species];
-        changes.push({ kind: 'health', text: `${plant.id}（${plant.species}）濒危：健康 ${plant.health.toFixed(1)}/100，位置 (${plant.x},${plant.y})，土壤水分 ${plant.moisture.toFixed(1)}（适宜 ${needs.minMoisture}–${needs.maxMoisture}）。请检查水分和虫害；浇水恢复 5 健康，但水分过高也会损伤植物。` });
+        changes.push({ kind: 'health', text: `${plant.id}（${plant.species}）濒危：健康 ${plant.health.toFixed(1)}/100，位置 (${plant.x},${plant.y})，土壤水分 ${plant.moisture.toFixed(1)}（适宜 ${needs.minMoisture}–${needs.maxMoisture}）。${damageText(plant)}浇水恢复 5 健康，先检查水分是否已超出适宜范围。` });
       } else if (plant.health >= TERRARIUM_PLANT_RECOVERED_HEALTH) delete plant.healthWarning;
     }
     if (hourlyStep) recordHistory(state, end);
+  }
+  for (const plant of state.plants) {
+    const previous = initialHealth.get(plant.id);
+    if (previous !== undefined && plant.health > TERRARIUM_PLANT_LOW_HEALTH && [75, 50].some(threshold => previous > threshold && plant.health <= threshold)) {
+      changes.push({ kind: 'health', text: `${plant.id}（${plant.species}）健康下降：${previous.toFixed(1)} → ${plant.health.toFixed(1)}/100，位置 (${plant.x},${plant.y})。${damageText(plant)}` });
+    }
   }
   if (state.replays) state.replays = state.replays.filter(replay => replay.recordedAtMs >= nowMs - TERRARIUM_REPLAY_RETENTION_MS);
   state.updatedAtMs = nowMs;

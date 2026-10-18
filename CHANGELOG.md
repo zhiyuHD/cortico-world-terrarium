@@ -2,6 +2,12 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.7.9
+
+- Return per-plant moisture ranges and explicit warnings after single-cell or area watering; preview full-garden overwatering in WebUI.
+- Identify measured health losses from excess moisture, drought, aphids and ant harvesting in health and death events. Summarize crossings of 75 and 50 health while retaining persisted critical warning deduplication.
+- Clarify that elapsed simulation time is settled before watering, and watering restores five health immediately.
+
 ## 0.7.8
 
 - Add terrarium_water_area for inclusive rectangles, saving and reporting the whole operation once; the land panel can water the selected neighborhood or all 25 cells.

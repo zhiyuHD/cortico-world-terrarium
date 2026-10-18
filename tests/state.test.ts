@@ -452,3 +452,52 @@ it('loads older critical plants and persists warning deduplication across saves'
   invalid.plants[0].healthWarning = 'true'; await writeFile(file, JSON.stringify(invalid));
   await expect(loadState(file, 0)).rejects.toThrow('Invalid terrarium state');
 });
+
+
+it.each([{ moisture: 0, cause: '水分过低' }, { moisture: 100, cause: '水分过高' }])('identifies moisture damage at a health threshold: $cause', ({ moisture, cause }) => {
+  const state = newState(0), plant = state.plants[0];
+  state.soil.forEach(cell => { cell.moisture = moisture; });
+  plant.health = 75.001;
+  const warnings = advance(state, TERRARIUM_BUG_ACTION_INTERVAL_MS, 'UTC').filter(change => change.kind === 'health');
+  expect(warnings).toHaveLength(1);
+  expect(warnings[0].text).toContain(cause);
+  expect(warnings[0].text).toContain(plant.id);
+  expect(warnings[0].text).not.toContain('蚜虫');
+  expect(advance(state, 2 * TERRARIUM_BUG_ACTION_INTERVAL_MS, 'UTC').filter(change => change.kind === 'health')).toEqual([]);
+});
+
+it('reports pest losses without blaming suitable soil and merges crossed health thresholds', () => {
+  const state = newState(0), plant = state.plants[0];
+  releaseBug(state, 'aphid', plant.x, plant.y);
+  const warnings = advance(state, 17 * TERRARIUM_BUG_ACTION_INTERVAL_MS, 'UTC').filter(change => change.kind === 'health');
+  expect(warnings).toHaveLength(1);
+  expect(warnings[0].text).toContain('100.0 → 49.0');
+  expect(warnings[0].text).toContain('蚜虫取食 -51.00');
+  expect(warnings[0].text).not.toContain('水分过');
+});
+
+it('includes all actual loss causes in critical and death events', () => {
+  const state = newState(0), plant = state.plants[0];
+  state.soil.forEach(cell => { cell.moisture = 100; });
+  plant.health = 21;
+  releaseBug(state, 'aphid', plant.x, plant.y);
+  const critical = advance(state, TERRARIUM_BUG_ACTION_INTERVAL_MS, 'UTC').find(change => change.kind === 'health');
+  expect(critical?.text).toContain('濒危');
+  expect(critical?.text).toContain('水分过高');
+  expect(critical?.text).toContain('蚜虫取食');
+  plant.health = 1;
+  const death = advance(state, 2 * TERRARIUM_BUG_ACTION_INTERVAL_MS, 'UTC').find(change => change.kind === 'death');
+  expect(death?.text).toContain('蚜虫取食');
+});
+
+it('attributes plant harvesting to worker ants', () => {
+  const state = newState(0), plant = state.plants[0];
+  plant.health = 75.5;
+  releaseBug(state, 'ant', 1, 1).role = 'queen';
+  const worker = releaseBug(state, 'ant', plant.x, plant.y);
+  worker.role = 'worker';
+  state.nests = [{ id: 'nest-test', x: 1, y: 1, depth: 5, food: 0 }];
+  const warnings = advance(state, TERRARIUM_ANT_ACTION_INTERVAL_MS, 'UTC').filter(change => change.kind === 'health');
+  expect(warnings).toHaveLength(1);
+  expect(warnings[0].text).toContain('蚂蚁采集 -1.00');
+});
