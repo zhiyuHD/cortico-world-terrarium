@@ -9,7 +9,7 @@ import { start } from '../server/index.ts';
 import { LeaderboardClient } from '../src/leaderboard.ts';
 import { newState } from '../src/state.ts';
 import { newAquarium, stockFish } from '../src/aquarium.ts';
-import { reportChanges, type ReportReply } from '../src/report-protocol.ts';
+import { reportChanges, reportStateHash, type ReportReply } from '../src/report-protocol.ts';
 import { TERRARIUM_CLIENT_VERSION } from '../src/version.ts';
 import { createReportProxy } from './report-service.ts';
 
@@ -202,4 +202,133 @@ it('keeps reporting disabled during manual full sync without creating credential
   await client.report(newState(Date.now()), 'day', true);
   expect(client.status()).toEqual({ state: 'disabled', mode: 'full', consecutiveFailures: 0 });
   expect(client.id).toBeUndefined();
+});
+
+
+it.each(['land', 'water'] as const)('resynchronizes %s when the server baseline differs despite a matching revision', async habitat => {
+  const { client, proxy, get } = await fixture(true, false, habitat);
+  const state = habitat === 'land' ? newState(Date.now()) : newAquarium(Date.now());
+  // Inject server-state drift and an apparently matching acknowledgement to retain the same revision.
+  proxy.rewriteNextReport(message => {
+    if (message.kind !== 'full') throw new Error('Expected first full report');
+    const drifted = { ...message.state as object, name: 'server drift' };
+    return { ...message, state: drifted, stateHash: reportStateHash(drifted) };
+  });
+  proxy.rewriteNextReply(reply => reply.kind === 'ack' ? { ...reply, stateHash: reportStateHash(state) } : reply);
+  await client.report(state, 'day');
+  expect((await get()).state.name).toBe('server drift');
+  state.name = 'client target';
+  await client.report(state, 'night');
+  expect(proxy.frames.map(frame => frame.kind)).toEqual(['full', 'delta', 'full']);
+  expect(proxy.replies.map(reply => reply.kind)).toEqual(['ack', 'resync', 'ack']);
+  expect((await get()).state).toEqual(state);
+  state.name = 'next delta'; await client.report(state, 'day');
+  expect(proxy.frames.at(-1)?.kind).toBe('delta');
+  expect((await get()).state).toEqual(state);
+});
+
+it('rejects a modified delta before saving and automatically restores the intended full snapshot', async () => {
+  const { client, proxy, get } = await fixture(true);
+  const state = newState(Date.now()); await client.report(state, 'day');
+  state.name = 'intended';
+  proxy.rewriteNextReport(message => message.kind === 'delta'
+    ? { ...message, changes: [...message.changes, { op: 'replace', path: '/name', value: 'corrupted' }] } : message);
+  proxy.rewriteNextReply(reply => {
+    expect(reply.kind).toBe('resync');
+    return reply;
+  });
+  await client.report(state, 'night');
+  expect(proxy.frames.map(frame => frame.kind)).toEqual(['full', 'delta', 'full']);
+  expect((await get()).state).toEqual(state);
+});
+
+it.each(['wrong', 'missing'] as const)('retries with a full snapshot when a verified acknowledgement checksum is %s', async fault => {
+  const { client, proxy, get } = await fixture(true);
+  const state = newState(Date.now()); await client.report(state, 'day');
+  state.name = 'ack recovery';
+  proxy.rewriteNextReply(reply => {
+    if (reply.kind !== 'ack') throw new Error('Expected acknowledgement');
+    const changed = { ...reply };
+    if (fault === 'missing') delete changed.stateHash;
+    else changed.stateHash = '0'.repeat(64);
+    return changed;
+  });
+  await client.report(state, 'night');
+  expect(proxy.frames.map(frame => frame.kind)).toEqual(['full', 'delta', 'full']);
+  expect((await get()).state).toEqual(state);
+  state.name = 'verified baseline'; await client.report(state, 'day');
+  expect(proxy.frames.at(-1)?.kind).toBe('delta');
+});
+
+it('uses only full snapshots when an older WebSocket server does not acknowledge checksums', async () => {
+  const { client, proxy, get } = await fixture(true);
+  proxy.omitReplyChecksums();
+  const state = newState(Date.now()); await client.report(state, 'day');
+  state.name = 'legacy server'; await client.report(state, 'night');
+  state.plants.pop(); await client.report(state, 'day');
+  expect(proxy.frames.map(frame => frame.kind)).toEqual(['full', 'full', 'full']);
+  expect((await get()).state).toEqual(state);
+});
+
+it('requires negotiated checksums, verifies full snapshots and never commits rejected deltas', async () => {
+  const { origin, id, credentials, get } = await fixture();
+  const ws = await socket(origin, id, credentials.token);
+  try {
+    let seq = 0;
+    const header = () => ({ protocol: 1, seq: ++seq, phase: 'day', clientVersion: TERRARIUM_CLIENT_VERSION });
+    const state = newState(Date.now()), hash = reportStateHash(state);
+    const full = async () => {
+      const reply = await send(ws, { ...header(), kind: 'full', state, stateHash: hash });
+      expect(reply).toMatchObject({ kind: 'ack', stateHash: hash });
+      if (reply.kind !== 'ack') throw new Error('No acknowledgement');
+      return reply;
+    };
+    let accepted = await full();
+    const target = { ...state, name: 'new' }, targetHash = reportStateHash(target);
+    for (const override of [
+      { baseHash: '0'.repeat(64) }, { stateHash: '0'.repeat(64) },
+      { baseHash: undefined }, { stateHash: undefined }, { stateHash: 'invalid' },
+      { baseRevision: 'stale' },
+    ]) {
+      const before = await get();
+      const reply = await send(ws, { ...header(), kind: 'delta', baseRevision: accepted.revision, baseHash: hash, stateHash: targetHash, changes: reportChanges(state, target), ...override });
+      expect(reply.kind).toBe('resync');
+      expect(await get()).toEqual(before);
+      accepted = await full();
+    }
+    const before = await get();
+    expect(await send(ws, { ...header(), kind: 'full', state: target, stateHash: hash })).toMatchObject({ kind: 'resync' });
+    expect(await get()).toEqual(before);
+    expect(await send(ws, { ...header(), kind: 'full', state })).toMatchObject({ kind: 'resync' });
+    expect(await get()).toEqual(before);
+    accepted = await full();
+    expect(await send(ws, { ...header(), kind: 'delta', baseRevision: accepted.revision, baseHash: hash, stateHash: targetHash, changes: reportChanges(state, target) })).toMatchObject({ kind: 'ack', stateHash: targetHash });
+    expect((await get()).state).toEqual(target);
+  } finally { ws.terminate(); }
+});
+
+
+it.each(['land', 'water'] as const)('keeps %s checksums identical across 30 rounds of nested edits and array insertions, deletions and reordering', async habitat => {
+  const { client, proxy, get } = await fixture(true, false, habitat);
+  const state = habitat === 'land' ? newState(Date.now()) : newAquarium(Date.now());
+  await client.report(state, 'day');
+  for (let i = 0; i < 30; i++) {
+    if (i % 3 === 0) delete state.name;
+    else state.name = `round-${i}-水🌱`;
+    state.plants.reverse();
+    state.plants[0].health = 50 + i;
+    if ('fish' in state) {
+      stockFish(state, 'guppy', i % 5, (i + 1) % 5);
+      if (state.fish.length > 2) state.fish.shift();
+    } else {
+      state.bugs.push({ id: `bug-${i}`, species: 'aphid', x: i % 5, y: (i + 1) % 5, ageHours: 0, energy: 70 });
+      if (state.bugs.length > 2) state.bugs.shift();
+    }
+    await client.report(state, i % 2 ? 'night' : 'day');
+    const accepted = await get(), reply = proxy.replies.at(-1);
+    expect(accepted.state).toEqual(state);
+    expect(reply).toMatchObject({ kind: 'ack', stateHash: reportStateHash(state) });
+    expect(proxy.frames.at(-1)?.kind).toBe('delta');
+  }
+  expect(proxy.replies.some(reply => reply.kind === 'resync')).toBe(false);
 });

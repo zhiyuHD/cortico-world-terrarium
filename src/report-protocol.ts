@@ -1,11 +1,13 @@
+import { createHash } from 'node:crypto';
+
 export const TERRARIUM_REPORT_MAX_BYTES = 1_048_576;
 export const TERRARIUM_REPORT_MAX_CHANGES = 16_384;
 
 export type ReportChange = { op: 'add' | 'replace'; path: string; value: unknown } | { op: 'remove'; path: string };
 export type ReportMessage = {
-  protocol: 1; seq: number; clientVersion: string; phase: 'day' | 'night';
-} & ({ kind: 'full'; state: unknown } | { kind: 'delta'; baseRevision: string; changes: ReportChange[] });
-export type ReportReply = { kind: 'ack'; seq: number; revision: string; score: number }
+  protocol: 1; seq: number; clientVersion: string; phase: 'day' | 'night'; stateHash?: string;
+} & ({ kind: 'full'; state: unknown } | { kind: 'delta'; baseRevision: string; baseHash?: string; changes: ReportChange[] });
+export type ReportReply = { kind: 'ack'; seq: number; revision: string; score: number; stateHash?: string }
   | { kind: 'resync'; seq: number }
   | { kind: 'error'; seq: number; status: number; error: string };
 
@@ -15,6 +17,17 @@ export function validClientVersion(value: unknown): value is string {
 
 const escape = (key: string): string => key.replaceAll('~', '~0').replaceAll('/', '~1');
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+/** SHA-256 of JSON state with sorted object keys; array order remains significant. */
+export function reportStateHash(state: unknown): string {
+  const json = JSON.stringify(state, (_key, value: unknown) => object(value)
+    ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
+  return createHash('sha256').update(json).digest('hex');
+}
+
+export function validReportHash(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+}
 
 export function reportChanges(before: unknown, after: unknown, path = ''): ReportChange[] {
   if (before === after) return [];

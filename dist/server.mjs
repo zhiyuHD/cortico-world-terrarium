@@ -2297,7 +2297,7 @@ var require_websocket = __commonJS({
     var http = __require("http");
     var net = __require("net");
     var tls = __require("tls");
-    var { randomBytes: randomBytes2, createHash } = __require("crypto");
+    var { randomBytes: randomBytes2, createHash: createHash2 } = __require("crypto");
     var { Duplex, Readable } = __require("stream");
     var { URL: URL2 } = __require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -2978,7 +2978,7 @@ var require_websocket = __commonJS({
           abortHandshake(websocket, socket, "Invalid Upgrade header");
           return;
         }
-        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        const digest = createHash2("sha1").update(key + GUID).digest("base64");
         if (res.headers["sec-websocket-accept"] !== digest) {
           abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
           return;
@@ -3347,7 +3347,7 @@ var require_websocket_server = __commonJS({
     var EventEmitter = __require("events");
     var http = __require("http");
     var { Duplex } = __require("stream");
-    var { createHash } = __require("crypto");
+    var { createHash: createHash2 } = __require("crypto");
     var extension2 = require_extension();
     var PerMessageDeflate2 = require_permessage_deflate();
     var subprotocol2 = require_subprotocol();
@@ -3654,7 +3654,7 @@ var require_websocket_server = __commonJS({
           );
         }
         if (this._state > RUNNING) return abortHandshake(socket, 503);
-        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        const digest = createHash2("sha1").update(key + GUID).digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
           "Upgrade: websocket",
@@ -3939,12 +3939,20 @@ function validState(value) {
 }
 
 // src/report-protocol.ts
+import { createHash } from "node:crypto";
 var TERRARIUM_REPORT_MAX_BYTES = 1048576;
 var TERRARIUM_REPORT_MAX_CHANGES = 16384;
 function validClientVersion(value) {
   return typeof value === "string" && value.length <= 100 && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(value);
 }
 var object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+function reportStateHash(state) {
+  const json = JSON.stringify(state, (_key, value) => object(value) ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]])) : value);
+  return createHash("sha256").update(json).digest("hex");
+}
+function validReportHash(value) {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+}
 function applyReportChanges(base, changes) {
   if (!Array.isArray(changes) || changes.length > TERRARIUM_REPORT_MAX_CHANGES) throw new Error("Invalid report changes");
   let state = structuredClone(base);
@@ -4089,6 +4097,7 @@ async function start(options = {}) {
       let raw = input.state;
       if (input.baseRevision !== void 0) {
         if (!registry[id] || input.baseRevision !== registry[id].reportRevision) throw new ReportError(409, "Full report required", true);
+        if (input.baseHash !== void 0 && input.baseHash !== reportStateHash(registry[id].state)) throw new ReportError(409, "Report baseline checksum mismatch", true);
         try {
           raw = applyReportChanges(registry[id].state, input.changes);
         } catch {
@@ -4104,6 +4113,7 @@ async function start(options = {}) {
       } catch {
         throw new ReportError(400, "Invalid report");
       }
+      if (input.stateHash !== void 0 && input.stateHash !== reportStateHash(state)) throw new ReportError(409, "Report state checksum mismatch", true);
       const now = Date.now();
       if (state.updatedAtMs > now + 6e4 || state.updatedAtMs < now - 31 * 864e5) throw new ReportError(400, "Invalid report time");
       const kind = "fish" in state ? "water" : "land";
@@ -4326,7 +4336,7 @@ Content-Length: 0\r
       ws.on("pong", () => alive.add(ws));
       ws.on("close", () => alive.delete(ws));
       ws.on("error", () => ws.terminate());
-      let queue = Promise.resolve(), requireFull = true, lastSeq = 0, queued = 0;
+      let queue = Promise.resolve(), requireFull = true, requireHashes = false, lastSeq = 0, queued = 0;
       ws.on("message", (raw, binary) => {
         if (ws.readyState !== import_websocket.default.OPEN) return;
         if (++queued > 8) {
@@ -4343,10 +4353,12 @@ Content-Length: 0\r
             seq = input.seq;
             lastSeq = seq;
             if (input.protocol !== 1 || !validClientVersion(input.clientVersion) || !["day", "night"].includes(input.phase) || !["full", "delta"].includes(input.kind)) throw new ReportError(400, "Client version and report protocol are required");
+            requireHashes ||= input.stateHash !== void 0 || input.kind === "delta" && input.baseHash !== void 0;
+            if (requireHashes && (!validReportHash(input.stateHash) || input.kind === "delta" && !validReportHash(input.baseHash))) throw new ReportError(409, "Report checksums required", true);
             if (input.kind === "delta" && (requireFull || typeof input.baseRevision !== "string")) throw new ReportError(409, "Full report required", true);
-            const entry = await commitReport(id, { phase: input.phase, clientVersion: input.clientVersion, ...input.kind === "full" ? { state: input.state } : { baseRevision: input.baseRevision, changes: input.changes } });
+            const entry = await commitReport(id, { phase: input.phase, clientVersion: input.clientVersion, stateHash: input.stateHash, ...input.kind === "full" ? { state: input.state } : { baseRevision: input.baseRevision, baseHash: input.baseHash, changes: input.changes } });
             requireFull = false;
-            reply = { kind: "ack", seq, revision: entry.reportRevision, score: entry.score };
+            reply = { kind: "ack", seq, revision: entry.reportRevision, score: entry.score, stateHash: reportStateHash(entry.state) };
           } catch (error) {
             if (error instanceof ReportError && error.resync) {
               requireFull = true;

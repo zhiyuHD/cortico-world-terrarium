@@ -2,6 +2,12 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.7.6
+
+- Verify SHA-256 state digests for incremental baselines, patched targets and acknowledgements; resynchronize mismatches without committing rejected state.
+- Use full snapshots with older WebSocket servers that omit checksum acknowledgements, retaining legacy client and HTTP compatibility.
+- Cover state drift with matching revisions, modified patches, invalid or missing digests, acknowledgement recovery, repeated land/water edits and 250 reproducible JSON patch round trips.
+
 ## 0.7.5
 
 - Expose per-habitat upload status, acknowledgement times, transport and consecutive failures through inspection and both World panels.

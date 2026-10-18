@@ -5,7 +5,7 @@ import { dirname } from 'node:path';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { migrateState, type TerrariumState } from '../src/state.ts';
-import { applyReportChanges, validClientVersion, TERRARIUM_REPORT_MAX_BYTES, type ReportMessage, type ReportReply } from '../src/report-protocol.ts';
+import { applyReportChanges, reportStateHash, validReportHash, validClientVersion, TERRARIUM_REPORT_MAX_BYTES, type ReportMessage, type ReportReply } from '../src/report-protocol.ts';
 
 import { validAquarium, type AquariumState } from '../src/aquarium.ts';
 import { score, scoreParts, type LeaderboardBoxSummary } from '../src/scoring.ts';
@@ -60,12 +60,13 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     return readFile(new URL('../dist/scene.js', import.meta.url));
   });
-  const commitReport = (id: string, input: { phase?: unknown; clientVersion?: unknown; state?: unknown; baseRevision?: string; changes?: unknown }) => {
+  const commitReport = (id: string, input: { phase?: unknown; clientVersion?: unknown; state?: unknown; baseRevision?: string; baseHash?: string; stateHash?: string; changes?: unknown }) => {
     const report = reportQueue.then(async () => {
       if ((input.phase !== undefined && input.phase !== 'day' && input.phase !== 'night') || (input.clientVersion !== undefined && !validClientVersion(input.clientVersion))) throw new ReportError(400, 'Invalid report metadata');
       let raw = input.state;
       if (input.baseRevision !== undefined) {
         if (!registry[id] || input.baseRevision !== registry[id].reportRevision) throw new ReportError(409, 'Full report required', true);
+        if (input.baseHash !== undefined && input.baseHash !== reportStateHash(registry[id].state)) throw new ReportError(409, 'Report baseline checksum mismatch', true);
         try { raw = applyReportChanges(registry[id].state, input.changes); }
         catch { throw new ReportError(400, 'Invalid report changes'); }
       }
@@ -76,6 +77,7 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
           state = raw;
         } else state = migrateState(raw);
       } catch { throw new ReportError(400, 'Invalid report'); }
+      if (input.stateHash !== undefined && input.stateHash !== reportStateHash(state)) throw new ReportError(409, 'Report state checksum mismatch', true);
       const now = Date.now();
       if (state.updatedAtMs > now + 60000 || state.updatedAtMs < now - 31 * 86400000) throw new ReportError(400, 'Invalid report time');
       const kind = 'fish' in state ? 'water' : 'land';
@@ -212,7 +214,7 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
       ws.on('pong', () => alive.add(ws));
       ws.on('close', () => alive.delete(ws));
       ws.on('error', () => ws.terminate());
-      let queue: Promise<unknown> = Promise.resolve(), requireFull = true, lastSeq = 0, queued = 0;
+      let queue: Promise<unknown> = Promise.resolve(), requireFull = true, requireHashes = false, lastSeq = 0, queued = 0;
       ws.on('message', (raw, binary) => {
         if (ws.readyState !== WebSocket.OPEN) return;
         if (++queued > 8) { ws.close(1008, 'Too many pending reports'); return; }
@@ -225,10 +227,12 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
             if (!input || !Number.isSafeInteger(input.seq) || input.seq <= lastSeq) throw new ReportError(400, 'Invalid report sequence');
             seq = input.seq; lastSeq = seq;
             if (input.protocol !== 1 || !validClientVersion(input.clientVersion) || !['day', 'night'].includes(input.phase) || !['full', 'delta'].includes(input.kind)) throw new ReportError(400, 'Client version and report protocol are required');
+            requireHashes ||= input.stateHash !== undefined || (input.kind === 'delta' && input.baseHash !== undefined);
+            if (requireHashes && (!validReportHash(input.stateHash) || (input.kind === 'delta' && !validReportHash(input.baseHash)))) throw new ReportError(409, 'Report checksums required', true);
             if (input.kind === 'delta' && (requireFull || typeof input.baseRevision !== 'string')) throw new ReportError(409, 'Full report required', true);
-            const entry = await commitReport(id, { phase: input.phase, clientVersion: input.clientVersion, ...(input.kind === 'full' ? { state: input.state } : { baseRevision: input.baseRevision, changes: input.changes }) });
+            const entry = await commitReport(id, { phase: input.phase, clientVersion: input.clientVersion, stateHash: input.stateHash, ...(input.kind === 'full' ? { state: input.state } : { baseRevision: input.baseRevision, baseHash: input.baseHash, changes: input.changes }) });
             requireFull = false;
-            reply = { kind: 'ack', seq, revision: entry.reportRevision!, score: entry.score };
+            reply = { kind: 'ack', seq, revision: entry.reportRevision!, score: entry.score, stateHash: reportStateHash(entry.state) };
           } catch (error) {
             if (error instanceof ReportError && error.resync) { requireFull = true; reply = { kind: 'resync', seq }; }
             else reply = { kind: 'error', seq, status: error instanceof ReportError ? error.status : error instanceof SyntaxError ? 400 : 500, error: error instanceof ReportError ? error.message : error instanceof SyntaxError ? 'Invalid JSON' : 'Report failed' };

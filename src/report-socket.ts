@@ -1,5 +1,5 @@
 import WebSocket from 'ws';
-import { reportChanges, TERRARIUM_REPORT_MAX_BYTES, TERRARIUM_REPORT_MAX_CHANGES, type ReportMessage, type ReportReply } from './report-protocol.ts';
+import { reportChanges, reportStateHash, TERRARIUM_REPORT_MAX_BYTES, TERRARIUM_REPORT_MAX_CHANGES, type ReportMessage, type ReportReply } from './report-protocol.ts';
 import { TERRARIUM_CLIENT_VERSION } from './version.ts';
 
 export class ReportSocketError extends Error {
@@ -9,6 +9,7 @@ export class ReportSocketError extends Error {
 export class ReportSocket {
   private socket: WebSocket | undefined;
   private baseline: unknown;
+  private baselineHash: string | undefined;
   private revision: string | undefined;
   private seq = 0;
   private pending: { seq: number; resolve: (reply: ReportReply) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> } | undefined;
@@ -18,8 +19,9 @@ export class ReportSocket {
   close(): void { this.disconnect(new Error('Report connection closed')); }
 
   async report(state: unknown, phase: 'day' | 'night'): Promise<void> {
+    const snapshot: unknown = JSON.parse(JSON.stringify(state));
     for (let attempt = 0; ; attempt++) {
-      try { await this.deliver(state, phase); return; }
+      try { await this.deliver(snapshot, phase); return; }
       catch (error) {
         this.disconnect(error instanceof Error ? error : new Error(String(error)));
         if (attempt > 0 || error instanceof ReportSocketError) throw error;
@@ -29,18 +31,20 @@ export class ReportSocket {
 
   private async deliver(state: unknown, phase: 'day' | 'night'): Promise<void> {
     const socket = await this.connect();
-    const changes = this.options.incremental && this.revision ? reportChanges(this.baseline, state) : undefined;
-    const header = { protocol: 1 as const, seq: ++this.seq, clientVersion: TERRARIUM_CLIENT_VERSION, phase };
+    const changes = this.options.incremental && this.revision && this.baselineHash && reportStateHash(this.baseline) === this.baselineHash ? reportChanges(this.baseline, state) : undefined;
+    const stateHash = reportStateHash(state);
+    const header = { protocol: 1 as const, seq: ++this.seq, clientVersion: TERRARIUM_CLIENT_VERSION, phase, stateHash };
     let message: ReportMessage = changes && changes.length <= TERRARIUM_REPORT_MAX_CHANGES
-      ? { ...header, kind: 'delta', baseRevision: this.revision!, changes }
+      ? { ...header, kind: 'delta', baseRevision: this.revision!, baseHash: this.baselineHash!, changes }
       : { ...header, kind: 'full', state };
     if (Buffer.byteLength(JSON.stringify(message)) > TERRARIUM_REPORT_MAX_BYTES) message = { ...header, kind: 'full', state };
     let reply = await this.send(socket, message);
     if (reply.kind === 'resync') reply = await this.send(socket, { ...header, seq: ++this.seq, kind: 'full', state });
     if (reply.kind === 'error') throw new ReportSocketError(reply.error, reply.status);
     if (reply.kind !== 'ack' || typeof reply.revision !== 'string' || !/^[a-f0-9]{32}$/.test(reply.revision) || !Number.isSafeInteger(reply.score) || reply.score < 0) throw new Error('Invalid report acknowledgement');
+    if ((reply.stateHash !== undefined || this.baselineHash !== undefined) && reply.stateHash !== stateHash) throw new Error('Report state checksum mismatch');
     if (this.socket !== socket || socket.readyState !== WebSocket.OPEN) throw new Error('Report connection closed');
-    this.baseline = state; this.revision = reply.revision;
+    this.baseline = state; this.revision = reply.revision; this.baselineHash = reply.stateHash;
   }
 
   private async connect(): Promise<WebSocket> {
@@ -50,7 +54,7 @@ export class ReportSocket {
     url.searchParams.set('id', this.options.id);
     const socket = new WebSocket(url, { headers: { authorization: `Bearer ${this.options.token}` }, family: 4, handshakeTimeout: 5_000, maxPayload: 16_384, perMessageDeflate: false });
     this.socket = socket;
-    this.baseline = undefined; this.revision = undefined;
+    this.baseline = undefined; this.revision = undefined; this.baselineHash = undefined;
     socket.on('message', raw => {
       if (this.socket !== socket) return;
       try {
@@ -86,7 +90,7 @@ export class ReportSocket {
 
   private disconnect(error: Error): void {
     const socket = this.socket; this.socket = undefined;
-    this.baseline = undefined; this.revision = undefined;
+    this.baseline = undefined; this.revision = undefined; this.baselineHash = undefined;
     if (this.pending) { const pending = this.pending; this.pending = undefined; clearTimeout(pending.timer); pending.reject(error); }
     socket?.terminate();
   }
