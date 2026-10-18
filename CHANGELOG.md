@@ -2,6 +2,12 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.7.5
+
+- Expose per-habitat upload status, acknowledgement times, transport and consecutive failures through inspection and both World panels.
+- Add terrarium_sync and panel controls to upload a complete snapshot using existing credentials; preserve local state and show errors when uploads fail.
+- Remove the author-declared experimental tag; official certification remains subject to maintainer review. Incremental reporting stays opt-in and labelled as possibly unstable.
+
 ## 0.7.4
 
 - Report over authenticated WebSocket connections with acknowledgements, heartbeat checks and reconnect recovery; preserve the HTTP report interface for older clients and servers.

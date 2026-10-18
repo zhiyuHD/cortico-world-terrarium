@@ -10,6 +10,16 @@ import type { TerrariumState } from './state.ts';
 import type { LeaderboardBoxSummary, LeaderboardSummary, ScoreParts } from './scoring.ts';
 
 interface Credentials { id: string; token: string }
+/** Report history belongs to this process; success means the server acknowledged a snapshot. */
+export interface TerrariumSyncStatus {
+  state: 'disabled' | 'idle' | 'syncing' | 'synced' | 'error';
+  mode: 'full' | 'incremental';
+  transport?: 'ws' | 'http';
+  lastAttemptAt?: string;
+  lastSuccessAt?: string;
+  lastError?: string;
+  consecutiveFailures: number;
+}
 export interface LeaderboardClientOptions { url: string; id: string; token?: string; credentialsFile: string; kind?: 'land' | 'water'; incrementalReports?: boolean }
 
 export class LeaderboardClient {
@@ -18,8 +28,13 @@ export class LeaderboardClient {
   private reportSocket: ReportSocket | undefined;
   private reportQueue: Promise<unknown> = Promise.resolve();
   private httpFallbackUntilMs = 0;
+  private syncStatus: TerrariumSyncStatus;
 
-  constructor(private readonly options: LeaderboardClientOptions) {}
+  constructor(private readonly options: LeaderboardClientOptions) {
+    this.syncStatus = { state: options.url ? 'idle' : 'disabled', mode: options.incrementalReports ? 'incremental' : 'full', consecutiveFailures: 0 };
+  }
+
+  status(): TerrariumSyncStatus { return { ...this.syncStatus }; }
 
   get id(): string | undefined { return this.credentials?.id ?? (this.options.token ? this.options.id : undefined); }
 
@@ -72,21 +87,34 @@ export class LeaderboardClient {
 
   close(): void { this.reportSocket?.close(); this.reportSocket = undefined; }
 
-  report(state: TerrariumState | AquariumState, phase: 'day' | 'night'): Promise<void> {
+  report(state: TerrariumState | AquariumState, phase: 'day' | 'night', full = false): Promise<void> {
     if (!this.options.url) return Promise.resolve();
     const snapshot = JSON.parse(JSON.stringify(state)) as TerrariumState | AquariumState;
-    const result = this.reportQueue.then(() => this.deliver(snapshot, phase));
+    const result = this.reportQueue.then(async () => {
+      if (full) this.close();
+      this.syncStatus.state = 'syncing';
+      this.syncStatus.lastAttemptAt = new Date().toISOString();
+      try {
+        const transport = await this.deliver(snapshot, phase);
+        this.syncStatus = { ...this.syncStatus, state: 'synced', transport, lastSuccessAt: new Date().toISOString(), lastError: undefined, consecutiveFailures: 0 };
+      } catch (error) {
+        this.syncStatus.state = 'error';
+        this.syncStatus.lastError = error instanceof Error ? error.message : String(error);
+        this.syncStatus.consecutiveFailures++;
+        throw error;
+      }
+    });
     this.reportQueue = result.catch(() => {});
     return result;
   }
 
-  private async deliver(state: TerrariumState | AquariumState, phase: 'day' | 'night'): Promise<void> {
+  private async deliver(state: TerrariumState | AquariumState, phase: 'day' | 'night'): Promise<'ws' | 'http'> {
     const url = new URL(this.options.url);
     requireHttps(url);
     const credentials = await this.authorize(url);
     if (Date.now() >= this.httpFallbackUntilMs) {
       this.reportSocket ??= new ReportSocket({ url, ...credentials, incremental: this.options.incrementalReports === true });
-      try { await this.reportSocket.report(state, phase); return; }
+      try { await this.reportSocket.report(state, phase); return 'ws'; }
       catch (error) {
         if (!(error instanceof ReportSocketError) || ![404, 405, 426, 501].includes(error.status ?? 0)) throw error;
         // Compatibility fallback for servers without the WebSocket report endpoint.
@@ -95,6 +123,7 @@ export class LeaderboardClient {
     }
     const response = await request(new URL('/api/reports', url), 'PUT', { id: credentials.id, state, phase, clientVersion: TERRARIUM_CLIENT_VERSION }, credentials.token);
     if (response.status < 200 || response.status >= 300) throw new Error(`Leaderboard report HTTP ${response.status}`);
+    return 'http';
   }
 
   private async authorize(url: URL): Promise<Credentials> {

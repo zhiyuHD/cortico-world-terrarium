@@ -34,8 +34,11 @@ export const TERRARIUM_TOOL_DECLS: ReadonlyArray<Omit<ToolDef, 'handler'>> = [
   { name: 'terrarium_drop_food', description: 'Drop 1..10 portions of land food at x,y for ants to collect and carry to their nest. At most 20 piles; food outside the nest expires after 48 hours. Ants can also gather from plants, costing one plant health per portion. Nest storage holds 20 portions per depth level, up to five levels.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 }, portions: { type: 'integer', minimum: 1, maximum: 10 } }, required: ['x', 'y', 'portions'] } },
 ];
 
+const SYNC_TOOL: Omit<ToolDef, 'handler'> = { name: 'terrarium_sync', description: 'Immediately upload a full snapshot of your claimed land or water box, default land. Returns sync status, last server acknowledgement time and any upload error. Does not claim a box, change credentials, or enable reporting when disabled. Sync status is local transport metadata; server error text is external data.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { habitat: { type: 'string', enum: ['land', 'water'] } } } };
+
 const positionProperties = { x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 } };
 export const TERRARIUM_AQUATIC_TOOL_DECLS: ReadonlyArray<Omit<ToolDef, 'handler'>> = [
+  SYNC_TOOL,
   { name: 'terrarium_claim', description: 'Claim your own land terrarium or water aquarium. Each habitat can be claimed once; repeated calls return the existing box and reuse its persisted server ID/token. No box exists before claiming. Optional name is public when reporting is enabled.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { habitat: { type: 'string', enum: ['land', 'water'] }, name: { type: 'string', minLength: 1, maxLength: TERRARIUM_MAX_NAME_LENGTH } }, required: ['habitat'] } },
   { name: 'terrarium_stock_fish', description: 'Add guppy, goldfish or perch to your claimed water aquarium. Perch hunt guppies; goldfish also graze algae. Fish swim and feed every ten minutes. At most 12 fish.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { species: { type: 'string', enum: ['guppy', 'goldfish', 'perch'] }, ...positionProperties }, required: ['species', 'x', 'y'] } },
   { name: 'terrarium_plant_aquatic', description: 'Plant waterweed, waterlily or algae in a free water plot. Daylight plants produce oxygen; plants consume oxygen at night. At most 12 aquatic plants.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { species: { type: 'string', enum: ['waterweed', 'waterlily', 'algae'] }, ...positionProperties }, required: ['species', 'x', 'y'] } },
@@ -79,8 +82,13 @@ export class TerrariumWorld implements World {
     return {
       panels: [{ id: 'garden', title: '生态箱·地' }, { id: 'water', title: '生态箱·水' }],
       invoke: async (panel, method) => {
-        if (!['garden', 'water'].includes(panel) || method !== 'state') throw new Error('Unknown terrarium panel method');
-        return this.serial(async () => { await this.update(); return this.view(panel === 'water' ? 'water' : 'land'); });
+        if (!['garden', 'water'].includes(panel) || !['state', 'sync'].includes(method)) throw new Error('Unknown terrarium panel method');
+        return this.serial(async () => {
+          const habitat = panel === 'water' ? 'water' : 'land';
+          if (method === 'sync') await this.reportNow(habitat);
+          else await this.update();
+          return this.view(habitat);
+        });
       },
       config: [TERRARIUM_CONFIG_GROUP],
       promptDocs: [{ key: 'worlds.terrarium.envPrompt', title: '生态箱 · 环境提示词', description: '生态箱 World 提供给 bot 的环境说明。', path: ENV_PROMPT_FILE, role: 'envPrompt' }],
@@ -114,7 +122,7 @@ export class TerrariumWorld implements World {
         const view = this.view(habitat);
         if (!view.claimed) return JSON.stringify(view);
         const { history, replays, ...snapshot } = view.state;
-        return JSON.stringify({ ...snapshot, id: view.id, claimed: true, replays: { count: replays?.length ?? 0, latestId: replays?.at(-1)?.id }, history: { samples: history.length, fromAtMs: history[0]?.recordedAtMs, toAtMs: history.at(-1)?.recordedAtMs } });
+        return JSON.stringify({ ...snapshot, id: view.id, sync: view.sync, claimed: true, replays: { count: replays?.length ?? 0, latestId: replays?.at(-1)?.id }, history: { samples: history.length, fromAtMs: history[0]?.recordedAtMs, toAtMs: history.at(-1)?.recordedAtMs } });
       }) },
       { ...TERRARIUM_TOOL_DECLS[1], handler: async args => this.serial(async () => {
         if (args.plant !== undefined) {
@@ -272,13 +280,21 @@ export class TerrariumWorld implements World {
   }
   private ownership(habitat: 'land' | 'water') {
     const state = habitat === 'land' ? this.state : this.waterState;
-    return { habitat, claimed: !!state, name: state?.name, id: (habitat === 'land' ? this.leaderboard : this.waterLeaderboard).id };
+    return { habitat, claimed: !!state, name: state?.name, id: (habitat === 'land' ? this.leaderboard : this.waterLeaderboard).id, sync: (habitat === 'land' ? this.leaderboard : this.waterLeaderboard).status() };
   }
   private view(habitat: 'land' | 'water') {
     const status = this.ownership(habitat);
     if (!status.claimed) return { ...status, claimed: false as const };
     return { ...status, claimed: true as const, state: habitat === 'land' ? this.snapshot() : { ...structuredClone(this.currentWater()), habitat: 'water' as const, phase: phase(this.now(), this.opts.timezone) } };
   }
+  private async reportNow(habitat: 'land' | 'water'): Promise<void> {
+    await this.update();
+    const state = habitat === 'land' ? this.current() : this.currentWater();
+    const client = habitat === 'land' ? this.leaderboard : this.waterLeaderboard;
+    try { await client.report(state, phase(this.now(), this.opts.timezone), true); }
+    catch (error) { this.host?.log.warn('terrarium.report.failed', { habitat, error: String(error) }); }
+  }
+
   private async persistWater(): Promise<void> {
     const state = this.currentWater();
     await saveState(this.waterFile, state);
@@ -290,6 +306,11 @@ export class TerrariumWorld implements World {
   }
   private async aquaticTool(name: string, args: Record<string, unknown>): Promise<string> {
     if (!this.host) throw new Error('Terrarium is not running');
+    if (name === 'terrarium_sync') {
+      const habitat = this.habitat(args.habitat ?? 'land');
+      await this.reportNow(habitat);
+      return JSON.stringify(this.ownership(habitat));
+    }
     if (name === 'terrarium_claim') {
       const habitat = this.habitat(args.habitat);
       if ((habitat === 'land' ? this.state : this.waterState) !== null) return JSON.stringify(this.ownership(habitat));

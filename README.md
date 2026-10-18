@@ -32,6 +32,12 @@ Public sorting and replay menus use custom controls with animated menus, disclos
 
 Deployments using the former `data/terrarium/state.json` layout must clear that directory and reclaim. The new layout does not adopt an old automatic box. Clearing a box's credentials invalidates local access to its old server identity; clearing server credentials invalidates old tokens.
 
+## Sync status
+
+`terrarium_inspect` and both World panels expose per-habitat `sync` metadata for the current process: report state, configured mode, last successful transport, attempt and acknowledgement times, last error and consecutive failures. `synced` means the last upload succeeded; it does not describe current socket connectivity. Reads make no report requests. Errors retain the last successful acknowledgement time and clear after a successful retry.
+
+`terrarium_sync` (optional `habitat`, default `land`) and each panel's full-sync button upload a complete snapshot of an already claimed box. They reuse its ID/token, preserve the incremental-report setting and do not enable disabled reporting. An unclaimed box cannot be synced. Sync failure returns status without deleting local state; error text is external data. Sync metadata is neither saved nor published with ecosystem state.
+
 ## Water ecosystem
 
 A claimed aquarium starts with waterweed and algae, oxygen 80 and cleanliness 100. Stock up to 12 guppies (`guppy`), goldfish (`goldfish`) or perch (`perch`), and plant up to 12 waterweed (`waterweed`), waterlilies (`waterlily`) or algae (`algae`). Aquatic plants occupy separate plots; fish may share cells. Perch hunt guppies; goldfish graze algae. Fish move one cell and feed every ten minutes, consuming 2 energy per hour. At oxygen below 25 or cleanliness below 30, fish lose 2 health per hour. Zero energy or health kills a fish.

@@ -1,3 +1,5 @@
+import { createSyncControls } from './sync.ts';
+import type { TerrariumSyncStatus } from '../src/leaderboard.ts';
 import { mountWater } from './water-client.ts';
 import type { HuntReplay } from '../src/replay.ts';
 import type { WebUiClientBundle, WebUiPanelContext } from 'cortico/web/shared/client-panel.ts';
@@ -25,6 +27,7 @@ function mount(ctx: WebUiPanelContext): void {
   ctx.signal.addEventListener('abort', () => replay.dispose(), { once: true });
   ctx.signal.addEventListener('abort', () => scene.dispose(), { once: true });
   const details = ctx.ui.h('div', 'terrarium-details');
+  const sync = createSyncControls(ctx, () => load());
   const refresh = ctx.ui.button(copy.refresh, { size: 'sm', onClick: () => { void load(); } });
   const habitat = ctx.ui.h('div', 'terrarium-habitat');
   const grid = ctx.ui.h('div', 'terrarium-grid');
@@ -48,11 +51,13 @@ function mount(ctx: WebUiPanelContext): void {
     chart.replaceChildren(drawHistory(current.history, selected, copy, ctx.language));
   };
   select.addEventListener('change', () => { selected = select.value; renderHistory(); });
-  card.body.append(name, status, canvas, replayContainer, details, habitat, historyTitle, select, chart, refresh);
+  card.body.append(name, status, sync.el, canvas, replayContainer, details, habitat, historyTitle, select, chart, refresh);
   ctx.root.appendChild(card.el);
   const load = async (): Promise<void> => {
     try {
-      const response = await ctx.invoke<{ claimed: boolean; id?: string; state?: SceneState & { name?: string; replays?: HuntReplay[]; soil: SoilCell[]; history: HistorySample[] } }>('state');
+      const response = await ctx.invoke<{ sync: TerrariumSyncStatus; claimed: boolean; id?: string; state?: SceneState & { name?: string; replays?: HuntReplay[]; soil: SoilCell[]; history: HistorySample[] } }>('state');
+      if (ctx.signal.aborted) return;
+      sync.update(response.sync, response.claimed);
       const state = response.state;
       for (const el of [canvas, replayContainer, details, habitat, historyTitle, select, chart]) el.hidden = !response.claimed;
       if (!response.claimed || !state) { status.textContent = pick(ctx.language, { zh: '未认领', en: 'Unclaimed' }); return; }

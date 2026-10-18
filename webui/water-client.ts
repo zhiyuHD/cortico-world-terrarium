@@ -1,3 +1,5 @@
+import { createSyncControls } from './sync.ts';
+import type { TerrariumSyncStatus } from '../src/leaderboard.ts';
 import type { WebUiPanelContext } from 'cortico/web/shared/client-panel.ts';
 import { pick } from 'cortico/core/language.ts';
 import type { AquariumState, AquariumFrame } from '../src/aquarium.ts';
@@ -14,12 +16,14 @@ export function mountWater(ctx: WebUiPanelContext): void {
   const history = ctx.ui.h('div', '');
   const scene = createWaterScene(canvas), replay = createWaterReplayControls(replayContainer, zh ? 'zh' : 'en');
   ctx.signal.addEventListener('abort', () => { scene.dispose(); replay.dispose(); }, { once: true });
+  const sync = createSyncControls(ctx, () => load());
   const refresh = ctx.ui.button(zh ? '刷新' : 'Refresh', { size: 'sm', onClick: () => { void load(); } });
-  card.body.append(title, status, canvas, details, replayContainer, history, refresh); ctx.root.append(card.el);
+  card.body.append(title, status, sync.el, canvas, details, replayContainer, history, refresh); ctx.root.append(card.el);
   const load = async (): Promise<void> => {
     try {
-      const response = await ctx.invoke<{ claimed: boolean; id?: string; state?: AquariumState & AquariumFrame }>('state');
+      const response = await ctx.invoke<{ sync: TerrariumSyncStatus; claimed: boolean; id?: string; state?: AquariumState & AquariumFrame }>('state');
       if (ctx.signal.aborted) return;
+      sync.update(response.sync, response.claimed);
       for (const el of [canvas, details, replayContainer, history]) el.hidden = !response.claimed;
       if (!response.claimed || !response.state) { status.textContent = zh ? '未认领' : 'Unclaimed'; return; }
       const state = response.state;

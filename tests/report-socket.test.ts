@@ -88,6 +88,7 @@ it('resends a full snapshot after a lost acknowledgement without applying a delt
     const pending = client.report(state, 'day');
     const deadline = performance.now() + 2_000;
     while ((await get()).state.bugs.length === 0) { if (performance.now() > deadline) throw new Error('Report not committed'); await nextTurn(); }
+    expect(client.status().state).toBe('syncing');
     await vi.advanceTimersByTimeAsync(5_000); await pending;
     expect(proxy.frames.map(frame => frame.kind)).toEqual(['full', 'delta', 'full']);
     expect((await get()).state).toEqual(state);
@@ -98,6 +99,7 @@ it('falls back to the unchanged HTTP endpoint on an older server while including
   const { client, get, proxy, httpReport } = await fixture(true, true);
   const state = newState(Date.now());
   await client.report(state, 'day'); state.name = '旧版兼容'; await client.report(state, 'night');
+  expect(client.status()).toMatchObject({ state: 'synced', transport: 'http' });
   expect(proxy.frames).toEqual([]);
   expect(await get()).toMatchObject({ clientVersion: TERRARIUM_CLIENT_VERSION, state });
   const legacy = await httpReport(state);
@@ -159,4 +161,45 @@ it('requires authenticated upgrades, client versions and a full first snapshot; 
     expect((await get()).state).toEqual(changed);
     expect(Object.hasOwn(Object.prototype, 'polluted')).toBe(false);
   } finally { ws.terminate(); }
+});
+
+
+it('tracks acknowledged uploads and failures independently of reads, and full sync preserves incremental mode', async () => {
+  const { client, proxy, get, credentials } = await fixture(true);
+  expect(client.status()).toEqual({ state: 'idle', mode: 'incremental', consecutiveFailures: 0 });
+  const state = newState(Date.now());
+  await client.report(state, 'day');
+  const success = client.status();
+  expect(success).toMatchObject({ state: 'synced', transport: 'ws', consecutiveFailures: 0 });
+  expect(Number.isFinite(Date.parse(success.lastAttemptAt!))).toBe(true);
+  expect(Number.isFinite(Date.parse(success.lastSuccessAt!))).toBe(true);
+  success.state = 'error';
+  expect(client.status().state).toBe('synced');
+  await client.report(state, 'day');
+  const invalid = { ...state, version: 999 } as unknown as typeof state;
+  const lastSuccessAt = client.status().lastSuccessAt;
+  await expect(client.report(invalid, 'day')).rejects.toThrow();
+  await expect(client.report(invalid, 'day')).rejects.toThrow();
+  const failed = client.status();
+  expect(failed).toMatchObject({ state: 'error', consecutiveFailures: 2, lastSuccessAt });
+  expect(failed.lastError).toBeTruthy();
+  expect(JSON.stringify(failed)).not.toContain(credentials.token);
+  expect((await get()).state).toEqual(state);
+  const frames = proxy.frames.length;
+  client.status(); client.status();
+  expect(proxy.frames).toHaveLength(frames);
+  await client.report(state, 'day', true);
+  expect(proxy.frames.at(-1)?.kind).toBe('full');
+  expect(client.status()).toMatchObject({ state: 'synced', mode: 'incremental', consecutiveFailures: 0 });
+  expect(client.status().lastError).toBeUndefined();
+  state.name = '继续增量'; await client.report(state, 'day');
+  expect(proxy.frames.at(-1)?.kind).toBe('delta');
+  expect((await get()).state).toEqual(state);
+});
+
+it('keeps reporting disabled during manual full sync without creating credentials', async () => {
+  const client = new LeaderboardClient({ url: '', id: '', credentialsFile: 'unused' });
+  await client.report(newState(Date.now()), 'day', true);
+  expect(client.status()).toEqual({ state: 'disabled', mode: 'full', consecutiveFailures: 0 });
+  expect(client.id).toBeUndefined();
 });

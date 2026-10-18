@@ -24,7 +24,9 @@ it('registers each claimed habitat once across repeated tool calls and World res
   const call = async (name: string, args: Record<string, unknown> = {}) => JSON.parse(String(await world.tools().find(tool => tool.name === name)!.handler(args, context)));
   try {
     await world.start(host);
-    expect(await call('terrarium_inspect')).toEqual({ land: { habitat: 'land', claimed: false }, water: { habitat: 'water', claimed: false } });
+    expect(await call('terrarium_inspect')).toEqual({ land: { habitat: 'land', claimed: false, sync: { state: 'idle', mode: 'full', consecutiveFailures: 0 } }, water: { habitat: 'water', claimed: false, sync: { state: 'idle', mode: 'full', consecutiveFailures: 0 } } });
+    await expect(call('terrarium_sync')).rejects.toThrow('not claimed');
+    await expect(world.webUi().invoke!('water', 'sync', [])).rejects.toThrow('not claimed');
     expect(registrations).toBe(0);
     await expect(stat(options.stateFile)).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(stat(options.waterStateFile)).rejects.toMatchObject({ code: 'ENOENT' });
@@ -57,6 +59,16 @@ it('registers each claimed habitat once across repeated tool calls and World res
     expect(waterReplay.frames[1].fish.map((f: { id: string }) => f.id)).toContain(fish.id);
     expect(waterReplay.frames[2].fish.map((f: { id: string }) => f.id)).not.toContain(fish.id);
     expect((await call('terrarium_water_history')).length).toBeGreaterThan(0);
+    const savedLand = await readFile(options.stateFile, 'utf8'), savedWater = await readFile(options.waterStateFile, 'utf8');
+    const synced = await call('terrarium_sync');
+    expect(synced).toMatchObject({ id: land.id, sync: { state: 'synced', transport: 'ws', consecutiveFailures: 0 } });
+    const panel = await world.webUi().invoke!('water', 'sync', []) as { sync: unknown };
+    expect(panel.sync).toMatchObject({ state: 'synced', transport: 'ws' });
+    expect((await call('terrarium_inspect', { habitat: 'land' })).sync).toEqual(synced.sync);
+    expect((await (await fetch(`${url}/api/boxes/${water.id}`)).json()).state.updatedAtMs).toBe(now);
+    expect(await readFile(options.stateFile, 'utf8')).toBe(savedLand);
+    expect(await readFile(options.waterStateFile, 'utf8')).toBe(savedWater);
+    expect(registrations).toBe(2);
 
     await world.stop(); world = new TerrariumWorld(options); await world.start(host);
     expect((await call('terrarium_inspect')).land.id).toBe(land.id);
@@ -81,7 +93,8 @@ it('does not claim or register anything when starting and restarting with no sav
     for (let i = 0; i < 2; i++) {
       const world = new TerrariumWorld(options); await world.start(host);
       expect(await world.webUi().invoke!('garden', 'state', [])).toMatchObject({ claimed: false });
-      expect(await world.webUi().invoke!('water', 'state', [])).toMatchObject({ claimed: false });
+      expect(await world.webUi().invoke!('water', 'state', [])).toMatchObject({ claimed: false, sync: { state: 'disabled' } });
+      await expect(world.webUi().invoke!('water', 'sync', [])).rejects.toThrow('not claimed');
       await world.stop();
     }
     await expect(stat(options.stateFile)).rejects.toMatchObject({ code: 'ENOENT' });

@@ -17,3 +17,9 @@
 .terrarium-replays { margin: 16px 0; }
 .terrarium-replays select { max-width: 100%; }
 .terrarium-replays button, .terrarium-replays input { margin: 8px; }
+
+.terrarium-sync { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; padding: .65rem .8rem; border-radius: .7rem; background: color-mix(in srgb, currentColor 5%, transparent); transition: background .2s ease; margin-bottom: .8rem; }
+.terrarium-sync-status { flex: 1 1 16rem; font-size: .85rem; overflow-wrap: anywhere; }
+.terrarium-sync[data-state="error"] { background: color-mix(in srgb, #d16b39 13%, transparent); }
+.terrarium-sync[data-state="syncing"] { opacity: .75; }
+@media (prefers-reduced-motion: reduce) { .terrarium-sync { transition: none; } }

@@ -7,6 +7,7 @@ export const TERRARIUM: WorldDefinition<TerrariumConfigSection> = {
   create: ctx => new TerrariumWorld({ cfg: ctx.cfg, timezone: ctx.timezone, stateFile: `${ctx.dataDir}/terrarium/land/state.json`, waterStateFile: `${ctx.dataDir}/terrarium/water/state.json`, reportToken: ctx.secret('CORTICO_TERRARIUM_REPORT_TOKEN') }),
   describe: {
     tools: describeTools([...TERRARIUM_TOOL_DECLS, ...TERRARIUM_AQUATIC_TOOL_DECLS], {
+      terrarium_sync: { zh: '立即完整上报指定生态箱，返回同步状态及错误。', en: 'Uploads a full snapshot and returns sync status and errors.' },
       terrarium_drop_food: { zh: '向地箱投放食物，供蚂蚁搬运储存。', en: 'Drops land food for ants to gather and store.' },
       terrarium_set_rank_alerts: { zh: '开启或关闭指定生态箱的排名下降提醒，重启后保留。', en: 'Enables or disables persistent rank-drop alerts for one habitat.' },
       terrarium_leaderboard: { zh: '读取地榜或水榜、分项得分和自己生态箱的排名。', en: 'Reads land or water rankings, score parts and your box rank.' },
