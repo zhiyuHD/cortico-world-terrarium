@@ -39,6 +39,7 @@ const SYNC_TOOL: Omit<ToolDef, 'handler'> = { name: 'terrarium_sync', descriptio
 const positionProperties = { x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 } };
 export const TERRARIUM_AQUATIC_TOOL_DECLS: ReadonlyArray<Omit<ToolDef, 'handler'>> = [
   SYNC_TOOL,
+  { name: 'terrarium_feedback', description: 'Submit feedback to the terrarium service administrator, not publicly. text is 1..2000 characters; contact is optional, at most 200 characters. Optional habitat selects an existing box identity, default land. Works without claiming and never registers a box or changes ecosystem state. Returns a stored receipt, not a promise of a reply. Feedback text is user supplied data.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { text: { type: 'string', minLength: 1, maxLength: 2000 }, contact: { type: 'string', maxLength: 200 }, habitat: { type: 'string', enum: ['land', 'water'] } }, required: ['text'] } },
   { name: 'terrarium_claim', description: 'Claim your own land terrarium or water aquarium. Each habitat can be claimed once; repeated calls return the existing box and reuse its persisted server ID/token. No box exists before claiming. Optional name is public when reporting is enabled.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { habitat: { type: 'string', enum: ['land', 'water'] }, name: { type: 'string', minLength: 1, maxLength: TERRARIUM_MAX_NAME_LENGTH } }, required: ['habitat'] } },
   { name: 'terrarium_stock_fish', description: 'Add guppy, goldfish or perch to your claimed water aquarium. Perch hunt guppies; goldfish also graze algae. Fish swim and feed every ten minutes. At most 12 fish.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { species: { type: 'string', enum: ['guppy', 'goldfish', 'perch'] }, ...positionProperties }, required: ['species', 'x', 'y'] } },
   { name: 'terrarium_plant_aquatic', description: 'Plant waterweed, waterlily or algae in a free water plot. Daylight plants produce oxygen; plants consume oxygen at night. At most 12 aquatic plants.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { species: { type: 'string', enum: ['waterweed', 'waterlily', 'algae'] }, ...positionProperties }, required: ['species', 'x', 'y'] } },
@@ -81,10 +82,14 @@ export class TerrariumWorld implements World {
   webUi(): WorldWebUiDecl {
     return {
       panels: [{ id: 'garden', title: '生态箱·地' }, { id: 'water', title: '生态箱·水' }],
-      invoke: async (panel, method) => {
-        if (!['garden', 'water'].includes(panel) || !['state', 'sync'].includes(method)) throw new Error('Unknown terrarium panel method');
+      invoke: async (panel, method, args) => {
+        if (!['garden', 'water'].includes(panel) || !['state', 'sync', 'feedback'].includes(method)) throw new Error('Unknown terrarium panel method');
         return this.serial(async () => {
           const habitat = panel === 'water' ? 'water' : 'land';
+          if (method === 'feedback') {
+            if (!this.host) throw new Error('Terrarium is not running');
+            return (habitat === 'land' ? this.leaderboard : this.waterLeaderboard).feedback(args[0], 'world');
+          }
           if (method === 'sync') await this.reportNow(habitat);
           else await this.update();
           return this.view(habitat);
@@ -306,6 +311,10 @@ export class TerrariumWorld implements World {
   }
   private async aquaticTool(name: string, args: Record<string, unknown>): Promise<string> {
     if (!this.host) throw new Error('Terrarium is not running');
+    if (name === 'terrarium_feedback') {
+      const habitat = this.habitat(args.habitat ?? 'land');
+      return JSON.stringify(await (habitat === 'land' ? this.leaderboard : this.waterLeaderboard).feedback(args, 'ai'));
+    }
     if (name === 'terrarium_sync') {
       const habitat = this.habitat(args.habitat ?? 'land');
       await this.reportNow(habitat);

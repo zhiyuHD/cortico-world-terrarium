@@ -23,3 +23,14 @@
 .terrarium-sync[data-state="error"] { background: color-mix(in srgb, #d16b39 13%, transparent); }
 .terrarium-sync[data-state="syncing"] { opacity: .75; }
 @media (prefers-reduced-motion: reduce) { .terrarium-sync { transition: none; } }
+
+.terrarium-feedback { margin-top: 1rem; padding-top: .8rem; border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent); }
+.terrarium-feedback-panel { animation: terrarium-feedback-in .2s ease both; }
+.terrarium-feedback form { display: grid; gap: .7rem; padding-top: .7rem; }
+.terrarium-feedback label { display: grid; gap: .35rem; font-size: .9rem; }
+.terrarium-feedback textarea, .terrarium-feedback input { width: 100%; box-sizing: border-box; font: inherit; color: inherit; background: color-mix(in srgb, currentColor 4%, transparent); border: 1px solid color-mix(in srgb, currentColor 25%, transparent); border-radius: .6rem; padding: .65rem; transition: border-color .2s, box-shadow .2s; }
+.terrarium-feedback textarea { resize: vertical; min-height: 6rem; }
+.terrarium-feedback textarea:focus, .terrarium-feedback input:focus { outline: 2px solid #73945f; outline-offset: 2px; }
+.terrarium-feedback p { margin: 0; font-size: .85rem; overflow-wrap: anywhere; }
+@keyframes terrarium-feedback-in { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .terrarium-feedback-panel { animation: none; } .terrarium-feedback textarea, .terrarium-feedback input { transition: none; } }

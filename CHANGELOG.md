@@ -2,6 +2,12 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.7.7
+
+- Add private feedback forms to the public gallery and both World panels, with animated disclosure, submission receipts and retained text on failure.
+- Add terrarium_feedback without automatic claims; reuse existing credentials to associate a box and declare the client version.
+- Persist a bounded feedback inbox with submission limits, authenticated administrator listing and resolve commands. Existing deployments initialize feedback.json on first submission.
+
 ## 0.7.6
 
 - Verify SHA-256 state digests for incremental baselines, patched targets and acknowledgements; resynchronize mismatches without committing rejected state.

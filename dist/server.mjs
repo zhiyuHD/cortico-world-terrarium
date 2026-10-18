@@ -3741,9 +3741,160 @@ var require_websocket_server = __commonJS({
   }
 });
 
-// server/announcements.ts
+// server/feedback.ts
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+
+// src/feedback.ts
+var TERRARIUM_MAX_FEEDBACK_TEXT = 2e3;
+var TERRARIUM_MAX_FEEDBACK = 2e3;
+var TERRARIUM_FEEDBACK_ANONYMOUS_LIMIT = 20;
+var TERRARIUM_FEEDBACK_BOX_LIMIT = 5;
+var TERRARIUM_FEEDBACK_RATE_INTERVAL_MS = 6e4;
+var TERRARIUM_FEEDBACK_PAGE_SIZE = 100;
+function parseFeedback(value) {
+  const input = value;
+  if (!input || typeof input.text !== "string" || !input.text.trim() || input.text.length > TERRARIUM_MAX_FEEDBACK_TEXT || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(input.text)) throw new Error("Feedback text must contain 1..2000 characters without control characters");
+  if (input.contact !== void 0 && (typeof input.contact !== "string" || input.contact.length > 200 || /[\x00-\x1f\x7f]/.test(input.contact))) throw new Error("Feedback contact must be at most 200 characters without control characters");
+  return { text: input.text.trim(), ...input.contact?.trim() ? { contact: input.contact.trim() } : {} };
+}
+
+// src/report-protocol.ts
+import { createHash } from "node:crypto";
+var TERRARIUM_REPORT_MAX_BYTES = 1048576;
+var TERRARIUM_REPORT_MAX_CHANGES = 16384;
+function validClientVersion(value) {
+  return typeof value === "string" && value.length <= 100 && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(value);
+}
+var object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+function reportStateHash(state) {
+  const json = JSON.stringify(state, (_key, value) => object(value) ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]])) : value);
+  return createHash("sha256").update(json).digest("hex");
+}
+function validReportHash(value) {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+}
+function applyReportChanges(base, changes) {
+  if (!Array.isArray(changes) || changes.length > TERRARIUM_REPORT_MAX_CHANGES) throw new Error("Invalid report changes");
+  let state = structuredClone(base);
+  for (const change of changes) {
+    if (!object(change) || !["add", "replace", "remove"].includes(String(change.op)) || typeof change.path !== "string" || change.op !== "remove" && !Object.hasOwn(change, "value")) throw new Error("Invalid report change");
+    if (change.path === "") {
+      if (change.op !== "replace") throw new Error("Invalid root change");
+      state = structuredClone(change.value);
+      continue;
+    }
+    if (!change.path.startsWith("/")) throw new Error("Invalid report path");
+    const keys = change.path.slice(1).split("/").map((part) => {
+      if (/~(?![01])/.test(part)) throw new Error("Invalid report path");
+      const key2 = part.replaceAll("~1", "/").replaceAll("~0", "~");
+      if (["__proto__", "prototype", "constructor"].includes(key2)) throw new Error("Invalid report path");
+      return key2;
+    });
+    if (keys.length > 32) throw new Error("Report path too deep");
+    let target = state;
+    for (const key2 of keys.slice(0, -1)) {
+      if (!object(target) && !Array.isArray(target) || !Object.hasOwn(target, key2)) throw new Error("Missing report path");
+      target = target[key2];
+    }
+    const key = keys.at(-1);
+    if (Array.isArray(target)) {
+      if (!/^(0|[1-9]\d*)$/.test(key)) throw new Error("Invalid array index");
+      const index = Number(key);
+      if (!Number.isSafeInteger(index) || index > target.length || change.op !== "add" && index === target.length) throw new Error("Missing report path");
+      if (change.op === "add") target.splice(index, 0, structuredClone(change.value));
+      else if (change.op === "remove") target.splice(index, 1);
+      else target[index] = structuredClone(change.value);
+    } else {
+      if (!object(target) || change.op !== "add" && !Object.hasOwn(target, key)) throw new Error("Missing report path");
+      if (change.op === "remove") delete target[key];
+      else target[key] = structuredClone(change.value);
+    }
+  }
+  if (Buffer.byteLength(JSON.stringify(state)) > TERRARIUM_REPORT_MAX_BYTES) throw new Error("Report too large");
+  return state;
+}
+
+// server/feedback.ts
+var FeedbackError = class extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+  status;
+};
+var FeedbackStore = class {
+  constructor(file) {
+    this.file = file;
+  }
+  file;
+  state = { nextId: 1, feedback: [] };
+  queue = Promise.resolve();
+  async restore() {
+    try {
+      const state = JSON.parse(await readFile(this.file, "utf8"));
+      if (!state || !Number.isSafeInteger(state.nextId) || state.nextId < 1 || !Array.isArray(state.feedback) || state.feedback.length > TERRARIUM_MAX_FEEDBACK || !state.feedback.every((item, index) => {
+        parseFeedback(item);
+        return Number.isSafeInteger(item.id) && item.id > 0 && item.id < state.nextId && (index === 0 || item.id > state.feedback[index - 1].id) && ["web", "world", "ai"].includes(item.source) && Number.isFinite(Date.parse(item.createdAt)) && (item.resolvedAt === void 0 || Number.isFinite(Date.parse(item.resolvedAt))) && (item.clientVersion === void 0 || validClientVersion(item.clientVersion)) && (item.boxId === void 0 || /^[a-z0-9][a-z0-9_-]{1,39}$/.test(item.boxId));
+      })) throw new Error("Invalid feedback store");
+      this.state = state;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
+  list(after = 0) {
+    const feedback = this.state.feedback.filter((item) => item.id > after).slice(0, TERRARIUM_FEEDBACK_PAGE_SIZE);
+    return { feedback: structuredClone(feedback), nextCursor: feedback.at(-1)?.id ?? after };
+  }
+  submit(value, boxId) {
+    return this.serial(async () => {
+      let input;
+      try {
+        input = parseFeedback(value);
+      } catch (error) {
+        throw new FeedbackError(400, error.message);
+      }
+      const metadata = value;
+      const source = metadata.source ?? "web";
+      if (typeof source !== "string" || !["web", "world", "ai"].includes(source) || metadata.clientVersion !== void 0 && !validClientVersion(metadata.clientVersion)) throw new FeedbackError(400, "Invalid feedback metadata");
+      const now = Date.now(), recent = this.state.feedback.filter((item) => item.boxId === boxId && Date.parse(item.createdAt) > now - TERRARIUM_FEEDBACK_RATE_INTERVAL_MS);
+      if (recent.length >= (boxId ? TERRARIUM_FEEDBACK_BOX_LIMIT : TERRARIUM_FEEDBACK_ANONYMOUS_LIMIT)) throw new FeedbackError(429, "Feedback limit reached; retry after one minute");
+      let feedback = this.state.feedback;
+      if (feedback.length >= TERRARIUM_MAX_FEEDBACK) {
+        const removable = feedback.find((item) => item.resolvedAt !== void 0);
+        if (!removable) throw new FeedbackError(503, "Feedback inbox is full");
+        feedback = feedback.filter((item) => item.id !== removable.id);
+      }
+      const entry = { ...input, id: this.state.nextId, createdAt: new Date(now).toISOString(), source, ...boxId ? { boxId } : {}, ...metadata.clientVersion ? { clientVersion: metadata.clientVersion } : {} };
+      await this.save({ nextId: entry.id + 1, feedback: [...feedback, entry] });
+      return { id: entry.id, createdAt: entry.createdAt };
+    });
+  }
+  resolve(id) {
+    return this.serial(async () => {
+      const entry = this.state.feedback.find((item) => item.id === id);
+      if (!entry) return false;
+      if (!entry.resolvedAt) await this.save({ ...this.state, feedback: this.state.feedback.map((item) => item.id === id ? { ...item, resolvedAt: (/* @__PURE__ */ new Date()).toISOString() } : item) });
+      return true;
+    });
+  }
+  serial(work) {
+    const result = this.queue.then(work);
+    this.queue = result.catch(() => {
+    });
+    return result;
+  }
+  async save(state) {
+    await mkdir(dirname(this.file), { recursive: true });
+    await writeFile(`${this.file}.tmp`, JSON.stringify(state), { mode: 384 });
+    await rename(`${this.file}.tmp`, this.file);
+    this.state = state;
+  }
+};
+
+// server/announcements.ts
+import { mkdir as mkdir2, readFile as readFile2, rename as rename2, writeFile as writeFile2 } from "node:fs/promises";
+import { dirname as dirname2 } from "node:path";
 
 // src/announcements.ts
 var TERRARIUM_MAX_ANNOUNCEMENTS = 2e3;
@@ -3764,7 +3915,7 @@ var AnnouncementStore = class {
   async restore() {
     let state;
     try {
-      state = JSON.parse(await readFile(this.file, "utf8"));
+      state = JSON.parse(await readFile2(this.file, "utf8"));
     } catch (error) {
       if (error.code === "ENOENT") return;
       throw error;
@@ -3810,17 +3961,17 @@ var AnnouncementStore = class {
     return result;
   }
   async save(state) {
-    await mkdir(dirname(this.file), { recursive: true });
-    await writeFile(`${this.file}.tmp`, JSON.stringify(state), { mode: 384 });
-    await rename(`${this.file}.tmp`, this.file);
+    await mkdir2(dirname2(this.file), { recursive: true });
+    await writeFile2(`${this.file}.tmp`, JSON.stringify(state), { mode: 384 });
+    await rename2(`${this.file}.tmp`, this.file);
     this.state = state;
   }
 };
 
 // server/index.ts
 import { createServer } from "node:http";
-import { readFile as readFile2, mkdir as mkdir2, rename as rename2, writeFile as writeFile2 } from "node:fs/promises";
-import { dirname as dirname2 } from "node:path";
+import { readFile as readFile3, mkdir as mkdir3, rename as rename3, writeFile as writeFile3 } from "node:fs/promises";
+import { dirname as dirname3 } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 
 // node_modules/.pnpm/ws@8.22.0/node_modules/ws/wrapper.mjs
@@ -3938,62 +4089,6 @@ function validState(value) {
   return state.version === 3 && (state.name === void 0 || validName(state.name)) && validHabitat(state) && validReplays(state) && Number.isFinite(state.updatedAtMs) && Number.isSafeInteger(state.nextId) && state.nextId >= 1 && Array.isArray(state.plants) && state.plants.length <= 12 && state.plants.every((p) => p && typeof p.id === "string" && p.id.length <= 32 && ["fern", "clover", "moss", "basil", "bean"].includes(p.species) && inGrid(p.x, p.y) && Number.isFinite(p.moisture) && p.moisture >= 0 && p.moisture <= 100 && Number.isFinite(p.growthHours) && p.growthHours >= 0 && Number.isInteger(p.stage) && p.stage >= 0 && p.stage <= 3 && typeof p.dry === "boolean" && Number.isFinite(p.health) && p.health >= 0 && p.health <= 100) && Array.isArray(state.seeds) && state.seeds.length <= 12 && state.plants.length + state.seeds.length <= 12 && state.seeds.every((s) => s && typeof s.id === "string" && ["moss", "basil", "bean"].includes(s.species) && inGrid(s.x, s.y) && Number.isFinite(s.ageHours) && s.ageHours >= 0) && Array.isArray(state.bugs) && state.bugs.length <= 12 && state.bugs.every((b) => b && typeof b.id === "string" && ["aphid", "beetle", "spider", "ant"].includes(b.species) && inGrid(b.x, b.y) && Number.isFinite(b.energy) && b.energy >= 0 && b.energy <= 100 && (b.carrying === void 0 || b.species === "ant" && Number.isInteger(b.carrying) && b.carrying >= 0 && b.carrying <= 5) && Number.isFinite(b.ageHours) && b.ageHours >= 0) && (state.eggs === void 0 || Array.isArray(state.eggs) && state.eggs.length <= 12 && state.eggs.every((egg) => egg && typeof egg.id === "string" && egg.id.length <= 32 && ["beetle", "spider", "ant"].includes(egg.species) && inGrid(egg.x, egg.y) && Number.isFinite(egg.laidAtMs) && egg.laidAtMs <= state.updatedAtMs && Number.isFinite(egg.hatchesAtMs) && egg.hatchesAtMs > egg.laidAtMs && egg.hatchesAtMs <= egg.laidAtMs + 6 * HOUR_MS)) && state.bugs.length + (state.eggs?.length ?? 0) <= 12 && (state.nests === void 0 || Array.isArray(state.nests) && state.nests.length <= 5 && state.nests.every((nest) => nest && typeof nest.id === "string" && nest.id.length <= 32 && inGrid(nest.x, nest.y) && Number.isInteger(nest.depth) && nest.depth >= 1 && nest.depth <= 5 && Number.isInteger(nest.food) && nest.food >= 0 && nest.food <= nest.depth * 20) && new Set(state.nests.map((nest) => `${nest.x},${nest.y}`)).size === state.nests.length) && (state.food === void 0 || Array.isArray(state.food) && state.food.length <= 20 && state.food.every((food) => food && typeof food.id === "string" && food.id.length <= 32 && inGrid(food.x, food.y) && Number.isInteger(food.portions) && food.portions >= 1 && food.portions <= 10 && Number.isFinite(food.droppedAtMs) && food.droppedAtMs <= state.updatedAtMs)) && Array.isArray(state.items) && state.items.length === 2 && ["coin", "pebble"].every((id) => state.items.filter((item) => item.id === id && inGrid(item.x, item.y)).length === 1) && !(state.items[0].x === state.items[1].x && state.items[0].y === state.items[1].y) && new Set([...state.plants, ...state.seeds, ...state.bugs, ...state.eggs ?? [], ...state.nests ?? [], ...state.food ?? []].map((v) => v.id)).size === state.plants.length + state.seeds.length + state.bugs.length + (state.eggs?.length ?? 0) + (state.nests?.length ?? 0) + (state.food?.length ?? 0) && new Set([...state.plants, ...state.seeds].map((v) => `${v.x},${v.y}`)).size === state.plants.length + state.seeds.length && validColony(state);
 }
 
-// src/report-protocol.ts
-import { createHash } from "node:crypto";
-var TERRARIUM_REPORT_MAX_BYTES = 1048576;
-var TERRARIUM_REPORT_MAX_CHANGES = 16384;
-function validClientVersion(value) {
-  return typeof value === "string" && value.length <= 100 && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(value);
-}
-var object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
-function reportStateHash(state) {
-  const json = JSON.stringify(state, (_key, value) => object(value) ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]])) : value);
-  return createHash("sha256").update(json).digest("hex");
-}
-function validReportHash(value) {
-  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
-}
-function applyReportChanges(base, changes) {
-  if (!Array.isArray(changes) || changes.length > TERRARIUM_REPORT_MAX_CHANGES) throw new Error("Invalid report changes");
-  let state = structuredClone(base);
-  for (const change of changes) {
-    if (!object(change) || !["add", "replace", "remove"].includes(String(change.op)) || typeof change.path !== "string" || change.op !== "remove" && !Object.hasOwn(change, "value")) throw new Error("Invalid report change");
-    if (change.path === "") {
-      if (change.op !== "replace") throw new Error("Invalid root change");
-      state = structuredClone(change.value);
-      continue;
-    }
-    if (!change.path.startsWith("/")) throw new Error("Invalid report path");
-    const keys = change.path.slice(1).split("/").map((part) => {
-      if (/~(?![01])/.test(part)) throw new Error("Invalid report path");
-      const key2 = part.replaceAll("~1", "/").replaceAll("~0", "~");
-      if (["__proto__", "prototype", "constructor"].includes(key2)) throw new Error("Invalid report path");
-      return key2;
-    });
-    if (keys.length > 32) throw new Error("Report path too deep");
-    let target = state;
-    for (const key2 of keys.slice(0, -1)) {
-      if (!object(target) && !Array.isArray(target) || !Object.hasOwn(target, key2)) throw new Error("Missing report path");
-      target = target[key2];
-    }
-    const key = keys.at(-1);
-    if (Array.isArray(target)) {
-      if (!/^(0|[1-9]\d*)$/.test(key)) throw new Error("Invalid array index");
-      const index = Number(key);
-      if (!Number.isSafeInteger(index) || index > target.length || change.op !== "add" && index === target.length) throw new Error("Missing report path");
-      if (change.op === "add") target.splice(index, 0, structuredClone(change.value));
-      else if (change.op === "remove") target.splice(index, 1);
-      else target[index] = structuredClone(change.value);
-    } else {
-      if (!object(target) || change.op !== "add" && !Object.hasOwn(target, key)) throw new Error("Missing report path");
-      if (change.op === "remove") delete target[key];
-      else target[key] = structuredClone(change.value);
-    }
-  }
-  if (Buffer.byteLength(JSON.stringify(state)) > TERRARIUM_REPORT_MAX_BYTES) throw new Error("Report too large");
-  return state;
-}
-
 // src/aquarium.ts
 var TERRARIUM_FISH_ACTION_INTERVAL_MS = 10 * 6e4;
 var grid = (x, y) => Number.isInteger(x) && Number.isInteger(y) && x >= 0 && x < 5 && y >= 0 && y < 5;
@@ -4048,26 +4143,28 @@ function equal(a, b) {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 async function writeJson(file, value) {
-  await mkdir2(dirname2(file), { recursive: true });
+  await mkdir3(dirname3(file), { recursive: true });
   const temp = file + ".tmp";
-  await writeFile2(temp, JSON.stringify(value), { mode: 384 });
-  await rename2(temp, file);
+  await writeFile3(temp, JSON.stringify(value), { mode: 384 });
+  await rename3(temp, file);
 }
 async function start(options = {}) {
   const file = options.dataFile ?? process.env.TERRARIUM_DATA_FILE ?? "./data/leaderboard.json";
+  const feedback = new FeedbackStore(`${dirname3(file)}/feedback.json`);
+  await feedback.restore();
   const credentialsFile = options.credentialsFile ?? process.env.TERRARIUM_CREDENTIALS_FILE ?? "./data/credentials.json";
-  const announcements = new AnnouncementStore(options.announcementsFile ?? process.env.CORTICO_TERRARIUM_ANNOUNCEMENTS_FILE ?? `${dirname2(file)}/announcements.json`);
+  const announcements = new AnnouncementStore(options.announcementsFile ?? process.env.CORTICO_TERRARIUM_ANNOUNCEMENTS_FILE ?? `${dirname3(file)}/announcements.json`);
   await announcements.restore();
-  const adminTokenFile = options.adminTokenFile ?? process.env.CORTICO_TERRARIUM_ADMIN_TOKEN_FILE ?? `${dirname2(file)}/admin-token`;
+  const adminTokenFile = options.adminTokenFile ?? process.env.CORTICO_TERRARIUM_ADMIN_TOKEN_FILE ?? `${dirname3(file)}/admin-token`;
   let adminToken = options.adminToken ?? process.env.CORTICO_TERRARIUM_ADMIN_TOKEN;
   if (!adminToken) {
     try {
-      adminToken = (await readFile2(adminTokenFile, "utf8")).trim();
+      adminToken = (await readFile3(adminTokenFile, "utf8")).trim();
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
       adminToken = randomBytes(32).toString("hex");
-      await mkdir2(dirname2(adminTokenFile), { recursive: true });
-      await writeFile2(adminTokenFile, adminToken, { mode: 384, flag: "wx" });
+      await mkdir3(dirname3(adminTokenFile), { recursive: true });
+      await writeFile3(adminTokenFile, adminToken, { mode: 384, flag: "wx" });
     }
     if (!adminToken) throw new Error("Empty announcement admin token");
   }
@@ -4077,19 +4174,19 @@ async function start(options = {}) {
   let registrationQueue = Promise.resolve();
   let reportQueue = Promise.resolve();
   try {
-    registry = Object.assign(/* @__PURE__ */ Object.create(null), JSON.parse(await readFile2(file, "utf8")));
+    registry = Object.assign(/* @__PURE__ */ Object.create(null), JSON.parse(await readFile3(file, "utf8")));
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
   try {
-    credentials = Object.assign(/* @__PURE__ */ Object.create(null), JSON.parse(await readFile2(credentialsFile, "utf8")));
+    credentials = Object.assign(/* @__PURE__ */ Object.create(null), JSON.parse(await readFile3(credentialsFile, "utf8")));
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
-  const page = await readFile2(new URL("./index.html", import.meta.url));
-  const sceneScript = await readFile2(new URL("./scene.js", import.meta.url)).catch(async (error) => {
+  const page = await readFile3(new URL("./index.html", import.meta.url));
+  const sceneScript = await readFile3(new URL("./scene.js", import.meta.url)).catch(async (error) => {
     if (error.code !== "ENOENT") throw error;
-    return readFile2(new URL("../dist/scene.js", import.meta.url));
+    return readFile3(new URL("../dist/scene.js", import.meta.url));
   });
   const commitReport = (id, input) => {
     const report = reportQueue.then(async () => {
@@ -4148,6 +4245,57 @@ async function start(options = {}) {
       }
       if (req.method === "GET" && path === "/health") {
         reply(200, { ok: true });
+        return;
+      }
+      if (path === "/api/feedback") {
+        if (req.method !== "POST") {
+          reply(405, { error: "Method not allowed" });
+          return;
+        }
+        let raw = "";
+        for await (const chunk of req) {
+          raw += String(chunk);
+          if (Buffer.byteLength(raw) > 16384) {
+            reply(413, { error: "Feedback too large" });
+            return;
+          }
+        }
+        const input = JSON.parse(raw);
+        if (!input || typeof input !== "object" || Array.isArray(input)) {
+          reply(400, { error: "Invalid feedback" });
+          return;
+        }
+        let boxId;
+        if (input.id !== void 0 || req.headers.authorization !== void 0) {
+          if (typeof input.id !== "string" || !Object.hasOwn(credentials, input.id) || !equal(req.headers.authorization?.replace(/^Bearer /, "") ?? "", credentials[input.id])) {
+            reply(401, { error: "Unauthorized" });
+            return;
+          }
+          boxId = input.id;
+        }
+        reply(201, await feedback.submit(input, boxId));
+        return;
+      }
+      if (path === "/api/admin/feedback" || path.startsWith("/api/admin/feedback/")) {
+        if (!equal(req.headers.authorization?.replace(/^Bearer /, "") ?? "", adminToken)) {
+          reply(401, { error: "Unauthorized" });
+          return;
+        }
+        if (req.method === "GET" && path === "/api/admin/feedback") {
+          const after = Number(new URL(req.url ?? "/", "http://localhost").searchParams.get("after") ?? 0);
+          if (!Number.isSafeInteger(after) || after < 0) {
+            reply(400, { error: "Invalid feedback cursor" });
+            return;
+          }
+          reply(200, feedback.list(after));
+          return;
+        }
+        if (req.method === "POST" && /^\/api\/admin\/feedback\/[1-9][0-9]*\/resolve$/.test(path)) {
+          const resolved = await feedback.resolve(Number(path.split("/").at(-2)));
+          reply(resolved ? 200 : 404, { resolved });
+          return;
+        }
+        reply(405, { error: "Method not allowed" });
         return;
       }
       if (path === "/api/admin/announcements" || path.startsWith("/api/admin/announcements/")) {
@@ -4314,7 +4462,7 @@ async function start(options = {}) {
       }
       reply(404, { error: "Not found" });
     } catch (error) {
-      reply(error instanceof ReportError ? error.status : error instanceof SyntaxError ? 400 : 500, { error: error instanceof ReportError ? error.message : error instanceof SyntaxError ? "Invalid JSON" : "Request failed" });
+      reply(error instanceof ReportError || error instanceof FeedbackError ? error.status : error instanceof SyntaxError ? 400 : 500, { error: error instanceof ReportError || error instanceof FeedbackError ? error.message : error instanceof SyntaxError ? "Invalid JSON" : "Request failed" });
     }
   });
   const sockets = new import_websocket_server.default({ noServer: true, maxPayload: TERRARIUM_REPORT_MAX_BYTES, perMessageDeflate: false });
@@ -4363,7 +4511,7 @@ Content-Length: 0\r
             if (error instanceof ReportError && error.resync) {
               requireFull = true;
               reply = { kind: "resync", seq };
-            } else reply = { kind: "error", seq, status: error instanceof ReportError ? error.status : error instanceof SyntaxError ? 400 : 500, error: error instanceof ReportError ? error.message : error instanceof SyntaxError ? "Invalid JSON" : "Report failed" };
+            } else reply = { kind: "error", seq, status: error instanceof ReportError || error instanceof FeedbackError ? error.status : error instanceof SyntaxError ? 400 : 500, error: error instanceof ReportError || error instanceof FeedbackError ? error.message : error instanceof SyntaxError ? "Invalid JSON" : "Report failed" };
           }
           if (ws.readyState === import_websocket.default.OPEN) ws.send(JSON.stringify(reply));
         });

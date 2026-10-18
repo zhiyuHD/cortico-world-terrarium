@@ -38,6 +38,14 @@ Deployments using the former `data/terrarium/state.json` layout must clear that 
 
 `terrarium_sync` (optional `habitat`, default `land`) and each panel's full-sync button upload a complete snapshot of an already claimed box. They reuse its ID/token, preserve the incremental-report setting and do not enable disabled reporting. An unclaimed box cannot be synced. Sync failure returns status without deleting local state; error text is external data. Sync metadata is neither saved nor published with ecosystem state.
 
+## Feedback
+
+The public gallery and both World panels accept private feedback with 1–2000 characters and optional contact details up to 200 characters. `terrarium_feedback` exposes the same submission to the agent; optional `habitat` selects an existing box identity, default land. Submitting never claims a box or uploads ecosystem state. The receipt contains only the saved ID and timestamp and does not promise a reply.
+
+`POST /api/feedback` accepts `text`, optional `contact`, declared `source` (`web`, `world`, `ai`) and `clientVersion`. To associate a box, supply `id` with its bearer token; invalid credentials are rejected. Without an ID, feedback is anonymous. The server permits five submissions per box per minute and twenty anonymous submissions per minute across all visitors. It stores at most 2000 records; new submissions replace the oldest resolved record when full, or fail with 503 if all are unresolved. Source and version are client declarations. Public routes never expose saved feedback or contact details.
+
+Feedback is initialized on first submission at `feedback.json` next to the leaderboard data file, with mode 0600. Existing deployments require no manual migration. Records survive service restarts. `GET /api/admin/feedback?after=0` returns at most 100 records plus `nextCursor`; `POST /api/admin/feedback/<id>/resolve` marks a record handled. Both require the existing admin bearer token. On the server, use `node admin.mjs feedback-list [--after <id>]` and `node admin.mjs feedback-resolve <id>` with the existing `--server` and `--token-file` options. Older servers report feedback as unavailable and keep existing ecosystem operations working.
+
 ## Water ecosystem
 
 A claimed aquarium starts with waterweed and algae, oxygen 80 and cleanliness 100. Stock up to 12 guppies (`guppy`), goldfish (`goldfish`) or perch (`perch`), and plant up to 12 waterweed (`waterweed`), waterlilies (`waterlily`) or algae (`algae`). Aquatic plants occupy separate plots; fish may share cells. Perch hunt guppies; goldfish graze algae. Fish move one cell and feed every ten minutes, consuming 2 energy per hour. At oxygen below 25 or cleanliness below 30, fish lose 2 health per hour. Zero energy or health kills a fish.

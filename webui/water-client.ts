@@ -1,3 +1,4 @@
+import { createFeedbackControls } from './feedback.ts';
 import { createSyncControls } from './sync.ts';
 import type { TerrariumSyncStatus } from '../src/leaderboard.ts';
 import type { WebUiPanelContext } from 'cortico/web/shared/client-panel.ts';
@@ -18,7 +19,7 @@ export function mountWater(ctx: WebUiPanelContext): void {
   ctx.signal.addEventListener('abort', () => { scene.dispose(); replay.dispose(); }, { once: true });
   const sync = createSyncControls(ctx, () => load());
   const refresh = ctx.ui.button(zh ? '刷新' : 'Refresh', { size: 'sm', onClick: () => { void load(); } });
-  card.body.append(title, status, sync.el, canvas, details, replayContainer, history, refresh); ctx.root.append(card.el);
+  card.body.append(title, status, sync.el, canvas, details, replayContainer, history, refresh, createFeedbackControls(ctx)); ctx.root.append(card.el);
   const load = async (): Promise<void> => {
     try {
       const response = await ctx.invoke<{ sync: TerrariumSyncStatus; claimed: boolean; id?: string; state?: AquariumState & AquariumFrame }>('state');

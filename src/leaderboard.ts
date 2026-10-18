@@ -1,3 +1,4 @@
+import { parseFeedback, type TerrariumFeedbackReceipt } from './feedback.ts';
 import { validAnnouncement, type AnnouncementPage } from './announcements.ts';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -37,6 +38,21 @@ export class LeaderboardClient {
   status(): TerrariumSyncStatus { return { ...this.syncStatus }; }
 
   get id(): string | undefined { return this.credentials?.id ?? (this.options.token ? this.options.id : undefined); }
+
+  async feedback(value: unknown, source: 'world' | 'ai'): Promise<TerrariumFeedbackReceipt> {
+    const input = parseFeedback(value);
+    if (!this.options.url) throw new Error('Feedback is unavailable; configure worlds.terrarium.leaderboardUrl');
+    const url = new URL('/api/feedback', this.options.url);
+    requireHttps(url);
+    const credentials = this.id ? await this.authorize(url) : undefined;
+    const response = await request(url, 'POST', { ...input, source, clientVersion: TERRARIUM_CLIENT_VERSION, ...(credentials ? { id: credentials.id } : {}) }, credentials?.token);
+    if (response.status === 404 || response.status === 405) throw new Error('This server does not support feedback; upgrade the server');
+    if (response.status === 429) throw new Error('Feedback limit reached; retry after one minute');
+    if (response.status !== 201) throw new Error(`Feedback HTTP ${response.status}`);
+    const result = parseJson(response.body) as TerrariumFeedbackReceipt;
+    if (!result || !Number.isSafeInteger(result.id) || result.id < 1 || typeof result.createdAt !== 'string' || !Number.isFinite(Date.parse(result.createdAt))) throw new Error('Invalid feedback receipt');
+    return { id: result.id, createdAt: result.createdAt };
+  }
 
   async leaderboard(limit: number): Promise<LeaderboardSummary> {
     if (!this.options.url) throw new Error('Leaderboard is disabled; configure worlds.terrarium.leaderboardUrl');

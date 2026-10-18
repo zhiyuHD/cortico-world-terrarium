@@ -1,3 +1,4 @@
+import { FeedbackStore, FeedbackError } from './feedback.ts';
 import { AnnouncementStore } from './announcements.ts';
 import { createServer } from 'node:http';
 import { readFile, mkdir, rename, writeFile } from 'node:fs/promises';
@@ -31,6 +32,8 @@ async function writeJson(file: string, value: unknown): Promise<void> {
 }
 export async function start(options: ServerOptions = {}): Promise<ReturnType<typeof createServer>> {
   const file = options.dataFile ?? process.env.TERRARIUM_DATA_FILE ?? './data/leaderboard.json';
+  const feedback = new FeedbackStore(`${dirname(file)}/feedback.json`);
+  await feedback.restore();
   const credentialsFile = options.credentialsFile ?? process.env.TERRARIUM_CREDENTIALS_FILE ?? './data/credentials.json';
   const announcements = new AnnouncementStore(options.announcementsFile ?? process.env.CORTICO_TERRARIUM_ANNOUNCEMENTS_FILE ?? `${dirname(file)}/announcements.json`);
   await announcements.restore();
@@ -106,6 +109,32 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
         res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); res.end(sceneScript); return;
       }
       if (req.method === 'GET' && path === '/health') { reply(200, { ok: true }); return; }
+      if (path === '/api/feedback') {
+        if (req.method !== 'POST') { reply(405, { error: 'Method not allowed' }); return; }
+        let raw = '';
+        for await (const chunk of req) { raw += String(chunk); if (Buffer.byteLength(raw) > 16384) { reply(413, { error: 'Feedback too large' }); return; } }
+        const input = JSON.parse(raw) as { id?: unknown } | null;
+        if (!input || typeof input !== 'object' || Array.isArray(input)) { reply(400, { error: 'Invalid feedback' }); return; }
+        let boxId: string | undefined;
+        if (input.id !== undefined || req.headers.authorization !== undefined) {
+          if (typeof input.id !== 'string' || !Object.hasOwn(credentials, input.id) || !equal(req.headers.authorization?.replace(/^Bearer /, '') ?? '', credentials[input.id])) { reply(401, { error: 'Unauthorized' }); return; }
+          boxId = input.id;
+        }
+        reply(201, await feedback.submit(input, boxId)); return;
+      }
+      if (path === '/api/admin/feedback' || path.startsWith('/api/admin/feedback/')) {
+        if (!equal(req.headers.authorization?.replace(/^Bearer /, '') ?? '', adminToken)) { reply(401, { error: 'Unauthorized' }); return; }
+        if (req.method === 'GET' && path === '/api/admin/feedback') {
+          const after = Number(new URL(req.url ?? '/', 'http://localhost').searchParams.get('after') ?? 0);
+          if (!Number.isSafeInteger(after) || after < 0) { reply(400, { error: 'Invalid feedback cursor' }); return; }
+          reply(200, feedback.list(after)); return;
+        }
+        if (req.method === 'POST' && /^\/api\/admin\/feedback\/[1-9][0-9]*\/resolve$/.test(path)) {
+          const resolved = await feedback.resolve(Number(path.split('/').at(-2)));
+          reply(resolved ? 200 : 404, { resolved }); return;
+        }
+        reply(405, { error: 'Method not allowed' }); return;
+      }
       if (path === '/api/admin/announcements' || path.startsWith('/api/admin/announcements/')) {
         const token = req.headers.authorization?.replace(/^Bearer /, '') ?? '';
         if (!equal(token, adminToken)) { reply(401, { error: 'Unauthorized' }); return; }
@@ -199,7 +228,7 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
         return;
       }
       reply(404, { error: 'Not found' });
-    } catch (error) { reply(error instanceof ReportError ? error.status : error instanceof SyntaxError ? 400 : 500, { error: error instanceof ReportError ? error.message : error instanceof SyntaxError ? 'Invalid JSON' : 'Request failed' }); }
+    } catch (error) { reply(error instanceof ReportError || error instanceof FeedbackError ? error.status : error instanceof SyntaxError ? 400 : 500, { error: error instanceof ReportError || error instanceof FeedbackError ? error.message : error instanceof SyntaxError ? 'Invalid JSON' : 'Request failed' }); }
   });
   const sockets = new WebSocketServer({ noServer: true, maxPayload: TERRARIUM_REPORT_MAX_BYTES, perMessageDeflate: false });
   const alive = new Set<WebSocket>();
@@ -235,7 +264,7 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
             reply = { kind: 'ack', seq, revision: entry.reportRevision!, score: entry.score, stateHash: reportStateHash(entry.state) };
           } catch (error) {
             if (error instanceof ReportError && error.resync) { requireFull = true; reply = { kind: 'resync', seq }; }
-            else reply = { kind: 'error', seq, status: error instanceof ReportError ? error.status : error instanceof SyntaxError ? 400 : 500, error: error instanceof ReportError ? error.message : error instanceof SyntaxError ? 'Invalid JSON' : 'Report failed' };
+            else reply = { kind: 'error', seq, status: error instanceof ReportError || error instanceof FeedbackError ? error.status : error instanceof SyntaxError ? 400 : 500, error: error instanceof ReportError || error instanceof FeedbackError ? error.message : error instanceof SyntaxError ? 'Invalid JSON' : 'Report failed' };
           }
           if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(reply));
         });

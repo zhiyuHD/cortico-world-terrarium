@@ -1,3 +1,4 @@
+import { createFeedbackControls } from './feedback.ts';
 import { createSyncControls } from './sync.ts';
 import type { TerrariumSyncStatus } from '../src/leaderboard.ts';
 import { mountWater } from './water-client.ts';
@@ -51,7 +52,7 @@ function mount(ctx: WebUiPanelContext): void {
     chart.replaceChildren(drawHistory(current.history, selected, copy, ctx.language));
   };
   select.addEventListener('change', () => { selected = select.value; renderHistory(); });
-  card.body.append(name, status, sync.el, canvas, replayContainer, details, habitat, historyTitle, select, chart, refresh);
+  card.body.append(name, status, sync.el, canvas, replayContainer, details, habitat, historyTitle, select, chart, refresh, createFeedbackControls(ctx));
   ctx.root.appendChild(card.el);
   const load = async (): Promise<void> => {
     try {
