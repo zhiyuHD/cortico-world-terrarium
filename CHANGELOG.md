@@ -2,7 +2,7 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
-## 0.7.4 (unreleased)
+## 0.7.4
 
 - Report over authenticated WebSocket connections with acknowledgements, heartbeat checks and reconnect recovery; preserve the HTTP report interface for older clients and servers.
 - Add manually enabled incremental reports, disabled by default and labelled as possibly unstable. Start each connection with a full snapshot and resynchronize mismatched revisions.
