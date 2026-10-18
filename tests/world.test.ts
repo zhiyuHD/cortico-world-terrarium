@@ -11,6 +11,7 @@ import { TERRARIUM_DEFAULTS } from '../src/config.ts';
 import { LeaderboardClient } from '../src/leaderboard.ts';
 import { loadState, newState, saveState } from '../src/state.ts';
 import { TerrariumWorld } from '../src/world.ts';
+import { createReportProxy } from './report-service.ts';
 
 async function settleScheduledUpdate(check: () => Promise<void>): Promise<void> {
   const deadline = performance.now() + 2_000;
@@ -140,8 +141,9 @@ it('advances ants every 10 seconds while reads preserve files and synchronize bo
   const serverFile = join(dir, 'service', 'leaderboard.json');
   const server = await startServer({ port: 0, dataFile: serverFile, credentialsFile: join(dir, 'service', 'credentials.json') });
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('Missing port');
-  const url = `http://127.0.0.1:${address.port}`;
   const requests = { reports: 0, ranks: 0, announcements: 0 };
+  const proxy = await createReportProxy(`http://127.0.0.1:${address.port}`, () => { requests.reports++; });
+  const url = proxy.url;
   server.on('request', req => {
     if (req.method === 'PUT' && req.url === '/api/reports') requests.reports++;
     if (req.url?.includes('view=summary')) requests.ranks++;
@@ -222,6 +224,7 @@ it('advances ants every 10 seconds while reads preserve files and synchronize bo
     expect(warnings).toEqual([]);
   } finally {
     await world.stop(); vi.useRealTimers();
+    await proxy.close();
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     await rm(dir, { recursive: true, force: true });
   }
@@ -232,8 +235,9 @@ it('runs a newly claimed ant without reads and saves its unsynchronized state on
   const file = join(dir, 'land', 'state.json'), serverFile = join(dir, 'service', 'leaderboard.json');
   const server = await startServer({ port: 0, dataFile: serverFile, credentialsFile: join(dir, 'service', 'credentials.json') });
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('Missing port');
-  const url = `http://127.0.0.1:${address.port}`;
   let reports = 0;
+  const proxy = await createReportProxy(`http://127.0.0.1:${address.port}`, () => { reports++; });
+  const url = proxy.url;
   server.on('request', req => { if (req.method === 'PUT' && req.url === '/api/reports') reports++; });
   const warnings: unknown[] = [], events: Array<{ type: string }> = [];
   const host = { log: { warn: (...args: unknown[]) => warnings.push(args) }, async pushEvent(event: { type: string }) { events.push(event); return event; } } as unknown as WorldHost;
@@ -279,6 +283,7 @@ it('runs a newly claimed ant without reads and saves its unsynchronized state on
     expect(warnings).toEqual([]);
   } finally {
     await world.stop(); vi.useRealTimers();
+    await proxy.close();
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     await rm(dir, { recursive: true, force: true });
   }

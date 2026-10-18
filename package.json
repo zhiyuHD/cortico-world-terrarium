@@ -65,16 +65,20 @@
     "typecheck": "tsc --noEmit",
     "typecheck:webui": "tsc --noEmit -p tsconfig.web.json",
     "build:webui": "esbuild webui/client.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/webui/0.7.4/client.js",
-    "build:server": "esbuild server/index.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/server.mjs && esbuild webui/scene.ts --bundle --platform=browser --format=esm --target=es2022 --outfile=dist/scene.js && cp server/index.html dist/index.html",
+    "build:server": "tsx server/build.ts",
     "build:admin": "esbuild server/admin.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/admin.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@types/ws": "^8.18.2",
     "cortico": "^0.2.1",
     "esbuild": "^0.28.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   },
-  "author": "zhiyuxl"
+  "author": "zhiyuxl",
+  "dependencies": {
+    "ws": "^8.22.0"
+  }
 }

@@ -4,6 +4,9 @@ Versions marked unreleased were local development versions and were not publishe
 
 ## 0.7.4 (unreleased)
 
+- Report over authenticated WebSocket connections with acknowledgements, heartbeat checks and reconnect recovery; preserve the HTTP report interface for older clients and servers.
+- Add manually enabled incremental reports, disabled by default and labelled as possibly unstable. Start each connection with a full snapshot and resynchronize mismatched revisions.
+- Include the actual package version on every new-client report and persist it with the box entry; continue accepting legacy HTTP reports without a version.
 - Advance land state in memory every ten seconds; save and report on the configured tick interval, one minute by default.
 - Keep panel and read-tool requests from saving or reporting state; save and report state-changing tools immediately, and save without reporting on normal shutdown.
 - Mark service announcements as external events.

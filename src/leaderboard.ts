@@ -3,16 +3,21 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
+import { ReportSocket, ReportSocketError } from './report-socket.ts';
+import { TERRARIUM_CLIENT_VERSION } from './version.ts';
 import type { AquariumState } from './aquarium.ts';
 import type { TerrariumState } from './state.ts';
 import type { LeaderboardBoxSummary, LeaderboardSummary, ScoreParts } from './scoring.ts';
 
 interface Credentials { id: string; token: string }
-export interface LeaderboardClientOptions { url: string; id: string; token?: string; credentialsFile: string; kind?: 'land' | 'water' }
+export interface LeaderboardClientOptions { url: string; id: string; token?: string; credentialsFile: string; kind?: 'land' | 'water'; incrementalReports?: boolean }
 
 export class LeaderboardClient {
   private credentials: Credentials | undefined;
   private authorizing: Promise<Credentials> | undefined;
+  private reportSocket: ReportSocket | undefined;
+  private reportQueue: Promise<unknown> = Promise.resolve();
+  private httpFallbackUntilMs = 0;
 
   constructor(private readonly options: LeaderboardClientOptions) {}
 
@@ -65,12 +70,30 @@ export class LeaderboardClient {
 
   private key(url: URL): string { return `${url.origin}/${this.options.kind === 'water' ? 'water/' : ''}${this.options.id ? `id/${this.options.id}` : 'auto'}`; }
 
-  async report(state: TerrariumState | AquariumState, phase: 'day' | 'night'): Promise<void> {
-    if (!this.options.url) return;
+  close(): void { this.reportSocket?.close(); this.reportSocket = undefined; }
+
+  report(state: TerrariumState | AquariumState, phase: 'day' | 'night'): Promise<void> {
+    if (!this.options.url) return Promise.resolve();
+    const snapshot = JSON.parse(JSON.stringify(state)) as TerrariumState | AquariumState;
+    const result = this.reportQueue.then(() => this.deliver(snapshot, phase));
+    this.reportQueue = result.catch(() => {});
+    return result;
+  }
+
+  private async deliver(state: TerrariumState | AquariumState, phase: 'day' | 'night'): Promise<void> {
     const url = new URL(this.options.url);
     requireHttps(url);
     const credentials = await this.authorize(url);
-    const response = await request(new URL('/api/reports', url), 'PUT', { id: credentials.id, state, phase }, credentials.token);
+    if (Date.now() >= this.httpFallbackUntilMs) {
+      this.reportSocket ??= new ReportSocket({ url, ...credentials, incremental: this.options.incrementalReports === true });
+      try { await this.reportSocket.report(state, phase); return; }
+      catch (error) {
+        if (!(error instanceof ReportSocketError) || ![404, 405, 426, 501].includes(error.status ?? 0)) throw error;
+        // Compatibility fallback for servers without the WebSocket report endpoint.
+        this.close(); this.httpFallbackUntilMs = Date.now() + 5 * 60_000;
+      }
+    }
+    const response = await request(new URL('/api/reports', url), 'PUT', { id: credentials.id, state, phase, clientVersion: TERRARIUM_CLIENT_VERSION }, credentials.token);
     if (response.status < 200 || response.status >= 300) throw new Error(`Leaderboard report HTTP ${response.status}`);
   }
 

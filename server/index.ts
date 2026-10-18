@@ -3,15 +3,21 @@ import { createServer } from 'node:http';
 import { readFile, mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { WebSocketServer, WebSocket } from 'ws';
 import { migrateState, type TerrariumState } from '../src/state.ts';
+import { applyReportChanges, validClientVersion, TERRARIUM_REPORT_MAX_BYTES, type ReportMessage, type ReportReply } from '../src/report-protocol.ts';
 
 import { validAquarium, type AquariumState } from '../src/aquarium.ts';
 import { score, scoreParts, type LeaderboardBoxSummary } from '../src/scoring.ts';
 export { score } from '../src/scoring.ts';
 
-interface Entry { id: string; kind?: 'land' | 'water'; state: TerrariumState | AquariumState; phase?: 'day' | 'night'; score: number; reportedAt: string }
+interface Entry { id: string; kind?: 'land' | 'water'; state: TerrariumState | AquariumState; phase?: 'day' | 'night'; score: number; reportedAt: string; clientVersion?: string; reportRevision?: string }
 const idPattern = /^[a-z0-9][a-z0-9_-]{1,39}$/;
 export interface ServerOptions { dataFile?: string; credentialsFile?: string; port?: number; announcementsFile?: string; adminToken?: string; adminTokenFile?: string }
+
+class ReportError extends Error {
+  constructor(readonly status: number, message: string, readonly resync = false) { super(message); }
+}
 
 function equal(a: string, b: string): boolean {
   const left = Buffer.from(a), right = Buffer.from(b);
@@ -54,6 +60,36 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     return readFile(new URL('../dist/scene.js', import.meta.url));
   });
+  const commitReport = (id: string, input: { phase?: unknown; clientVersion?: unknown; state?: unknown; baseRevision?: string; changes?: unknown }) => {
+    const report = reportQueue.then(async () => {
+      if ((input.phase !== undefined && input.phase !== 'day' && input.phase !== 'night') || (input.clientVersion !== undefined && !validClientVersion(input.clientVersion))) throw new ReportError(400, 'Invalid report metadata');
+      let raw = input.state;
+      if (input.baseRevision !== undefined) {
+        if (!registry[id] || input.baseRevision !== registry[id].reportRevision) throw new ReportError(409, 'Full report required', true);
+        try { raw = applyReportChanges(registry[id].state, input.changes); }
+        catch { throw new ReportError(400, 'Invalid report changes'); }
+      }
+      let state: TerrariumState | AquariumState;
+      try {
+        if ((raw as { kind?: string })?.kind === 'water') {
+          if (!validAquarium(raw)) throw new Error('Invalid aquarium');
+          state = raw;
+        } else state = migrateState(raw);
+      } catch { throw new ReportError(400, 'Invalid report'); }
+      const now = Date.now();
+      if (state.updatedAtMs > now + 60000 || state.updatedAtMs < now - 31 * 86400000) throw new ReportError(400, 'Invalid report time');
+      const kind = 'fish' in state ? 'water' : 'land';
+      if (registry[id] && (registry[id].kind ?? 'land') !== kind) throw new ReportError(409, 'Box habitat cannot change');
+      if (registry[id] && state.updatedAtMs < registry[id].state.updatedAtMs) throw new ReportError(409, 'Stale report');
+      const entry: Entry = { id, kind, state, phase: input.phase as Entry['phase'], score: score(state), reportedAt: new Date(now).toISOString(), reportRevision: randomBytes(16).toString('hex'), ...(input.clientVersion === undefined ? {} : { clientVersion: input.clientVersion as string }) };
+      const next = Object.assign(Object.create(null), registry, { [id]: entry });
+      await writeJson(file, next);
+      registry = next;
+      return entry;
+    });
+    reportQueue = report.catch(() => {});
+    return report;
+  };
   const server = createServer(async (req, res) => {
     const reply = (status: number, value: unknown): void => {
       res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
@@ -151,38 +187,72 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
           raw += String(chunk);
           if (Buffer.byteLength(raw) > 1048576) { reply(413, { error: 'Report too large' }); return; }
         }
-        const input = JSON.parse(raw) as { id?: string; state?: unknown; phase?: string };
-        let state: TerrariumState | AquariumState;
-        try {
-          if ((input.state as { kind?: string })?.kind === 'water') {
-            if (!validAquarium(input.state)) throw new Error('Invalid aquarium');
-            state = input.state;
-          } else state = migrateState(input.state);
-        }
-        catch { reply(400, { error: 'Invalid report' }); return; }
-        if (typeof input.id !== 'string' || !idPattern.test(input.id) || (input.phase !== undefined && input.phase !== 'day' && input.phase !== 'night')) { reply(400, { error: 'Invalid report' }); return; }
+        const input = JSON.parse(raw) as { id?: string; state?: unknown; phase?: unknown; clientVersion?: unknown } | null;
+        if (!input || typeof input.id !== 'string' || !idPattern.test(input.id)) { reply(400, { error: 'Invalid report' }); return; }
         const expected = credentials[input.id];
         const token = req.headers.authorization?.replace(/^Bearer /, '') ?? '';
         if (!expected || !equal(token, expected)) { reply(401, { error: 'Unauthorized' }); return; }
-        const now = Date.now();
-        if (state.updatedAtMs > now + 60000 || state.updatedAtMs < now - 31 * 86400000) { reply(400, { error: 'Invalid report time' }); return; }
-        const id = input.id;
-        const kind = 'fish' in state ? 'water' : 'land';
-        const report = reportQueue.then(async () => {
-          if (registry[id] && (registry[id].kind ?? 'land') !== kind) { reply(409, { error: 'Box habitat cannot change' }); return; }
-          if (registry[id] && state.updatedAtMs < registry[id].state.updatedAtMs) { reply(409, { error: 'Stale report' }); return; }
-          const next = Object.assign(Object.create(null), registry, { [id]: { id, kind, state, phase: input.phase, score: score(state), reportedAt: new Date(now).toISOString() } });
-          await writeJson(file, next);
-          registry = next;
-          reply(200, { score: registry[id].score });
-        });
-        reportQueue = report.catch(() => {});
-        await report;
+        const entry = await commitReport(input.id, { state: input.state, phase: input.phase, clientVersion: input.clientVersion });
+        reply(200, { score: entry.score });
         return;
       }
       reply(404, { error: 'Not found' });
-    } catch (error) { reply(error instanceof SyntaxError ? 400 : 500, { error: error instanceof SyntaxError ? 'Invalid JSON' : 'Request failed' }); }
+    } catch (error) { reply(error instanceof ReportError ? error.status : error instanceof SyntaxError ? 400 : 500, { error: error instanceof ReportError ? error.message : error instanceof SyntaxError ? 'Invalid JSON' : 'Request failed' }); }
   });
+  const sockets = new WebSocketServer({ noServer: true, maxPayload: TERRARIUM_REPORT_MAX_BYTES, perMessageDeflate: false });
+  const alive = new Set<WebSocket>();
+  server.on('upgrade', (req, socket, head) => {
+    const url = new URL(req.url ?? '/', 'http://localhost');
+    const id = url.searchParams.get('id') ?? '';
+    const status = url.pathname !== '/api/reports/ws' ? 404
+      : !idPattern.test(id) || !credentials[id] || !equal(req.headers.authorization?.replace(/^Bearer /, '') ?? '', credentials[id]) ? 401 : 0;
+    if (status) { socket.end(`HTTP/1.1 ${status} ${status === 404 ? 'Not Found' : 'Unauthorized'}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); return; }
+    sockets.handleUpgrade(req, socket, head, ws => {
+      alive.add(ws);
+      ws.on('pong', () => alive.add(ws));
+      ws.on('close', () => alive.delete(ws));
+      ws.on('error', () => ws.terminate());
+      let queue: Promise<unknown> = Promise.resolve(), requireFull = true, lastSeq = 0, queued = 0;
+      ws.on('message', (raw, binary) => {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        if (++queued > 8) { ws.close(1008, 'Too many pending reports'); return; }
+        const task = queue.then(async () => {
+          let seq = 0;
+          let reply: ReportReply;
+          try {
+            if (binary) throw new ReportError(400, 'Text reports required');
+            const input = JSON.parse(raw.toString()) as ReportMessage;
+            if (!input || !Number.isSafeInteger(input.seq) || input.seq <= lastSeq) throw new ReportError(400, 'Invalid report sequence');
+            seq = input.seq; lastSeq = seq;
+            if (input.protocol !== 1 || !validClientVersion(input.clientVersion) || !['day', 'night'].includes(input.phase) || !['full', 'delta'].includes(input.kind)) throw new ReportError(400, 'Client version and report protocol are required');
+            if (input.kind === 'delta' && (requireFull || typeof input.baseRevision !== 'string')) throw new ReportError(409, 'Full report required', true);
+            const entry = await commitReport(id, { phase: input.phase, clientVersion: input.clientVersion, ...(input.kind === 'full' ? { state: input.state } : { baseRevision: input.baseRevision, changes: input.changes }) });
+            requireFull = false;
+            reply = { kind: 'ack', seq, revision: entry.reportRevision!, score: entry.score };
+          } catch (error) {
+            if (error instanceof ReportError && error.resync) { requireFull = true; reply = { kind: 'resync', seq }; }
+            else reply = { kind: 'error', seq, status: error instanceof ReportError ? error.status : error instanceof SyntaxError ? 400 : 500, error: error instanceof ReportError ? error.message : error instanceof SyntaxError ? 'Invalid JSON' : 'Report failed' };
+          }
+          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(reply));
+        });
+        queue = task.catch(() => ws.terminate()).finally(() => { queued--; });
+      });
+    });
+  });
+  const heartbeat = setInterval(() => {
+    for (const ws of sockets.clients) {
+      if (!alive.delete(ws)) ws.terminate();
+      else ws.ping();
+    }
+  }, 30_000);
+  heartbeat.unref();
+  const close = server.close.bind(server);
+  server.close = (callback?: (error?: Error) => void) => {
+    clearInterval(heartbeat);
+    for (const ws of sockets.clients) ws.terminate();
+    sockets.close();
+    return close(callback);
+  };
   await new Promise<void>(resolve => server.listen(port, '127.0.0.1', resolve));
   return server;
 }

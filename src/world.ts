@@ -70,8 +70,8 @@ export class TerrariumWorld implements World {
     this.inbox = new AnnouncementInbox(join(dirname(opts.stateFile), 'announcement-inbox.json'), opts.cfg.leaderboardUrl ? new URL(opts.cfg.leaderboardUrl).origin : 'disabled');
     this.waterFile = opts.waterStateFile ?? join(dirname(opts.stateFile), 'water', 'state.json');
     this.rankAlerts = { land: new RankAlerts(join(dirname(opts.stateFile), 'rank-alerts.json')), water: new RankAlerts(join(dirname(this.waterFile), 'rank-alerts.json')) };
-    this.waterLeaderboard = new LeaderboardClient({ url: opts.cfg.leaderboardUrl, id: '', kind: 'water', credentialsFile: join(dirname(this.waterFile), 'report-credentials.json') });
-    this.leaderboard = new LeaderboardClient({ url: opts.cfg.leaderboardUrl, id: opts.cfg.leaderboardId, token: opts.reportToken, credentialsFile: join(dirname(opts.stateFile), 'report-credentials.json') });
+    this.waterLeaderboard = new LeaderboardClient({ url: opts.cfg.leaderboardUrl, id: '', kind: 'water', credentialsFile: join(dirname(this.waterFile), 'report-credentials.json'), incrementalReports: opts.cfg.incrementalReports });
+    this.leaderboard = new LeaderboardClient({ url: opts.cfg.leaderboardUrl, id: opts.cfg.leaderboardId, token: opts.reportToken, credentialsFile: join(dirname(opts.stateFile), 'report-credentials.json'), incrementalReports: opts.cfg.incrementalReports });
   }
   envPromptVars(): Record<string, string> { return {}; }
 
@@ -213,7 +213,7 @@ export class TerrariumWorld implements World {
     this.lastRankCheck.land = this.lastRankCheck.water = -Infinity;
     this.host = host;
     try { await this.serial(() => this.synchronize()); }
-    catch (error) { this.host = null; this.state = null; this.waterState = null; throw error; }
+    catch (error) { this.leaderboard.close(); this.waterLeaderboard.close(); this.host = null; this.state = null; this.waterState = null; throw error; }
     this.nextCheckAtMs = this.now() + this.opts.cfg.tickIntervalMs;
     this.schedule();
   }
@@ -223,6 +223,7 @@ export class TerrariumWorld implements World {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     await this.queue;
+    this.leaderboard.close(); this.waterLeaderboard.close();
     if (this.state) await saveState(this.opts.stateFile, this.state);
     if (this.waterState) await saveState(this.waterFile, this.waterState);
     this.state = null; this.waterState = null;
