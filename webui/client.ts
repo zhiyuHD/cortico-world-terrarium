@@ -78,6 +78,7 @@ function mount(ctx: WebUiPanelContext): void {
         const label = `(${cell.x},${cell.y}) · ${copy.moisture} ${cell.moisture.toFixed(1)} · ${copy.light} ${light.toFixed(2)}`;
         const button = document.createElement('button');
         button.type = 'button'; button.className = 'terrarium-cell';
+        button.style.setProperty('--terrarium-dark-moisture', `${28 - cell.moisture * .14}%`);
         button.style.backgroundColor = `hsl(195 35% ${85 - cell.moisture * .45}%)`;
         button.style.color = cell.moisture > 65 ? '#fff' : '#18313b';
         button.textContent = `${Math.round(cell.moisture)}`;

@@ -2,6 +2,11 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.7.10
+
+- Include the Coopanion application version in full, incremental and HTTP reports when launched by Coopanion; validate and persist it with the box entry.
+- Add system, dark and light modes to the public gallery, with saved preferences, and adapt World panels and colony dialogs to the host color mode.
+
 ## 0.7.9
 
 - Return per-plant moisture ranges and explicit warnings after single-cell or area watering; preview full-garden overwatering in WebUI.

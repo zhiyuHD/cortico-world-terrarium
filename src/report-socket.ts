@@ -1,6 +1,6 @@
 import WebSocket from 'ws';
 import { reportChanges, reportStateHash, TERRARIUM_REPORT_MAX_BYTES, TERRARIUM_REPORT_MAX_CHANGES, type ReportMessage, type ReportReply } from './report-protocol.ts';
-import { TERRARIUM_CLIENT_VERSION } from './version.ts';
+import { reportClientMetadata } from './version.ts';
 
 export class ReportSocketError extends Error {
   constructor(message: string, readonly status?: number) { super(message); }
@@ -33,7 +33,7 @@ export class ReportSocket {
     const socket = await this.connect();
     const changes = this.options.incremental && this.revision && this.baselineHash && reportStateHash(this.baseline) === this.baselineHash ? reportChanges(this.baseline, state) : undefined;
     const stateHash = reportStateHash(state);
-    const header = { protocol: 1 as const, seq: ++this.seq, clientVersion: TERRARIUM_CLIENT_VERSION, phase, stateHash };
+    const header = { protocol: 1 as const, seq: ++this.seq, ...reportClientMetadata(), phase, stateHash };
     let message: ReportMessage = changes && changes.length <= TERRARIUM_REPORT_MAX_CHANGES
       ? { ...header, kind: 'delta', baseRevision: this.revision!, baseHash: this.baselineHash!, changes }
       : { ...header, kind: 'full', state };

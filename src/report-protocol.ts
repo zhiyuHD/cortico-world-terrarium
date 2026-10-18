@@ -5,7 +5,7 @@ export const TERRARIUM_REPORT_MAX_CHANGES = 16_384;
 
 export type ReportChange = { op: 'add' | 'replace'; path: string; value: unknown } | { op: 'remove'; path: string };
 export type ReportMessage = {
-  protocol: 1; seq: number; clientVersion: string; phase: 'day' | 'night'; stateHash?: string;
+  protocol: 1; seq: number; clientVersion: string; coopanionVersion?: string; phase: 'day' | 'night'; stateHash?: string;
 } & ({ kind: 'full'; state: unknown } | { kind: 'delta'; baseRevision: string; baseHash?: string; changes: ReportChange[] });
 export type ReportReply = { kind: 'ack'; seq: number; revision: string; score: number; stateHash?: string }
   | { kind: 'resync'; seq: number }

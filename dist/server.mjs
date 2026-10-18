@@ -4190,7 +4190,7 @@ async function start(options = {}) {
   });
   const commitReport = (id, input) => {
     const report = reportQueue.then(async () => {
-      if (input.phase !== void 0 && input.phase !== "day" && input.phase !== "night" || input.clientVersion !== void 0 && !validClientVersion(input.clientVersion)) throw new ReportError(400, "Invalid report metadata");
+      if (input.phase !== void 0 && input.phase !== "day" && input.phase !== "night" || input.clientVersion !== void 0 && !validClientVersion(input.clientVersion) || input.coopanionVersion !== void 0 && !validClientVersion(input.coopanionVersion)) throw new ReportError(400, "Invalid report metadata");
       let raw = input.state;
       if (input.baseRevision !== void 0) {
         if (!registry[id] || input.baseRevision !== registry[id].reportRevision) throw new ReportError(409, "Full report required", true);
@@ -4216,7 +4216,7 @@ async function start(options = {}) {
       const kind = "fish" in state ? "water" : "land";
       if (registry[id] && (registry[id].kind ?? "land") !== kind) throw new ReportError(409, "Box habitat cannot change");
       if (registry[id] && state.updatedAtMs < registry[id].state.updatedAtMs) throw new ReportError(409, "Stale report");
-      const entry = { id, kind, state, phase: input.phase, score: score(state), reportedAt: new Date(now).toISOString(), reportRevision: randomBytes(16).toString("hex"), ...input.clientVersion === void 0 ? {} : { clientVersion: input.clientVersion } };
+      const entry = { id, kind, state, phase: input.phase, score: score(state), reportedAt: new Date(now).toISOString(), reportRevision: randomBytes(16).toString("hex"), ...input.clientVersion === void 0 ? {} : { clientVersion: input.clientVersion }, ...input.coopanionVersion === void 0 ? {} : { coopanionVersion: input.coopanionVersion } };
       const next = Object.assign(/* @__PURE__ */ Object.create(null), registry, { [id]: entry });
       await writeJson(file, next);
       registry = next;
@@ -4456,7 +4456,7 @@ async function start(options = {}) {
           reply(401, { error: "Unauthorized" });
           return;
         }
-        const entry = await commitReport(input.id, { state: input.state, phase: input.phase, clientVersion: input.clientVersion });
+        const entry = await commitReport(input.id, { state: input.state, phase: input.phase, clientVersion: input.clientVersion, coopanionVersion: input.coopanionVersion });
         reply(200, { score: entry.score });
         return;
       }
@@ -4504,7 +4504,7 @@ Content-Length: 0\r
             requireHashes ||= input.stateHash !== void 0 || input.kind === "delta" && input.baseHash !== void 0;
             if (requireHashes && (!validReportHash(input.stateHash) || input.kind === "delta" && !validReportHash(input.baseHash))) throw new ReportError(409, "Report checksums required", true);
             if (input.kind === "delta" && (requireFull || typeof input.baseRevision !== "string")) throw new ReportError(409, "Full report required", true);
-            const entry = await commitReport(id, { phase: input.phase, clientVersion: input.clientVersion, stateHash: input.stateHash, ...input.kind === "full" ? { state: input.state } : { baseRevision: input.baseRevision, baseHash: input.baseHash, changes: input.changes } });
+            const entry = await commitReport(id, { phase: input.phase, clientVersion: input.clientVersion, coopanionVersion: input.coopanionVersion, stateHash: input.stateHash, ...input.kind === "full" ? { state: input.state } : { baseRevision: input.baseRevision, baseHash: input.baseHash, changes: input.changes } });
             requireFull = false;
             reply = { kind: "ack", seq, revision: entry.reportRevision, score: entry.score, stateHash: reportStateHash(entry.state) };
           } catch (error) {

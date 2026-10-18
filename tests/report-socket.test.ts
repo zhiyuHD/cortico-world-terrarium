@@ -14,7 +14,7 @@ import { TERRARIUM_CLIENT_VERSION } from '../src/version.ts';
 import { createReportProxy } from './report-service.ts';
 
 const disposals: Array<() => Promise<void>> = [];
-afterEach(async () => { for (const dispose of disposals.splice(0).reverse()) await dispose(); });
+afterEach(async () => { try { for (const dispose of disposals.splice(0).reverse()) await dispose(); } finally { vi.unstubAllEnvs(); } });
 
 async function fixture(incrementalReports = false, rejectUpgrade = false, kind: 'land' | 'water' = 'land') {
   const dir = await mkdtemp(join(tmpdir(), 'terrarium-ws-'));
@@ -32,9 +32,54 @@ async function fixture(incrementalReports = false, rejectUpgrade = false, kind: 
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     await rm(dir, { recursive: true, force: true });
   });
-  const httpReport = async (state: unknown, clientVersion?: unknown) => fetch(`${origin}/api/reports`, { method: 'PUT', headers: { authorization: `Bearer ${credentials.token}` }, body: JSON.stringify({ id, state, clientVersion }) });
-  return { client, id, credentials, origin, proxy, get, httpReport };
+  const httpReport = async (state: unknown, clientVersion?: unknown, coopanionVersion?: unknown) => fetch(`${origin}/api/reports`, { method: 'PUT', headers: { authorization: `Bearer ${credentials.token}` }, body: JSON.stringify({ id, state, clientVersion, coopanionVersion }) });
+  return { client, id, credentials, origin, proxy, get, httpReport, dataFile: join(dir, 'server.json') };
 }
+
+it.each([
+  { incremental: false, http: false, habitat: 'land' as const },
+  { incremental: true, http: false, habitat: 'water' as const },
+  { incremental: true, http: true, habitat: 'land' as const },
+])('persists Coopanion versions with full, incremental and HTTP reports: $habitat incremental=$incremental http=$http', async ({ incremental, http, habitat }) => {
+  const version = '1.2.3-beta.1+fixture';
+  vi.stubEnv('COOPANION_VERSION', version);
+  const { client, proxy, get, dataFile, id } = await fixture(incremental, http, habitat);
+  const state = habitat === 'water' ? newAquarium(Date.now()) : newState(Date.now());
+  await client.report(state, 'day'); state.name = 'Updated'; await client.report(state, 'night');
+  expect(await get()).toMatchObject({ clientVersion: TERRARIUM_CLIENT_VERSION, coopanionVersion: version, state });
+  expect(JSON.parse(await readFile(dataFile, 'utf8'))[id]).toMatchObject({ coopanionVersion: version });
+  if (!http) {
+    expect(proxy.frames.map(frame => frame.kind)).toEqual(['full', incremental ? 'delta' : 'full']);
+    expect(proxy.frames.every(frame => frame.coopanionVersion === version)).toBe(true);
+  }
+  vi.stubEnv('COOPANION_VERSION', '');
+  await client.report(state, 'day');
+  expect(await get()).not.toHaveProperty('coopanionVersion');
+  if (!http) expect(proxy.frames.at(-1)).not.toHaveProperty('coopanionVersion');
+});
+
+it.each(['', 'dev', '1.2.3\ninvalid'])('omits unsupported Coopanion environment versions without interrupting reports: %j', async version => {
+  vi.stubEnv('COOPANION_VERSION', version);
+  const { client, proxy, get } = await fixture();
+  await client.report(newState(Date.now()), 'day');
+  expect(proxy.frames[0]).not.toHaveProperty('coopanionVersion');
+  expect(await get()).not.toHaveProperty('coopanionVersion');
+});
+
+it('rejects invalid Coopanion metadata on both transports without changing the stored report', async () => {
+  const { client, origin, id, credentials, get, httpReport } = await fixture();
+  await client.report(newState(Date.now()), 'day');
+  const accepted = await get();
+  const ws = await socket(origin, id, credentials.token);
+  try {
+    let seq = 0;
+    for (const coopanionVersion of [null, 123, {}, 'invalid', '1.2.3\ninvalid', '1.2.3-' + 'x'.repeat(100)]) {
+      expect((await httpReport(accepted.state, TERRARIUM_CLIENT_VERSION, coopanionVersion)).status).toBe(400);
+      expect(await send(ws, { protocol: 1, seq: ++seq, clientVersion: TERRARIUM_CLIENT_VERSION, coopanionVersion, phase: 'day', kind: 'full', state: accepted.state })).toMatchObject({ kind: 'error', status: 400 });
+      expect(await get()).toEqual(accepted);
+    }
+  } finally { ws.terminate(); }
+});
 
 it('reuses WebSocket connections with full reports by default and always declares the actual client version', async () => {
   const { client, proxy, get } = await fixture();

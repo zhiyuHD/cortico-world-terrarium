@@ -12,7 +12,7 @@ import { validAquarium, type AquariumState } from '../src/aquarium.ts';
 import { score, scoreParts, type LeaderboardBoxSummary } from '../src/scoring.ts';
 export { score } from '../src/scoring.ts';
 
-interface Entry { id: string; kind?: 'land' | 'water'; state: TerrariumState | AquariumState; phase?: 'day' | 'night'; score: number; reportedAt: string; clientVersion?: string; reportRevision?: string }
+interface Entry { id: string; kind?: 'land' | 'water'; state: TerrariumState | AquariumState; phase?: 'day' | 'night'; score: number; reportedAt: string; clientVersion?: string; coopanionVersion?: string; reportRevision?: string }
 const idPattern = /^[a-z0-9][a-z0-9_-]{1,39}$/;
 export interface ServerOptions { dataFile?: string; credentialsFile?: string; port?: number; announcementsFile?: string; adminToken?: string; adminTokenFile?: string }
 
@@ -63,9 +63,9 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     return readFile(new URL('../dist/scene.js', import.meta.url));
   });
-  const commitReport = (id: string, input: { phase?: unknown; clientVersion?: unknown; state?: unknown; baseRevision?: string; baseHash?: string; stateHash?: string; changes?: unknown }) => {
+  const commitReport = (id: string, input: { phase?: unknown; clientVersion?: unknown; coopanionVersion?: unknown; state?: unknown; baseRevision?: string; baseHash?: string; stateHash?: string; changes?: unknown }) => {
     const report = reportQueue.then(async () => {
-      if ((input.phase !== undefined && input.phase !== 'day' && input.phase !== 'night') || (input.clientVersion !== undefined && !validClientVersion(input.clientVersion))) throw new ReportError(400, 'Invalid report metadata');
+      if ((input.phase !== undefined && input.phase !== 'day' && input.phase !== 'night') || (input.clientVersion !== undefined && !validClientVersion(input.clientVersion)) || (input.coopanionVersion !== undefined && !validClientVersion(input.coopanionVersion))) throw new ReportError(400, 'Invalid report metadata');
       let raw = input.state;
       if (input.baseRevision !== undefined) {
         if (!registry[id] || input.baseRevision !== registry[id].reportRevision) throw new ReportError(409, 'Full report required', true);
@@ -86,7 +86,7 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
       const kind = 'fish' in state ? 'water' : 'land';
       if (registry[id] && (registry[id].kind ?? 'land') !== kind) throw new ReportError(409, 'Box habitat cannot change');
       if (registry[id] && state.updatedAtMs < registry[id].state.updatedAtMs) throw new ReportError(409, 'Stale report');
-      const entry: Entry = { id, kind, state, phase: input.phase as Entry['phase'], score: score(state), reportedAt: new Date(now).toISOString(), reportRevision: randomBytes(16).toString('hex'), ...(input.clientVersion === undefined ? {} : { clientVersion: input.clientVersion as string }) };
+      const entry: Entry = { id, kind, state, phase: input.phase as Entry['phase'], score: score(state), reportedAt: new Date(now).toISOString(), reportRevision: randomBytes(16).toString('hex'), ...(input.clientVersion === undefined ? {} : { clientVersion: input.clientVersion as string }), ...(input.coopanionVersion === undefined ? {} : { coopanionVersion: input.coopanionVersion as string }) };
       const next = Object.assign(Object.create(null), registry, { [id]: entry });
       await writeJson(file, next);
       registry = next;
@@ -218,12 +218,12 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
           raw += String(chunk);
           if (Buffer.byteLength(raw) > 1048576) { reply(413, { error: 'Report too large' }); return; }
         }
-        const input = JSON.parse(raw) as { id?: string; state?: unknown; phase?: unknown; clientVersion?: unknown } | null;
+        const input = JSON.parse(raw) as { id?: string; state?: unknown; phase?: unknown; clientVersion?: unknown; coopanionVersion?: unknown } | null;
         if (!input || typeof input.id !== 'string' || !idPattern.test(input.id)) { reply(400, { error: 'Invalid report' }); return; }
         const expected = credentials[input.id];
         const token = req.headers.authorization?.replace(/^Bearer /, '') ?? '';
         if (!expected || !equal(token, expected)) { reply(401, { error: 'Unauthorized' }); return; }
-        const entry = await commitReport(input.id, { state: input.state, phase: input.phase, clientVersion: input.clientVersion });
+        const entry = await commitReport(input.id, { state: input.state, phase: input.phase, clientVersion: input.clientVersion, coopanionVersion: input.coopanionVersion });
         reply(200, { score: entry.score });
         return;
       }
@@ -259,7 +259,7 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
             requireHashes ||= input.stateHash !== undefined || (input.kind === 'delta' && input.baseHash !== undefined);
             if (requireHashes && (!validReportHash(input.stateHash) || (input.kind === 'delta' && !validReportHash(input.baseHash)))) throw new ReportError(409, 'Report checksums required', true);
             if (input.kind === 'delta' && (requireFull || typeof input.baseRevision !== 'string')) throw new ReportError(409, 'Full report required', true);
-            const entry = await commitReport(id, { phase: input.phase, clientVersion: input.clientVersion, stateHash: input.stateHash, ...(input.kind === 'full' ? { state: input.state } : { baseRevision: input.baseRevision, baseHash: input.baseHash, changes: input.changes }) });
+            const entry = await commitReport(id, { phase: input.phase, clientVersion: input.clientVersion, coopanionVersion: input.coopanionVersion, stateHash: input.stateHash, ...(input.kind === 'full' ? { state: input.state } : { baseRevision: input.baseRevision, baseHash: input.baseHash, changes: input.changes }) });
             requireFull = false;
             reply = { kind: 'ack', seq, revision: entry.reportRevision!, score: entry.score, stateHash: reportStateHash(entry.state) };
           } catch (error) {

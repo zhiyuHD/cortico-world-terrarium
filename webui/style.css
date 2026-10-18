@@ -1,7 +1,7 @@
 .terrarium-scene { display: block; width: min(100%, 800px); height: auto; aspect-ratio: 8 / 5; margin: 12px 0; border-radius: 12px; }
 .terrarium-details { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-bottom: 12px; }
 .terrarium-scene[hidden], .terrarium-details[hidden], .terrarium-habitat[hidden] { display: none; }
-.terrarium-plant { color: var(--text, inherit); }
+.terrarium-plant { color: var(--ink, var(--text, inherit)); }
 
 .terrarium-habitat { display: flex; flex-wrap: wrap; align-items: start; gap: 16px; margin: 16px 0; }
 .terrarium-grid { display: grid; grid-template-columns: repeat(5, 42px); gap: 3px; }
@@ -9,10 +9,10 @@
 .terrarium-cell:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
 .terrarium-cell-status { max-width: 230px; }
 .terrarium-requirements { font-size: 13px; line-height: 1.7; }
-.terrarium-select { max-width: 100%; padding: 6px; color: inherit; background: var(--bg, transparent); border: 1px solid #82938c; border-radius: 4px; }
+.terrarium-select { max-width: 100%; padding: 6px; color: inherit; background: var(--paper, var(--bg, transparent)); border: 1px solid #82938c; border-radius: 4px; }
 .terrarium-history { display: block; width: min(100%, 800px); height: auto; margin: 12px 0; }
 .terrarium-cell[aria-pressed="true"] { box-shadow: inset 0 0 0 2px #18313b; }
-.terrarium-select option { color: var(--text, CanvasText); background: var(--bg, Canvas); }
+.terrarium-select option { color: var(--ink, var(--text, CanvasText)); background: var(--paper, var(--bg, Canvas)); }
 
 .terrarium-replays { margin: 16px 0; }
 .terrarium-replays select { max-width: 100%; }
@@ -45,3 +45,8 @@
 .terrarium-watering-status { min-height: 1.5em; }
 .terrarium-plant-critical { border-inline-start: 3px solid #cc6045; padding-inline-start: 8px; color: var(--danger, #a43724); }
 @media (prefers-reduced-motion: reduce) { .terrarium-watering-buttons button { transition: none; } .terrarium-watering-buttons button:not(:disabled):hover { transform: none; } }
+
+:root[data-color-mode="dark"] .terrarium-scene { filter: brightness(.72) saturate(.88); }
+:root[data-color-mode="dark"] .terrarium-cell { background: hsl(195 25% var(--terrarium-dark-moisture)) !important; color: #d6e6e8 !important; }
+:root[data-color-mode="dark"] .terrarium-cell[aria-pressed="true"] { box-shadow: inset 0 0 0 2px #9bcbd0; }
+:root[data-color-mode="dark"] .terrarium-plant-critical { color: #eea18b; }

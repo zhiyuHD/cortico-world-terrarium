@@ -5,7 +5,7 @@ import { dirname } from 'node:path';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { ReportSocket, ReportSocketError } from './report-socket.ts';
-import { TERRARIUM_CLIENT_VERSION } from './version.ts';
+import { TERRARIUM_CLIENT_VERSION, reportClientMetadata } from './version.ts';
 import type { AquariumState } from './aquarium.ts';
 import type { TerrariumState } from './state.ts';
 import type { LeaderboardBoxSummary, LeaderboardSummary, ScoreParts } from './scoring.ts';
@@ -137,7 +137,7 @@ export class LeaderboardClient {
         this.close(); this.httpFallbackUntilMs = Date.now() + 5 * 60_000;
       }
     }
-    const response = await request(new URL('/api/reports', url), 'PUT', { id: credentials.id, state, phase, clientVersion: TERRARIUM_CLIENT_VERSION }, credentials.token);
+    const response = await request(new URL('/api/reports', url), 'PUT', { id: credentials.id, state, phase, ...reportClientMetadata() }, credentials.token);
     if (response.status < 200 || response.status >= 300) throw new Error(`Leaderboard report HTTP ${response.status}`);
     return 'http';
   }
