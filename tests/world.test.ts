@@ -192,7 +192,7 @@ it('advances ants every 10 seconds while reads preserve files and synchronize bo
         expect(await readFile(waterFile, 'utf8')).toBe(initialWater);
         expect((await stat(file)).mtimeMs).toBe(initialLandTime);
         expect((await stat(waterFile)).mtimeMs).toBe(initialWaterTime);
-        expect(requests).toEqual(baseline);
+        expect(requests).toEqual({ ...baseline, ranks: baseline.ranks + (step >= 6 ? 2 : 0), announcements: baseline.announcements + (step >= 6 ? 2 : 0) });
       }
     }
     const uploaded = JSON.parse(await readFile(serverFile, 'utf8'));
@@ -367,5 +367,31 @@ it('delivers critical plant events once across a restart and keeps unclaimed wat
     expect(events.filter(({ event }) => event.text.includes('濒危'))).toHaveLength(1);
     await area.handler({ x1: 0, y1: 0, x2: 4, y2: 4 }, context);
     expect((await loadState(file, now)).plants[0].healthWarning).toBe(true);
+  } finally { await world.stop(); await rm(dir, { recursive: true, force: true }); }
+});
+
+it('persists care settings and collections, waters once after offline catch-up and supports draining and water reuse', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-care-world-')), file = join(dir, 'state.json');
+  let now = Date.parse('2026-06-01T00:00:00Z');
+  const host = { log: { warn() {} }, async pushEvent(event: Omit<EventEnvelope, 'cursor'>) { return { ...event, cursor: 1 }; } } as unknown as WorldHost;
+  const options = { cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: '' }, timezone: 'Asia/Shanghai', stateFile: file, now: () => now };
+  let world = new TerrariumWorld(options);
+  const invoke = async (name: string, args: Record<string, unknown>) => JSON.parse(String(await world.tools().find(t => t.name === name)!.handler(args, {} as ToolCallContext)));
+  try {
+    await world.start(host);
+    await invoke('terrarium_claim', { habitat: 'land' }); await invoke('terrarium_claim', { habitat: 'water' });
+    await invoke('terrarium_collection', { action: 'collect', id: 'fern' });
+    await invoke('terrarium_set_irrigation', { x: 2, y: 2, enabled: true, targetMoisture: 60, intervalMinutes: 60 });
+    await world.stop(); now += 3_600_000;
+    world = new TerrariumWorld(options); await world.start(host);
+    const observed = await invoke('terrarium_inspect', { habitat: 'land' });
+    expect(observed.collection[0].specimen.id).toBe('fern'); expect(observed.irrigation[0].lastWateredAtMs).toBe(now);
+    expect(observed.soil[12].moisture).toBe(60);
+    await invoke('terrarium_collection', { action: 'restore', id: 'fern', x: 1, y: 1 });
+    const drained = await invoke('terrarium_drain', { x: 2, y: 2, amount: 10 }); expect(drained.soil.moisture).toBe(50);
+    const reused = await invoke('terrarium_reuse_water', { percent: 10, x1: 2, y1: 2, x2: 2, y2: 2 }); expect(reused.soil[0].moisture).toBe(100);
+    await invoke('terrarium_set_irrigation', { x: 2, y: 2, enabled: false });
+    await world.stop(); const saved = await loadState(file, now);
+    expect(saved.irrigation).toEqual([]); expect(saved.collection).toEqual([]); expect(saved.plants.some(p => p.id === 'fern')).toBe(true);
   } finally { await world.stop(); await rm(dir, { recursive: true, force: true }); }
 });

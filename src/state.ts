@@ -1,3 +1,5 @@
+import { validCollection, type CollectionItem } from './collection.ts';
+import { validateWatering, waterAdded, type WateringOptions } from './habitat.ts';
 import { isFlying, flightDraw, TERRARIUM_FLY_ACTION_INTERVAL_MS, TERRARIUM_FLY_MOVE_PROBABILITY, type FlyingSpecies } from './flight.ts';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -18,7 +20,7 @@ export interface NestState { id: string; x: number; y: number; depth: number; fo
 export interface SpiderWeb { id: string; spiderId: string; x: number; y: number; createdAtMs: number }
 export interface LandFood { id: string; x: number; y: number; portions: number; droppedAtMs: number }
 export interface ItemState { id: ItemId; x: number; y: number }
-export interface TerrariumState { version: 3; name?: string; webs?: SpiderWeb[]; eggs?: EggState[]; nests?: NestState[]; food?: LandFood[]; replays?: HuntReplay[]; soil: SoilCell[]; history: HistorySample[]; updatedAtMs: number; nextId: number; plants: PlantState[]; seeds: SeedState[]; bugs: BugState[]; items: ItemState[] }
+export interface TerrariumState { collection?: CollectionItem[]; irrigation?: Array<{ x: number; y: number; targetMoisture: number; intervalMinutes: number; lastWateredAtMs: number }>; version: 3; name?: string; webs?: SpiderWeb[]; eggs?: EggState[]; nests?: NestState[]; food?: LandFood[]; replays?: HuntReplay[]; soil: SoilCell[]; history: HistorySample[]; updatedAtMs: number; nextId: number; plants: PlantState[]; seeds: SeedState[]; bugs: BugState[]; items: ItemState[] }
 export interface Change { kind: 'stage' | 'dry' | 'health' | 'phase' | 'sprout' | 'hunt' | 'death' | 'birth' | 'hungry' | 'egg' | 'nest' | 'web'; text: string }
 
 export const TERRARIUM_MAX_NAME_LENGTH = 64;
@@ -166,13 +168,13 @@ function actAnt(state: TerrariumState, bug: BugState, changes: Change[], damage:
     enterNest(bug, nest);
     return;
   }
-  if (nest.food >= nest.depth * 20) { if (approach(bug, nest)) enterNest(bug, nest); return; }
+  if (nest.food >= Math.min(nest.depth * 20, Math.max(3, state.bugs.filter(b => b.species === 'ant').length * 2))) { if (approach(bug, nest)) enterNest(bug, nest); return; }
   const food = nearest(bug, state.food ?? []);
   if (food) {
     if (approach(bug, food)) { food.portions--; bug.carrying = 1; if (!food.portions) state.food!.splice(state.food!.indexOf(food), 1); }
     return;
   }
-  const plant = nearest(bug, state.plants.filter(plant => plant.health > 10));
+  const plant = nearest(bug, state.plants.filter(plant => plant.health > 40));
   if (plant && approach(bug, plant)) { damage(plant, 1, '蚂蚁采集'); bug.carrying = 1; }
 }
 
@@ -287,7 +289,7 @@ function advanceSoil(state: TerrariumState, hours: number, isDay: boolean): void
       if (inGrid(cell.x + dx, cell.y + dy)) diffusion += (moisture[(cell.y + dy) * 5 + cell.x + dx] - moisture[index]) * .08;
     }
     const light = daylight(state, cell.x, cell.y);
-    const evaporation = isDay ? .8 + light * .4 : .6;
+    const evaporation = (isDay ? .8 + light * .4 : .6) * (state.plants.some(p => p.species === 'moss' && p.health >= 60 && Math.abs(p.x - cell.x) + Math.abs(p.y - cell.y) <= 1) ? .85 : 1);
     cell.moisture = Math.max(0, Math.min(100, moisture[index] + (diffusion - evaporation) * hours));
   }
 }
@@ -343,7 +345,7 @@ export function advance(state: TerrariumState, nowMs: number, timezone: string):
       const needs = TERRARIUM_PLANT_REQUIREMENTS[plant.species];
       const light = daylight(state, plant.x, plant.y);
       const hydrated = plant.moisture >= needs.minMoisture && plant.moisture <= needs.maxMoisture;
-      if (before === 'day' && hydrated && light >= needs.minLight && light <= needs.maxLight) plant.growthHours += hours;
+      if (before === 'day' && hydrated && light >= needs.minLight && light <= needs.maxLight) plant.growthHours += hours * (plant.species === 'basil' && state.plants.some(p => p.species === 'bean' && p.health >= 60 && Math.abs(p.x - plant.x) + Math.abs(p.y - plant.y) === 1) ? 1.1 : 1);
       if (!hydrated) damage(plant, hours * .5, plant.moisture < needs.minMoisture ? '水分过低' : '水分过高');
       const stage = STAGES.reduce((n, threshold, index) => plant.growthHours >= threshold ? index : n, 0);
       if (stage !== plant.stage) {
@@ -437,7 +439,7 @@ export function advance(state: TerrariumState, nowMs: number, timezone: string):
   }
   for (const plant of state.plants) {
     const previous = initialHealth.get(plant.id);
-    if (previous !== undefined && plant.health > TERRARIUM_PLANT_LOW_HEALTH && [75, 50].some(threshold => previous > threshold && plant.health <= threshold)) {
+    if (previous !== undefined && plant.health > TERRARIUM_PLANT_LOW_HEALTH && [75, 50, 40].some(threshold => previous > threshold && plant.health <= threshold)) {
       changes.push({ kind: 'health', text: `${plant.id}（${plant.species}）健康下降：${previous.toFixed(1)} → ${plant.health.toFixed(1)}/100，位置 (${plant.x},${plant.y})。${damageText(plant)}` });
     }
   }
@@ -446,31 +448,37 @@ export function advance(state: TerrariumState, nowMs: number, timezone: string):
   return changes;
 }
 
-export function water(state: TerrariumState, id: PlantId): PlantState {
+export function water(state: TerrariumState, id: PlantId, options: WateringOptions = {}): PlantState {
   const plant = state.plants.find(item => item.id === id);
   if (!plant) throw new Error('Unknown plant');
-  waterSoil(state, plant.x, plant.y);
+  waterSoil(state, plant.x, plant.y, options);
   return plant;
 }
 
-export function waterSoil(state: TerrariumState, x: number, y: number): SoilCell {
+export function waterSoil(state: TerrariumState, x: number, y: number, options: WateringOptions = {}): SoilCell {
   if (!inGrid(x, y)) throw new Error('Position must be in the 5×5 grid');
   const cell = state.soil[y * 5 + x];
-  cell.moisture = Math.min(100, cell.moisture + 35);
+  validateWatering(options);
+  const occupant = state.plants.find(p => p.x === x && p.y === y) ?? state.seeds.find(p => p.x === x && p.y === y);
+  const minimum = occupant ? TERRARIUM_PLANT_REQUIREMENTS[occupant.species].minMoisture : 30;
+  if (options.onlyDry && cell.moisture >= minimum) return cell;
+  const added = waterAdded(cell.moisture, options);
+  cell.moisture += added;
   const plant = state.plants.find(item => item.x === x && item.y === y);
   if (plant) {
     plant.moisture = cell.moisture;
     plant.dry = plant.moisture < TERRARIUM_PLANT_REQUIREMENTS[plant.species].minMoisture;
-    plant.health = Math.min(100, plant.health + 5);
+    plant.health = Math.min(100, plant.health + (added > 0 ? 5 : 0));
     if (plant.health >= TERRARIUM_PLANT_RECOVERED_HEALTH) delete plant.healthWarning;
   }
   return cell;
 }
 
-export function waterArea(state: TerrariumState, x1: number, y1: number, x2: number, y2: number): SoilCell[] {
+export function waterArea(state: TerrariumState, x1: number, y1: number, x2: number, y2: number, options: WateringOptions = {}): SoilCell[] {
   if (!inGrid(x1, y1) || !inGrid(x2, y2) || x1 > x2 || y1 > y2) throw new Error('Area must be ordered corners within the 5×5 grid');
+  validateWatering(options);
   const cells: SoilCell[] = [];
-  for (let y = y1; y <= y2; y++) for (let x = x1; x <= x2; x++) cells.push(waterSoil(state, x, y));
+  for (let y = y1; y <= y2; y++) for (let x = x1; x <= x2; x++) cells.push(waterSoil(state, x, y, options));
   return cells;
 }
 
@@ -553,6 +561,7 @@ function validReplays(state: Partial<TerrariumState>): boolean {
 export function validState(value: unknown): value is TerrariumState {
   if (!value || typeof value !== 'object') return false;
   const state = value as Partial<TerrariumState>;
+  if (!validCollection(state.collection, 'land') || (state.irrigation !== undefined && (!Array.isArray(state.irrigation) || state.irrigation.length > 25 || new Set(state.irrigation.map(c => `${c?.x},${c?.y}`)).size !== state.irrigation.length || !state.irrigation.every(c => c && inGrid(c.x, c.y) && Number.isFinite(c.targetMoisture) && c.targetMoisture >= 0 && c.targetMoisture <= 100 && Number.isFinite(c.intervalMinutes) && c.intervalMinutes >= 1 && c.intervalMinutes <= 1440 && Number.isFinite(c.lastWateredAtMs))))) return false;
   return state.version === 3 && (state.name === undefined || validName(state.name)) && validHabitat(state) && validReplays(state) && Number.isFinite(state.updatedAtMs) && Number.isSafeInteger(state.nextId) && state.nextId! >= 1 &&
     Array.isArray(state.plants) && state.plants.length <= 12 &&
     state.plants.every(p => p && typeof p.id === 'string' && p.id.length <= 32 && ['fern', 'clover', 'moss', 'basil', 'bean'].includes(p.species) && inGrid(p.x, p.y) && Number.isFinite(p.moisture) && p.moisture >= 0 && p.moisture <= 100 && Number.isFinite(p.growthHours) && p.growthHours >= 0 && Number.isInteger(p.stage) && p.stage >= 0 && p.stage <= 3 && typeof p.dry === 'boolean' && Number.isFinite(p.health) && p.health >= 0 && p.health <= 100 && (p.healthWarning === undefined || typeof p.healthWarning === 'boolean')) &&
@@ -566,7 +575,7 @@ export function validState(value: unknown): value is TerrariumState {
     Array.isArray(state.items) && state.items.length === 2 &&
     ['coin', 'pebble'].every(id => state.items!.filter(item => item.id === id && inGrid(item.x, item.y)).length === 1) &&
     !(state.items[0].x === state.items[1].x && state.items[0].y === state.items[1].y) &&
-    new Set([...state.plants, ...state.seeds, ...state.bugs, ...(state.eggs ?? []), ...(state.nests ?? []), ...(state.food ?? []), ...(state.webs ?? [])].map(v => v.id)).size === state.plants.length + state.seeds.length + state.bugs.length + (state.eggs?.length ?? 0) + (state.nests?.length ?? 0) + (state.food?.length ?? 0) + (state.webs?.length ?? 0) &&
+    new Set([...state.plants, ...state.seeds, ...state.bugs, ...(state.eggs ?? []), ...(state.nests ?? []), ...(state.food ?? []), ...(state.webs ?? []), ...(state.collection ?? []).map(e => e.specimen)].map(v => v.id)).size === (state.collection?.length ?? 0) + state.plants.length + state.seeds.length + state.bugs.length + (state.eggs?.length ?? 0) + (state.nests?.length ?? 0) + (state.food?.length ?? 0) + (state.webs?.length ?? 0) &&
     new Set([...state.plants, ...state.seeds].map(v => `${v.x},${v.y}`)).size === state.plants.length + state.seeds.length && validColony(state as TerrariumState);
 }
 

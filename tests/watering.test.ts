@@ -28,7 +28,7 @@ it('previews overwatering and retains immediate warnings after refreshing the pa
   const controls = createWateringControls(context, async () => { controls.update(true, undefined, state); refreshed = true; });
   controls.update(true, undefined, state);
   expect(controls.el.textContent).toContain('全箱浇水将超量：fern (0,0) 96.4');
-  (controls.el.querySelectorAll('button')[1] as HTMLButtonElement).click();
+  (Array.from(controls.el.querySelectorAll('button')).find(b => b.textContent === '浇全部 25 格') as HTMLButtonElement).click();
   await new Promise(resolve => setTimeout(resolve, 0));
   expect(refreshed).toBe(true);
   const receipt = controls.el.querySelector('[role="status"]')!.textContent;

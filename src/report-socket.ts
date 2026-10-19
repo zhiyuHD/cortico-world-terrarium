@@ -1,3 +1,4 @@
+import { TERRARIUM_DEFAULTS } from './config.ts';
 import WebSocket from 'ws';
 import { validAnnouncement, type Announcement } from './announcements.ts';
 import { reportChanges, reportStateHash, TERRARIUM_REPORT_MAX_BYTES, TERRARIUM_REPORT_MAX_CHANGES, type ReportMessage, type ReportReply } from './report-protocol.ts';
@@ -15,7 +16,7 @@ export class ReportSocket {
   private seq = 0;
   private pending: { seq: number; resolve: (reply: ReportReply) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> } | undefined;
 
-  constructor(private readonly options: { url: URL; id: string; token: string; incremental: boolean; onNotice?: (notice: Announcement) => Promise<void> }) {}
+  constructor(private readonly options: { url: URL; id: string; token: string; incremental: boolean; timeoutMs?: number; onNotice?: (notice: Announcement) => Promise<void> }) {}
 
   close(): void { this.disconnect(new Error('Report connection closed')); }
 
@@ -53,7 +54,7 @@ export class ReportSocket {
     const url = new URL('/api/reports/ws', this.options.url);
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     url.searchParams.set('id', this.options.id);
-    const socket = new WebSocket(url, { headers: { authorization: `Bearer ${this.options.token}`, 'x-cortico-client-version': reportClientMetadata().clientVersion, 'x-cortico-protocol-notices': '1' }, family: 4, handshakeTimeout: 5_000, maxPayload: 16_384, perMessageDeflate: false });
+    const socket = new WebSocket(url, { headers: { authorization: `Bearer ${this.options.token}`, 'x-cortico-client-version': reportClientMetadata().clientVersion, 'x-cortico-protocol-notices': '1' }, family: 4, handshakeTimeout: this.options.timeoutMs ?? TERRARIUM_DEFAULTS.requestTimeoutMs!, maxPayload: 16_384, perMessageDeflate: false });
     this.socket = socket;
     this.baseline = undefined; this.revision = undefined; this.baselineHash = undefined;
     socket.on('message', raw => {
@@ -88,7 +89,7 @@ export class ReportSocket {
     const raw = JSON.stringify(message);
     if (Buffer.byteLength(raw) > TERRARIUM_REPORT_MAX_BYTES) return Promise.reject(new ReportSocketError('Report too large', 413));
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => this.disconnect(new Error('Report acknowledgement timeout')), 5_000);
+      const timer = setTimeout(() => this.disconnect(new Error('Report acknowledgement timeout')), this.options.timeoutMs ?? TERRARIUM_DEFAULTS.requestTimeoutMs!);
       timer.unref();
       this.pending = { seq: message.seq, resolve, reject, timer };
       socket.send(raw, error => { if (error) this.disconnect(error); });

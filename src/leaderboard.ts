@@ -1,3 +1,4 @@
+import { TERRARIUM_DEFAULTS } from './config.ts';
 import type { Announcement } from './announcements.ts';
 import { parseFeedback, type TerrariumFeedbackReceipt } from './feedback.ts';
 import { validAnnouncement, type AnnouncementPage } from './announcements.ts';
@@ -21,11 +22,13 @@ export interface TerrariumSyncStatus {
   lastSuccessAt?: string;
   lastError?: string;
   consecutiveFailures: number;
+  nextRetryAt?: string;
 }
 export interface LeaderboardClientOptions {
   url: string; id: string; token?: string; credentialsFile: string; kind?: 'land' | 'water'; incrementalReports?: boolean;
   /** New registrations omit id; existing id/token options only select credentials to migrate. */
   automaticIds?: boolean;
+  requestTimeoutMs?: number;
   onNotice?: (notice: Announcement) => Promise<void>;
 }
 
@@ -51,7 +54,7 @@ export class LeaderboardClient {
     const url = new URL('/api/feedback', this.options.url);
     requireHttps(url);
     const credentials = this.id ? await this.authorize(url) : undefined;
-    const response = await request(url, 'POST', { ...input, source, clientVersion: TERRARIUM_CLIENT_VERSION, ...(credentials ? { id: credentials.id } : {}) }, credentials?.token);
+    const response = await this.request(url, 'POST', { ...input, source, clientVersion: TERRARIUM_CLIENT_VERSION, ...(credentials ? { id: credentials.id } : {}) }, credentials?.token);
     if (response.status === 404 || response.status === 405) throw new Error('This server does not support feedback; upgrade the server');
     if (response.status === 429) throw new Error('Feedback limit reached; retry after one minute');
     if (response.status !== 201) throw new Error(`Feedback HTTP ${response.status}`);
@@ -67,7 +70,7 @@ export class LeaderboardClient {
     const habitat = this.options.kind ?? 'land';
     url.searchParams.set('kind', habitat); url.searchParams.set('view', 'summary'); url.searchParams.set('limit', String(limit));
     if (this.id) url.searchParams.set('ownId', this.id);
-    const response = await request(url, 'GET', undefined, undefined, 262144);
+    const response = await this.request(url, 'GET', undefined, undefined, 262144);
     if (response.status !== 200) throw new Error(`Leaderboard read HTTP ${response.status}`);
     return parseLeaderboard(parseJson(response.body), habitat, limit, this.id);
   }
@@ -79,7 +82,7 @@ export class LeaderboardClient {
     const credentials = this.id ? await this.authorize(url) : undefined;
     if (credentials) url.searchParams.set('id', credentials.id);
     url.searchParams.set('after', String(after));
-    const response = await request(url, 'GET', undefined, credentials?.token, 262144);
+    const response = await this.request(url, 'GET', undefined, credentials?.token, 262144);
     // Older servers have no announcement endpoint; reporting and rankings remain available.
     if (response.status === 404 || response.status === 405) return { announcements: [], nextCursor: after };
     if (response.status !== 200) throw new Error(`Announcements read HTTP ${response.status}`);
@@ -136,16 +139,18 @@ export class LeaderboardClient {
     if (!this.options.url) return Promise.resolve();
     const snapshot = JSON.parse(JSON.stringify(state)) as TerrariumState | AquariumState;
     const result = this.reportQueue.then(async () => {
+      if (!full && this.syncStatus.nextRetryAt && Date.now() < Date.parse(this.syncStatus.nextRetryAt)) return;
       if (full) this.close();
       this.syncStatus.state = 'syncing';
       this.syncStatus.lastAttemptAt = new Date().toISOString();
       try {
         const transport = await this.deliver(snapshot, phase);
-        this.syncStatus = { ...this.syncStatus, state: 'synced', transport, lastSuccessAt: new Date().toISOString(), lastError: undefined, consecutiveFailures: 0 };
+        this.syncStatus = { ...this.syncStatus, state: 'synced', transport, lastSuccessAt: new Date().toISOString(), lastError: undefined, nextRetryAt: undefined, consecutiveFailures: 0 };
       } catch (error) {
         this.syncStatus.state = 'error';
         this.syncStatus.lastError = error instanceof Error ? error.message : String(error);
         this.syncStatus.consecutiveFailures++;
+        this.syncStatus.nextRetryAt = new Date(Date.now() + Math.min(300_000, 30_000 * 2 ** Math.min(4, this.syncStatus.consecutiveFailures - 1))).toISOString();
         throw error;
       }
     });
@@ -158,7 +163,7 @@ export class LeaderboardClient {
     requireHttps(url);
     const credentials = await this.authorize(url);
     if (Date.now() >= this.httpFallbackUntilMs) {
-      this.reportSocket ??= new ReportSocket({ url, ...credentials, incremental: this.options.incrementalReports === true, onNotice: this.options.onNotice });
+      this.reportSocket ??= new ReportSocket({ url, ...credentials, incremental: this.options.incrementalReports === true, timeoutMs: this.options.requestTimeoutMs, onNotice: this.options.onNotice });
       try { await this.reportSocket.report(state, phase); return 'ws'; }
       catch (error) {
         if (!(error instanceof ReportSocketError) || ![404, 405, 426, 501].includes(error.status ?? 0)) throw error;
@@ -166,9 +171,13 @@ export class LeaderboardClient {
         this.close(); this.httpFallbackUntilMs = Date.now() + 5 * 60_000;
       }
     }
-    const response = await request(new URL('/api/reports', url), 'PUT', { id: credentials.id, state, phase, ...reportClientMetadata() }, credentials.token);
+    const response = await this.request(new URL('/api/reports', url), 'PUT', { id: credentials.id, state, phase, ...reportClientMetadata() }, credentials.token);
     if (response.status < 200 || response.status >= 300) throw new Error(`Leaderboard report HTTP ${response.status}`);
     return 'http';
+  }
+
+  private request(url: URL, method: string, value: unknown, token?: string, maxResponseBytes = 16384) {
+    return request(url, method, value, token, maxResponseBytes, this.options.requestTimeoutMs ?? TERRARIUM_DEFAULTS.requestTimeoutMs!);
   }
 
   private async authorize(url: URL): Promise<Credentials> {
@@ -191,7 +200,7 @@ export class LeaderboardClient {
       return existing;
     }
     const requested = this.options.automaticIds ? '' : this.options.id;
-    const response = await request(new URL('/api/registrations', url), 'POST', { ...(requested ? { id: requested } : {}), kind: this.options.kind ?? 'land' });
+    const response = await this.request(new URL('/api/registrations', url), 'POST', { ...(requested ? { id: requested } : {}), kind: this.options.kind ?? 'land' });
     if (response.status === 409) throw new Error('Box ID is already registered; supply its token or choose another ID');
     if (response.status !== 201) {
       let reason = '';
@@ -235,7 +244,8 @@ function parseLeaderboard(value: unknown, habitat: 'land' | 'water', limit: numb
     const keys = habitat === 'land' ? ['plants', 'bugs', 'seeds'] : ['plants', 'fish', 'water'];
     const parts = Object.fromEntries(keys.map(key => [key, (row.scoreParts as unknown as Record<string, unknown>)[key]]));
     if (Object.values(parts).some(part => !Number.isSafeInteger(part) || Number(part) < 0) || Object.values(parts).reduce<number>((sum, part) => sum + Number(part), 0) !== row.score) return invalid();
-    return { rank: row.rank, id: row.id, name: row.name, score: row.score, scoreParts: parts as ScoreParts, reportedAt: row.reportedAt };
+    if (row.competitiveRank !== undefined && (!Number.isSafeInteger(row.competitiveRank) || row.competitiveRank < 1 || row.competitiveRank > row.rank)) return invalid();
+    return { rank: row.rank, ...(row.competitiveRank === undefined ? {} : { competitiveRank: row.competitiveRank }), id: row.id, name: row.name, score: row.score, scoreParts: parts as ScoreParts, reportedAt: row.reportedAt };
   };
   const entries = summary.entries.map(entry);
   if (entries.some((row, index) => row.rank !== index + 1) || new Set(entries.map(row => row.id)).size !== entries.length) return invalid();
@@ -243,11 +253,11 @@ function parseLeaderboard(value: unknown, habitat: 'land' | 'water', limit: numb
   if (own && own.id !== ownId) return invalid();
   return { habitat, total: summary.total, entries, own };
 }
-function request(url: URL, method: string, value: unknown, token?: string, maxResponseBytes = 16384): Promise<{ status: number; body: string }> {
+function request(url: URL, method: string, value: unknown, token?: string, maxResponseBytes = 16384, timeoutMs = TERRARIUM_DEFAULTS.requestTimeoutMs!): Promise<{ status: number; body: string }> {
   const body = value === undefined ? undefined : JSON.stringify(value);
   return new Promise((resolve, reject) => {
     const send = url.protocol === 'https:' ? httpsRequest : httpRequest;
-    const req = send(url, { method, family: 4, headers: { ...(body === undefined ? {} : { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) }), ...(token ? { authorization: `Bearer ${token}` } : {}) }, timeout: 5000 }, res => {
+    const req = send(url, { method, family: 4, headers: { ...(body === undefined ? {} : { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) }), ...(token ? { authorization: `Bearer ${token}` } : {}) }, timeout: timeoutMs }, res => {
       let response = '';
       res.setEncoding('utf8');
       res.on('data', (chunk: string) => {
@@ -257,6 +267,8 @@ function request(url: URL, method: string, value: unknown, token?: string, maxRe
       res.on('error', reject);
       res.on('end', () => resolve({ status: res.statusCode ?? 0, body: response }));
     });
+    const deadline = setTimeout(() => req.destroy(new Error('Leaderboard timeout')), timeoutMs);
+    deadline.unref(); req.on('close', () => clearTimeout(deadline));
     req.on('timeout', () => req.destroy(new Error('Leaderboard timeout')));
     req.on('error', reject);
     req.end(body);

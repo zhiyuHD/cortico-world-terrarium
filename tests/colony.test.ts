@@ -95,3 +95,17 @@ it('accepts older reports and rejects invalid colony locations and duplicate que
   ];
   for (const value of invalid) expect(validState(value)).toBe(false);
 });
+
+it('stops harvesting plants when the nest has reserves and resumes gathering when reserves run out', () => {
+  const { state, worker, nest } = colony();
+  const plant = newState(start).plants[0]; plant.x = worker.x = 1; plant.y = worker.y = 0; state.plants = [plant];
+  nest.food = 10;
+  advance(state, start + TERRARIUM_ANT_ACTION_INTERVAL_MS, 'UTC');
+  expect(plant.health).toBe(100); expect(worker.carrying).toBeUndefined();
+  relocateBug(state, worker.id, 1, 0); nest.food = 0;
+  advance(state, start + 2 * TERRARIUM_ANT_ACTION_INTERVAL_MS, 'UTC');
+  expect(plant.health).toBe(99); expect(worker.carrying).toBe(1);
+  worker.carrying = 0; plant.health = 40;
+  advance(state, start + 3 * TERRARIUM_ANT_ACTION_INTERVAL_MS, 'UTC');
+  expect(plant.health).toBe(40); expect(worker.carrying).toBe(0);
+});

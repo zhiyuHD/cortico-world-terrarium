@@ -263,3 +263,18 @@ it('handles a socket notice independently from the rejected report acknowledgeme
     expect(received).toHaveLength(1);
   } finally { client.close(); }
 });
+
+it('warns during a scheduled grace period while accepting reports, then rejects at the deadline', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] }); const now = Date.now();
+  const { url, admin, credentials, report } = await fixture();
+  const at = new Date(now + 60_000).toISOString();
+  await admin('minimum-version', '99.0.0', '--at', at);
+  expect((await report()).status).toBe(200);
+  const poll = async () => (await (await fetch(url() + '/api/announcements?id=' + credentials.id, { headers: { authorization: `Bearer ${credentials.token}` } })).json()).announcements;
+  const advance = await poll();
+  expect(advance).toHaveLength(1); expect(advance[0].text).toContain(at); expect(advance[0].text).toContain('期限前仍可');
+  expect(await admin('list')).toMatchObject({ announcements: [] });
+  vi.setSystemTime(now + 59_999); expect((await report()).status).toBe(200); expect(await poll()).toEqual(advance);
+  vi.setSystemTime(now + 60_000); expect((await report()).status).toBe(426);
+  const blocked = await poll(); expect(blocked).toHaveLength(1); expect(blocked[0].id).not.toBe(advance[0].id); expect(blocked[0].text).toContain('提交将被忽略');
+});

@@ -1,3 +1,5 @@
+import { careText, createCareControls } from './care.ts';
+import type { waterCare } from '../src/care.ts';
 import { createFeedbackControls } from './feedback.ts';
 import { createSyncControls } from './sync.ts';
 import type { TerrariumSyncStatus } from '../src/leaderboard.ts';
@@ -13,23 +15,30 @@ export function mountWater(ctx: WebUiPanelContext): void {
   const status = ctx.ui.msgline(zh ? '读取中' : 'Loading');
   const canvas = document.createElement('canvas'); canvas.width = 800; canvas.height = 500; canvas.className = 'terrarium-scene'; canvas.setAttribute('role', 'img'); canvas.setAttribute('aria-label', zh ? '生态箱·水' : 'Water aquarium');
   const details = ctx.ui.h('div', 'terrarium-details');
+  const diagnosis = ctx.ui.h('div', 'terrarium-details');
+  const grid = ctx.ui.h('div', 'terrarium-grid');
+  const careControls = createCareControls(ctx, 'water', () => load());
+  let selected = { x: 2, y: 2 };
   const replayContainer = ctx.ui.h('div', 'terrarium-replays');
   const history = ctx.ui.h('div', '');
   const scene = createWaterScene(canvas), replay = createWaterReplayControls(replayContainer, zh ? 'zh' : 'en');
   ctx.signal.addEventListener('abort', () => { scene.dispose(); replay.dispose(); }, { once: true });
   const sync = createSyncControls(ctx, () => load());
   const refresh = ctx.ui.button(zh ? '刷新' : 'Refresh', { size: 'sm', onClick: () => { void load(); } });
-  card.body.append(title, status, sync.el, canvas, details, replayContainer, history, refresh, createFeedbackControls(ctx)); ctx.root.append(card.el);
+  card.body.append(title, status, sync.el, canvas, details, diagnosis, grid, careControls.el, replayContainer, history, refresh, createFeedbackControls(ctx)); ctx.root.append(card.el);
   const load = async (): Promise<void> => {
     try {
-      const response = await ctx.invoke<{ sync: TerrariumSyncStatus; claimed: boolean; id?: string; state?: AquariumState & AquariumFrame }>('state');
+      const response = await ctx.invoke<{ sync: TerrariumSyncStatus; claimed: boolean; id?: string; state?: AquariumState & AquariumFrame & { care: ReturnType<typeof waterCare> } }>('state');
       if (ctx.signal.aborted) return;
       sync.update(response.sync, response.claimed);
-      for (const el of [canvas, details, replayContainer, history]) el.hidden = !response.claimed;
-      if (!response.claimed || !response.state) { status.textContent = zh ? '未认领' : 'Unclaimed'; return; }
+      for (const el of [canvas, details, diagnosis, grid, careControls.el, replayContainer, history]) el.hidden = !response.claimed;
+      if (!response.claimed || !response.state) { status.textContent = zh ? '未认领 · 用 terrarium_claim 认领水箱，先种少量水草、放少量鱼。夜间水草等天亮再生长。' : 'Unclaimed · Use terrarium_claim. Start with a few plants and fish; plants wait for daylight.'; return; }
       const state = response.state;
       title.textContent = state.name ?? (zh ? '生态箱·水' : 'Terrarium · Water');
       status.textContent = `${state.phase === 'day' ? (zh ? '白天' : 'Day') : (zh ? '夜晚' : 'Night')}${response.id ? ` · ID ${response.id}` : ''} · ${zh ? '含氧量' : 'Oxygen'} ${state.oxygen.toFixed(1)} · ${zh ? '水质' : 'Cleanliness'} ${state.cleanliness.toFixed(1)}`;
+      diagnosis.replaceChildren(...careText(state.care, zh).map(text => ctx.ui.h('div', '', text)));
+      careControls.update(state, selected);
+      grid.replaceChildren(...Array.from({ length: 25 }, (_, i) => { const cell = { x: i % 5, y: Math.floor(i / 5) }; const button = ctx.ui.button(`(${cell.x},${cell.y})`, { size: 'sm', onClick: () => { selected = cell; careControls.update(state, selected); for (const b of grid.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b === button)); } }); button.setAttribute('aria-pressed', String(selected.x === cell.x && selected.y === cell.y)); return button; }));
       scene.setState(state); replay.setReplays(state.replays);
       const names: Record<string, string> = zh ? { guppy: '孔雀鱼', goldfish: '金鱼', perch: '鲈鱼', waterweed: '水草', waterlily: '睡莲', algae: '海藻' } : {};
       details.replaceChildren(...state.fish.map(fish => ctx.ui.h('div', 'terrarium-plant', `${fish.id} · ${names[fish.species] ?? fish.species} · (${fish.x},${fish.y}) · ${zh ? '体力' : 'Energy'} ${fish.energy.toFixed(1)} · HP ${fish.health.toFixed(1)}`)), ...state.plants.map(plant => ctx.ui.h('div', 'terrarium-plant', `${plant.id} · ${names[plant.species] ?? plant.species} · ${zh ? '阶段' : 'Stage'} ${plant.stage} · HP ${plant.health.toFixed(1)}`)), ctx.ui.h('div', '', `${zh ? '饲料' : 'Food'} ${state.food.reduce((n, food) => n + food.portions, 0)}`));

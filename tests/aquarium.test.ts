@@ -82,7 +82,7 @@ it('keeps ten-minute fish actions and elapsed-time metabolism during ten-second 
   expect(polled.fish[0]).toMatchObject({ id: fish.id, x: fish.x, y: fish.y });
   expect(polled.food).toEqual(state.food);
   expect(fish.ageHours).toBeCloseTo((end - offset) / 3_600_000, 9);
-  expect(fish.energy).toBeCloseTo(60 - fish.ageHours * 2, 9);
+  expect(fish.energy).toBeCloseTo(60 - fish.ageHours, 9);
   expect(polled.fish[0].ageHours).toBeCloseTo(fish.ageHours, 9);
   expect(polled.fish[0].energy).toBeCloseTo(fish.energy, 9);
   const position = { x: fish.x, y: fish.y };

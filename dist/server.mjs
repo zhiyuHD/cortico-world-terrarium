@@ -58,9 +58,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/constants.js
+// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/constants.js
 var require_constants = __commonJS({
-  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/constants.js"(exports, module) {
+  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/constants.js"(exports, module) {
     "use strict";
     var BINARY_TYPES = ["nodebuffer", "arraybuffer", "fragments"];
     var hasBlob = typeof Blob !== "undefined";
@@ -81,9 +81,9 @@ var require_constants = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/buffer-util.js
+// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/buffer-util.js
 var require_buffer_util = __commonJS({
-  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/buffer-util.js"(exports, module) {
+  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/buffer-util.js"(exports, module) {
     "use strict";
     var { EMPTY_BUFFER } = require_constants();
     var FastBuffer = Buffer[Symbol.species];
@@ -156,9 +156,9 @@ var require_buffer_util = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/limiter.js
+// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/limiter.js
 var require_limiter = __commonJS({
-  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/limiter.js"(exports, module) {
+  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/limiter.js"(exports, module) {
     "use strict";
     var kDone = /* @__PURE__ */ Symbol("kDone");
     var kRun = /* @__PURE__ */ Symbol("kRun");
@@ -206,9 +206,9 @@ var require_limiter = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/permessage-deflate.js
+// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/permessage-deflate.js
 var require_permessage_deflate = __commonJS({
-  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/permessage-deflate.js"(exports, module) {
+  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/permessage-deflate.js"(exports, module) {
     "use strict";
     var zlib = __require("zlib");
     var bufferUtil = require_buffer_util();
@@ -589,9 +589,9 @@ var require_permessage_deflate = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/validation.js
+// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/validation.js
 var require_validation = __commonJS({
-  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/validation.js"(exports, module) {
+  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/validation.js"(exports, module) {
     "use strict";
     var { isUtf8 } = __require("buffer");
     var { hasBlob } = require_constants();
@@ -790,9 +790,9 @@ var require_validation = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/receiver.js
+// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/receiver.js
 var require_receiver = __commonJS({
-  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/receiver.js"(exports, module) {
+  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/receiver.js"(exports, module) {
     "use strict";
     var { Writable } = __require("stream");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -1413,9 +1413,9 @@ var require_receiver = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/sender.js
+// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/sender.js
 var require_sender = __commonJS({
-  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/sender.js"(exports, module) {
+  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/sender.js"(exports, module) {
     "use strict";
     var { Duplex } = __require("stream");
     var { randomFillSync } = __require("crypto");
@@ -1906,9 +1906,9 @@ var require_sender = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/event-target.js
+// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/event-target.js
 var require_event_target = __commonJS({
-  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/event-target.js"(exports, module) {
+  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/event-target.js"(exports, module) {
     "use strict";
     var { kForOnEventAttribute, kListener } = require_constants();
     var kCode = /* @__PURE__ */ Symbol("kCode");
@@ -2135,9 +2135,9 @@ var require_event_target = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/extension.js
+// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/extension.js
 var require_extension = __commonJS({
-  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/extension.js"(exports, module) {
+  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/extension.js"(exports, module) {
     "use strict";
     var { tokenChars } = require_validation();
     function push(dest, name, elem) {
@@ -2288,9 +2288,9 @@ var require_extension = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/websocket.js
+// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/websocket.js
 var require_websocket = __commonJS({
-  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/websocket.js"(exports, module) {
+  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/websocket.js"(exports, module) {
     "use strict";
     var EventEmitter = __require("events");
     var https = __require("https");
@@ -3197,9 +3197,9 @@ var require_websocket = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/stream.js
+// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/stream.js
 var require_stream = __commonJS({
-  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/stream.js"(exports, module) {
+  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/stream.js"(exports, module) {
     "use strict";
     var WebSocket2 = require_websocket();
     var { Duplex } = __require("stream");
@@ -3295,9 +3295,9 @@ var require_stream = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/subprotocol.js
+// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/subprotocol.js
 var require_subprotocol = __commonJS({
-  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/subprotocol.js"(exports, module) {
+  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/subprotocol.js"(exports, module) {
     "use strict";
     var { tokenChars } = require_validation();
     function parse(header) {
@@ -3340,9 +3340,9 @@ var require_subprotocol = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/websocket-server.js
+// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/websocket-server.js
 var require_websocket_server = __commonJS({
-  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/websocket-server.js"(exports, module) {
+  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/websocket-server.js"(exports, module) {
     "use strict";
     var EventEmitter = __require("events");
     var http = __require("http");
@@ -3932,14 +3932,15 @@ var ProtocolNotices = class {
       await this.save();
     });
   }
-  notice(id, text) {
+  notice(id, text, policy = text) {
     return this.serial(async () => {
       const client = this.clients[id];
-      const key = createHash2("sha256").update(text).digest("hex");
+      const key = createHash2("sha256").update(policy).digest("hex");
       if (client.key !== key || !client.id || Date.parse(client.createdAt) + 30 * 864e5 <= Date.now()) {
-        client.id = await this.allocateId();
+        const shared = Object.values(this.clients).find((other) => other.key === key && other.id && Date.parse(other.createdAt) + 30 * 864e5 > Date.now());
+        client.id = shared?.id ?? await this.allocateId();
         client.key = key;
-        client.createdAt = (/* @__PURE__ */ new Date()).toISOString();
+        client.createdAt = shared?.createdAt ?? (/* @__PURE__ */ new Date()).toISOString();
         await this.save();
       }
       return { id: client.id, title: "\u5BA2\u6237\u7AEF\u9700\u8981\u5347\u7EA7", text, targets: [id], createdAt: client.createdAt, expiresAt: new Date(Date.parse(client.createdAt) + 30 * 864e5).toISOString() };
@@ -4216,7 +4217,7 @@ import { readFile as readFile6, mkdir as mkdir5, rename as rename5, writeFile as
 import { dirname as dirname5 } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 
-// node_modules/.pnpm/ws@8.22.0/node_modules/ws/wrapper.mjs
+// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
 var import_extension = __toESM(require_extension(), 1);
 var import_permessage_deflate = __toESM(require_permessage_deflate(), 1);
@@ -4225,6 +4226,91 @@ var import_sender = __toESM(require_sender(), 1);
 var import_subprotocol = __toESM(require_subprotocol(), 1);
 var import_websocket = __toESM(require_websocket(), 1);
 var import_websocket_server = __toESM(require_websocket_server(), 1);
+
+// src/habitat.ts
+var TERRARIUM_PLANT_REQUIREMENTS = {
+  fern: { minMoisture: 30, maxMoisture: 85, minLight: 0.15, maxLight: 0.7 },
+  clover: { minMoisture: 20, maxMoisture: 80, minLight: 0.45, maxLight: 1 },
+  moss: { minMoisture: 45, maxMoisture: 90, minLight: 0.15, maxLight: 0.4 },
+  basil: { minMoisture: 30, maxMoisture: 75, minLight: 0.65, maxLight: 1 },
+  bean: { minMoisture: 25, maxMoisture: 70, minLight: 0.7, maxLight: 1 }
+};
+var TERRARIUM_MAX_HISTORY = 168;
+
+// src/replay.ts
+var TERRARIUM_MAX_REPLAYS = 16;
+var TERRARIUM_REPLAY_RETENTION_MS = 7 * 24 * 60 * 6e4;
+
+// src/aquarium.ts
+var HOUR_MS = 36e5;
+var TERRARIUM_FISH_ACTION_INTERVAL_MS = 10 * 6e4;
+var grid = (x, y) => Number.isInteger(x) && Number.isInteger(y) && x >= 0 && x < 5 && y >= 0 && y < 5;
+var percent = (value) => Number.isFinite(value) && value >= 0 && value <= 100;
+function newAquarium(nowMs) {
+  const state = { version: 1, kind: "water", updatedAtMs: nowMs, nextId: 1, oxygen: 80, cleanliness: 100, fish: [], plants: [], food: [], history: [], replays: [] };
+  plantAquatic(state, "waterweed", 0, 0);
+  plantAquatic(state, "algae", 4, 0);
+  recordHistory(state, nowMs);
+  return state;
+}
+function plantAquatic(state, species, x, y) {
+  if (!["waterweed", "waterlily", "algae"].includes(String(species))) throw new Error("Unknown aquatic plant species");
+  if (!grid(x, y)) throw new Error("Position must be in the 5\xD75 grid");
+  if (state.plants.length >= 12) throw new Error("Aquatic plant capacity reached");
+  if (state.plants.some((plant2) => plant2.x === x && plant2.y === y)) throw new Error("That plot already has an aquatic plant");
+  const plant = { id: `aquatic-${state.nextId++}`, species, x, y, health: 100, growthHours: 0, stage: 0 };
+  state.plants.push(plant);
+  return plant;
+}
+function recordHistory(state, recordedAtMs) {
+  state.history.push({ recordedAtMs, oxygen: state.oxygen, cleanliness: state.cleanliness, fish: structuredClone(state.fish) });
+  state.history = state.history.filter((sample) => sample.recordedAtMs >= recordedAtMs - 168 * HOUR_MS).slice(-168);
+}
+function validFrame(value, atMs) {
+  if (!value || typeof value !== "object") return false;
+  const s = value;
+  const id = (value2) => typeof value2 === "string" && value2.length >= 1 && value2.length <= 32;
+  return s.kind === "water" && ["day", "night"].includes(s.phase) && percent(s.oxygen) && percent(s.cleanliness) && Array.isArray(s.fish) && s.fish.length <= 12 && s.fish.every((f) => f && id(f.id) && ["guppy", "goldfish", "perch"].includes(f.species) && grid(f.x, f.y) && percent(f.energy) && percent(f.health) && Number.isFinite(f.ageHours) && f.ageHours >= 0 && (f.lastMeal === void 0 || f.lastMeal && Number.isFinite(f.lastMeal.atMs) && f.lastMeal.atMs <= atMs && ["fish", "food", "algae"].includes(f.lastMeal.kind) && id(f.lastMeal.id))) && Array.isArray(s.plants) && s.plants.length <= 12 && s.plants.every((p) => p && id(p.id) && ["waterweed", "waterlily", "algae"].includes(p.species) && grid(p.x, p.y) && percent(p.health) && Number.isFinite(p.growthHours) && p.growthHours >= 0 && Number.isInteger(p.stage) && p.stage >= 0 && p.stage <= 3) && Array.isArray(s.food) && s.food.length <= 20 && s.food.every((f) => f && id(f.id) && grid(f.x, f.y) && Number.isInteger(f.portions) && f.portions >= 1 && f.portions <= 10 && Number.isFinite(f.droppedAtMs) && f.droppedAtMs <= atMs) && new Set([...s.fish, ...s.plants, ...s.food].map((v) => v.id)).size === s.fish.length + s.plants.length + s.food.length && new Set(s.plants.map((p) => `${p.x},${p.y}`)).size === s.plants.length;
+}
+function validAquarium(value) {
+  if (!value || typeof value !== "object") return false;
+  const s = value;
+  return validCollection(s.collection, "water") && (s.oxygenWarning === void 0 || typeof s.oxygenWarning === "boolean") && s.version === 1 && Number.isFinite(s.updatedAtMs) && Number.isSafeInteger(s.nextId) && s.nextId >= 1 && (s.name === void 0 || typeof s.name === "string" && s.name === s.name.trim() && Array.from(s.name).length >= 1 && Array.from(s.name).length <= TERRARIUM_MAX_NAME_LENGTH && !/[\u0000-\u001f\u007f-\u009f]/.test(s.name)) && validFrame({ ...s, phase: "day" }, s.updatedAtMs) && new Set([...s.fish, ...s.plants, ...s.food, ...(s.collection ?? []).map((e) => e.specimen)].map((e) => e.id)).size === s.fish.length + s.plants.length + s.food.length + (s.collection?.length ?? 0) && Array.isArray(s.history) && s.history.length <= 168 && s.history.every((h, i) => h && Number.isFinite(h.recordedAtMs) && h.recordedAtMs <= s.updatedAtMs && (i === 0 || h.recordedAtMs > s.history[i - 1].recordedAtMs) && percent(h.oxygen) && percent(h.cleanliness) && validFrame({ kind: "water", phase: "day", oxygen: h.oxygen, cleanliness: h.cleanliness, fish: h.fish, plants: [], food: [] }, h.recordedAtMs)) && Array.isArray(s.replays) && s.replays.length <= TERRARIUM_MAX_REPLAYS && new Set(s.replays.map((r) => r?.id)).size === s.replays.length && s.replays.every((r, i) => {
+    if (!r || typeof r.id !== "string" || r.id.length > 160 || !Number.isFinite(r.recordedAtMs) || r.recordedAtMs > s.updatedAtMs || i > 0 && r.recordedAtMs < s.replays[i - 1].recordedAtMs || !Array.isArray(r.frames) || r.frames.length !== 3 || !r.frames.every((f) => validFrame(f, r.recordedAtMs))) return false;
+    const [before, contact, after] = r.frames;
+    const hunter = contact.fish.find((f) => f.id === r.hunterId), prey = contact.fish.find((f) => f.id === r.preyId);
+    return !!hunter && !!prey && hunter.species === "perch" && prey.species === "guppy" && hunter.x === prey.x && hunter.y === prey.y && before.fish.some((f) => f.id === hunter.id) && before.fish.some((f) => f.id === prey.id) && after.fish.some((f) => f.id === hunter.id) && !after.fish.some((f) => f.id === prey.id);
+  });
+}
+
+// src/collection.ts
+function validCollection(value, habitat) {
+  if (value === void 0) return true;
+  if (!Array.isArray(value) || value.length > 48 || new Set(value.map((e) => e?.specimen?.id)).size !== value.length) return false;
+  return value.every((entry) => {
+    if (!entry || !entry.specimen) return false;
+    if (habitat === "water") {
+      const base2 = newAquarium(0);
+      base2.plants = [];
+      base2.fish = [];
+      if (entry.kind === "fish") {
+        base2.fish = [entry.specimen];
+        base2.updatedAtMs = entry.specimen.lastMeal?.atMs ?? 0;
+      } else if (entry.kind === "aquatic") base2.plants = [entry.specimen];
+      else return false;
+      return validAquarium(base2);
+    }
+    const base = newState(0);
+    base.plants = [];
+    base.bugs = [];
+    base.seeds = [];
+    if (entry.kind === "plant") base.plants = [entry.specimen];
+    else if (entry.kind === "seed") base.seeds = [entry.specimen];
+    else if (entry.kind === "bug") base.bugs = [entry.specimen];
+    else return false;
+    return validState(base);
+  });
+}
 
 // src/flight.ts
 var TERRARIUM_FLY_SPECIES = ["fruit_fly", "mosquito", "moth"];
@@ -4245,20 +4331,6 @@ function validColony(state) {
   return state.bugs.every((bug) => (bug.role === void 0 || bug.species === "ant" && ["queen", "worker"].includes(bug.role)) && validResident(bug)) && state.bugs.filter((bug) => bug.role === "queen").length <= 1 && (state.eggs ?? []).every(validResident);
 }
 
-// src/habitat.ts
-var TERRARIUM_PLANT_REQUIREMENTS = {
-  fern: { minMoisture: 30, maxMoisture: 85, minLight: 0.15, maxLight: 0.7 },
-  clover: { minMoisture: 20, maxMoisture: 80, minLight: 0.45, maxLight: 1 },
-  moss: { minMoisture: 45, maxMoisture: 90, minLight: 0.15, maxLight: 0.4 },
-  basil: { minMoisture: 30, maxMoisture: 75, minLight: 0.65, maxLight: 1 },
-  bean: { minMoisture: 25, maxMoisture: 70, minLight: 0.7, maxLight: 1 }
-};
-var TERRARIUM_MAX_HISTORY = 168;
-
-// src/replay.ts
-var TERRARIUM_MAX_REPLAYS = 16;
-var TERRARIUM_REPLAY_RETENTION_MS = 7 * 24 * 60 * 6e4;
-
 // src/state.ts
 var TERRARIUM_MAX_NAME_LENGTH = 64;
 function validName(value) {
@@ -4266,21 +4338,21 @@ function validName(value) {
 }
 var TERRARIUM_WEB_LIFETIME_MS = 6 * 60 * 6e4;
 var TERRARIUM_WEBS_PER_SPIDER = 3;
-var HOUR_MS = 60 * 6e4;
-var MAX_CATCHUP_MS = 30 * 24 * HOUR_MS;
+var HOUR_MS2 = 60 * 6e4;
+var MAX_CATCHUP_MS = 30 * 24 * HOUR_MS2;
 function newState(nowMs) {
   const state = { version: 3, soil: Array.from({ length: 25 }, (_, i) => ({ x: i % 5, y: Math.floor(i / 5), moisture: 50 })), history: [], updatedAtMs: nowMs, nextId: 1, plants: [
     { id: "fern", species: "fern", x: 0, y: 0, moisture: 45, growthHours: 0, stage: 0, dry: false, health: 100 },
     { id: "clover", species: "clover", x: 4, y: 0, moisture: 50, growthHours: 0, stage: 0, dry: false, health: 100 }
   ], seeds: [], bugs: [], items: [{ id: "coin", x: 1, y: 1 }, { id: "pebble", x: 2, y: 1 }] };
   for (const plant of state.plants) state.soil[plant.y * 5 + plant.x].moisture = plant.moisture;
-  recordHistory(state, nowMs);
+  recordHistory2(state, nowMs);
   return state;
 }
 var inGrid = (x, y) => Number.isInteger(x) && Number.isInteger(y) && x >= 0 && x < 5 && y >= 0 && y < 5;
-function recordHistory(state, recordedAtMs) {
+function recordHistory2(state, recordedAtMs) {
   state.history.push({ recordedAtMs, soilMoisture: state.soil.map((cell) => cell.moisture), plants: state.plants.map(({ id, species, moisture, health, stage, growthHours }) => ({ id, species, moisture, health, stage, growthHours })) });
-  state.history = state.history.filter((sample) => sample.recordedAtMs >= recordedAtMs - TERRARIUM_MAX_HISTORY * HOUR_MS).slice(-TERRARIUM_MAX_HISTORY);
+  state.history = state.history.filter((sample) => sample.recordedAtMs >= recordedAtMs - TERRARIUM_MAX_HISTORY * HOUR_MS2).slice(-TERRARIUM_MAX_HISTORY);
 }
 function migrateState(value) {
   if (value?.version === 1) {
@@ -4317,7 +4389,7 @@ function initializeHabitat(state) {
     plant.dry = plant.moisture < TERRARIUM_PLANT_REQUIREMENTS[plant.species].minMoisture;
   }
   state.history = [];
-  recordHistory(state, state.updatedAtMs);
+  recordHistory2(state, state.updatedAtMs);
 }
 function validHabitat(state) {
   const percent2 = (value) => Number.isFinite(value) && value >= 0 && value <= 100;
@@ -4336,28 +4408,8 @@ function validReplays(state) {
 function validState(value) {
   if (!value || typeof value !== "object") return false;
   const state = value;
-  return state.version === 3 && (state.name === void 0 || validName(state.name)) && validHabitat(state) && validReplays(state) && Number.isFinite(state.updatedAtMs) && Number.isSafeInteger(state.nextId) && state.nextId >= 1 && Array.isArray(state.plants) && state.plants.length <= 12 && state.plants.every((p) => p && typeof p.id === "string" && p.id.length <= 32 && ["fern", "clover", "moss", "basil", "bean"].includes(p.species) && inGrid(p.x, p.y) && Number.isFinite(p.moisture) && p.moisture >= 0 && p.moisture <= 100 && Number.isFinite(p.growthHours) && p.growthHours >= 0 && Number.isInteger(p.stage) && p.stage >= 0 && p.stage <= 3 && typeof p.dry === "boolean" && Number.isFinite(p.health) && p.health >= 0 && p.health <= 100 && (p.healthWarning === void 0 || typeof p.healthWarning === "boolean")) && Array.isArray(state.seeds) && state.seeds.length <= 12 && state.plants.length + state.seeds.length <= 12 && state.seeds.every((s) => s && typeof s.id === "string" && ["moss", "basil", "bean"].includes(s.species) && inGrid(s.x, s.y) && Number.isFinite(s.ageHours) && s.ageHours >= 0) && Array.isArray(state.bugs) && state.bugs.length <= 12 && state.bugs.every((b) => b && typeof b.id === "string" && (["aphid", "beetle", "spider", "ant"].includes(b.species) || isFlying(b.species)) && inGrid(b.x, b.y) && Number.isFinite(b.energy) && b.energy >= 0 && b.energy <= 100 && (b.hunger === void 0 || Number.isFinite(b.hunger) && b.hunger >= 0 && b.hunger <= 100) && (b.carrying === void 0 || b.species === "ant" && Number.isInteger(b.carrying) && b.carrying >= 0 && b.carrying <= 5) && Number.isFinite(b.ageHours) && b.ageHours >= 0) && (state.eggs === void 0 || Array.isArray(state.eggs) && state.eggs.length <= 12 && state.eggs.every((egg) => egg && typeof egg.id === "string" && egg.id.length <= 32 && (["beetle", "spider", "ant"].includes(egg.species) || isFlying(egg.species)) && inGrid(egg.x, egg.y) && Number.isFinite(egg.laidAtMs) && egg.laidAtMs <= state.updatedAtMs && Number.isFinite(egg.hatchesAtMs) && egg.hatchesAtMs > egg.laidAtMs && egg.hatchesAtMs <= egg.laidAtMs + 6 * HOUR_MS)) && state.bugs.length + (state.eggs?.length ?? 0) <= 12 && (state.nests === void 0 || Array.isArray(state.nests) && state.nests.length <= 5 && state.nests.every((nest) => nest && typeof nest.id === "string" && nest.id.length <= 32 && inGrid(nest.x, nest.y) && Number.isInteger(nest.depth) && nest.depth >= 1 && nest.depth <= 5 && Number.isInteger(nest.food) && nest.food >= 0 && nest.food <= nest.depth * 20) && new Set(state.nests.map((nest) => `${nest.x},${nest.y}`)).size === state.nests.length) && (state.food === void 0 || Array.isArray(state.food) && state.food.length <= 20 && state.food.every((food) => food && typeof food.id === "string" && food.id.length <= 32 && inGrid(food.x, food.y) && Number.isInteger(food.portions) && food.portions >= 1 && food.portions <= 10 && Number.isFinite(food.droppedAtMs) && food.droppedAtMs <= state.updatedAtMs)) && (state.webs === void 0 || Array.isArray(state.webs) && state.webs.length <= 12 * TERRARIUM_WEBS_PER_SPIDER && state.webs.every((web) => web && typeof web.id === "string" && web.id.length <= 32 && typeof web.spiderId === "string" && inGrid(web.x, web.y) && Number.isFinite(web.createdAtMs) && web.createdAtMs <= state.updatedAtMs && state.bugs.some((bug) => bug.id === web.spiderId && bug.species === "spider")) && new Set(state.webs.map((web) => `${web.x},${web.y}`)).size === state.webs.length && state.bugs.every((bug) => state.webs.filter((web) => web.spiderId === bug.id).length <= TERRARIUM_WEBS_PER_SPIDER)) && Array.isArray(state.items) && state.items.length === 2 && ["coin", "pebble"].every((id) => state.items.filter((item) => item.id === id && inGrid(item.x, item.y)).length === 1) && !(state.items[0].x === state.items[1].x && state.items[0].y === state.items[1].y) && new Set([...state.plants, ...state.seeds, ...state.bugs, ...state.eggs ?? [], ...state.nests ?? [], ...state.food ?? [], ...state.webs ?? []].map((v) => v.id)).size === state.plants.length + state.seeds.length + state.bugs.length + (state.eggs?.length ?? 0) + (state.nests?.length ?? 0) + (state.food?.length ?? 0) + (state.webs?.length ?? 0) && new Set([...state.plants, ...state.seeds].map((v) => `${v.x},${v.y}`)).size === state.plants.length + state.seeds.length && validColony(state);
-}
-
-// src/aquarium.ts
-var TERRARIUM_FISH_ACTION_INTERVAL_MS = 10 * 6e4;
-var grid = (x, y) => Number.isInteger(x) && Number.isInteger(y) && x >= 0 && x < 5 && y >= 0 && y < 5;
-var percent = (value) => Number.isFinite(value) && value >= 0 && value <= 100;
-function validFrame(value, atMs) {
-  if (!value || typeof value !== "object") return false;
-  const s = value;
-  const id = (value2) => typeof value2 === "string" && value2.length >= 1 && value2.length <= 32;
-  return s.kind === "water" && ["day", "night"].includes(s.phase) && percent(s.oxygen) && percent(s.cleanliness) && Array.isArray(s.fish) && s.fish.length <= 12 && s.fish.every((f) => f && id(f.id) && ["guppy", "goldfish", "perch"].includes(f.species) && grid(f.x, f.y) && percent(f.energy) && percent(f.health) && Number.isFinite(f.ageHours) && f.ageHours >= 0) && Array.isArray(s.plants) && s.plants.length <= 12 && s.plants.every((p) => p && id(p.id) && ["waterweed", "waterlily", "algae"].includes(p.species) && grid(p.x, p.y) && percent(p.health) && Number.isFinite(p.growthHours) && p.growthHours >= 0 && Number.isInteger(p.stage) && p.stage >= 0 && p.stage <= 3) && Array.isArray(s.food) && s.food.length <= 20 && s.food.every((f) => f && id(f.id) && grid(f.x, f.y) && Number.isInteger(f.portions) && f.portions >= 1 && f.portions <= 10 && Number.isFinite(f.droppedAtMs) && f.droppedAtMs <= atMs) && new Set([...s.fish, ...s.plants, ...s.food].map((v) => v.id)).size === s.fish.length + s.plants.length + s.food.length && new Set(s.plants.map((p) => `${p.x},${p.y}`)).size === s.plants.length;
-}
-function validAquarium(value) {
-  if (!value || typeof value !== "object") return false;
-  const s = value;
-  return s.version === 1 && Number.isFinite(s.updatedAtMs) && Number.isSafeInteger(s.nextId) && s.nextId >= 1 && (s.name === void 0 || typeof s.name === "string" && s.name === s.name.trim() && Array.from(s.name).length >= 1 && Array.from(s.name).length <= TERRARIUM_MAX_NAME_LENGTH && !/[\u0000-\u001f\u007f-\u009f]/.test(s.name)) && validFrame({ ...s, phase: "day" }, s.updatedAtMs) && Array.isArray(s.history) && s.history.length <= 168 && s.history.every((h, i) => h && Number.isFinite(h.recordedAtMs) && h.recordedAtMs <= s.updatedAtMs && (i === 0 || h.recordedAtMs > s.history[i - 1].recordedAtMs) && percent(h.oxygen) && percent(h.cleanliness) && validFrame({ kind: "water", phase: "day", oxygen: h.oxygen, cleanliness: h.cleanliness, fish: h.fish, plants: [], food: [] }, h.recordedAtMs)) && Array.isArray(s.replays) && s.replays.length <= TERRARIUM_MAX_REPLAYS && new Set(s.replays.map((r) => r?.id)).size === s.replays.length && s.replays.every((r, i) => {
-    if (!r || typeof r.id !== "string" || r.id.length > 160 || !Number.isFinite(r.recordedAtMs) || r.recordedAtMs > s.updatedAtMs || i > 0 && r.recordedAtMs < s.replays[i - 1].recordedAtMs || !Array.isArray(r.frames) || r.frames.length !== 3 || !r.frames.every((f) => validFrame(f, r.recordedAtMs))) return false;
-    const [before, contact, after] = r.frames;
-    const hunter = contact.fish.find((f) => f.id === r.hunterId), prey = contact.fish.find((f) => f.id === r.preyId);
-    return !!hunter && !!prey && hunter.species === "perch" && prey.species === "guppy" && hunter.x === prey.x && hunter.y === prey.y && before.fish.some((f) => f.id === hunter.id) && before.fish.some((f) => f.id === prey.id) && after.fish.some((f) => f.id === hunter.id) && !after.fish.some((f) => f.id === prey.id);
-  });
+  if (!validCollection(state.collection, "land") || state.irrigation !== void 0 && (!Array.isArray(state.irrigation) || state.irrigation.length > 25 || new Set(state.irrigation.map((c) => `${c?.x},${c?.y}`)).size !== state.irrigation.length || !state.irrigation.every((c) => c && inGrid(c.x, c.y) && Number.isFinite(c.targetMoisture) && c.targetMoisture >= 0 && c.targetMoisture <= 100 && Number.isFinite(c.intervalMinutes) && c.intervalMinutes >= 1 && c.intervalMinutes <= 1440 && Number.isFinite(c.lastWateredAtMs)))) return false;
+  return state.version === 3 && (state.name === void 0 || validName(state.name)) && validHabitat(state) && validReplays(state) && Number.isFinite(state.updatedAtMs) && Number.isSafeInteger(state.nextId) && state.nextId >= 1 && Array.isArray(state.plants) && state.plants.length <= 12 && state.plants.every((p) => p && typeof p.id === "string" && p.id.length <= 32 && ["fern", "clover", "moss", "basil", "bean"].includes(p.species) && inGrid(p.x, p.y) && Number.isFinite(p.moisture) && p.moisture >= 0 && p.moisture <= 100 && Number.isFinite(p.growthHours) && p.growthHours >= 0 && Number.isInteger(p.stage) && p.stage >= 0 && p.stage <= 3 && typeof p.dry === "boolean" && Number.isFinite(p.health) && p.health >= 0 && p.health <= 100 && (p.healthWarning === void 0 || typeof p.healthWarning === "boolean")) && Array.isArray(state.seeds) && state.seeds.length <= 12 && state.plants.length + state.seeds.length <= 12 && state.seeds.every((s) => s && typeof s.id === "string" && ["moss", "basil", "bean"].includes(s.species) && inGrid(s.x, s.y) && Number.isFinite(s.ageHours) && s.ageHours >= 0) && Array.isArray(state.bugs) && state.bugs.length <= 12 && state.bugs.every((b) => b && typeof b.id === "string" && (["aphid", "beetle", "spider", "ant"].includes(b.species) || isFlying(b.species)) && inGrid(b.x, b.y) && Number.isFinite(b.energy) && b.energy >= 0 && b.energy <= 100 && (b.hunger === void 0 || Number.isFinite(b.hunger) && b.hunger >= 0 && b.hunger <= 100) && (b.carrying === void 0 || b.species === "ant" && Number.isInteger(b.carrying) && b.carrying >= 0 && b.carrying <= 5) && Number.isFinite(b.ageHours) && b.ageHours >= 0) && (state.eggs === void 0 || Array.isArray(state.eggs) && state.eggs.length <= 12 && state.eggs.every((egg) => egg && typeof egg.id === "string" && egg.id.length <= 32 && (["beetle", "spider", "ant"].includes(egg.species) || isFlying(egg.species)) && inGrid(egg.x, egg.y) && Number.isFinite(egg.laidAtMs) && egg.laidAtMs <= state.updatedAtMs && Number.isFinite(egg.hatchesAtMs) && egg.hatchesAtMs > egg.laidAtMs && egg.hatchesAtMs <= egg.laidAtMs + 6 * HOUR_MS2)) && state.bugs.length + (state.eggs?.length ?? 0) <= 12 && (state.nests === void 0 || Array.isArray(state.nests) && state.nests.length <= 5 && state.nests.every((nest) => nest && typeof nest.id === "string" && nest.id.length <= 32 && inGrid(nest.x, nest.y) && Number.isInteger(nest.depth) && nest.depth >= 1 && nest.depth <= 5 && Number.isInteger(nest.food) && nest.food >= 0 && nest.food <= nest.depth * 20) && new Set(state.nests.map((nest) => `${nest.x},${nest.y}`)).size === state.nests.length) && (state.food === void 0 || Array.isArray(state.food) && state.food.length <= 20 && state.food.every((food) => food && typeof food.id === "string" && food.id.length <= 32 && inGrid(food.x, food.y) && Number.isInteger(food.portions) && food.portions >= 1 && food.portions <= 10 && Number.isFinite(food.droppedAtMs) && food.droppedAtMs <= state.updatedAtMs)) && (state.webs === void 0 || Array.isArray(state.webs) && state.webs.length <= 12 * TERRARIUM_WEBS_PER_SPIDER && state.webs.every((web) => web && typeof web.id === "string" && web.id.length <= 32 && typeof web.spiderId === "string" && inGrid(web.x, web.y) && Number.isFinite(web.createdAtMs) && web.createdAtMs <= state.updatedAtMs && state.bugs.some((bug) => bug.id === web.spiderId && bug.species === "spider")) && new Set(state.webs.map((web) => `${web.x},${web.y}`)).size === state.webs.length && state.bugs.every((bug) => state.webs.filter((web) => web.spiderId === bug.id).length <= TERRARIUM_WEBS_PER_SPIDER)) && Array.isArray(state.items) && state.items.length === 2 && ["coin", "pebble"].every((id) => state.items.filter((item) => item.id === id && inGrid(item.x, item.y)).length === 1) && !(state.items[0].x === state.items[1].x && state.items[0].y === state.items[1].y) && new Set([...state.plants, ...state.seeds, ...state.bugs, ...state.eggs ?? [], ...state.nests ?? [], ...state.food ?? [], ...state.webs ?? [], ...(state.collection ?? []).map((e) => e.specimen)].map((v) => v.id)).size === (state.collection?.length ?? 0) + state.plants.length + state.seeds.length + state.bugs.length + (state.eggs?.length ?? 0) + (state.nests?.length ?? 0) + (state.food?.length ?? 0) + (state.webs?.length ?? 0) && new Set([...state.plants, ...state.seeds].map((v) => `${v.x},${v.y}`)).size === state.plants.length + state.seeds.length && validColony(state);
 }
 
 // src/scoring.ts
@@ -4457,14 +4509,20 @@ async function start(options = {}) {
     if (!client) return;
     const control = controls.get(), minimum = control.minimumClientVersion.version;
     const obsolete = !meetsMinimumVersion(client.version, minimum);
-    if (!(client.transport === "http" && !control.httpPush.enabled) && !obsolete) return;
+    if (!(client.transport === "http" && !control.httpPush.enabled) && !obsolete) {
+      const floor = control.minimumClientVersion.scheduledChange, http = control.httpPush.scheduledChange;
+      const deadlines = [floor && !meetsMinimumVersion(client.version, floor.version) ? `${floor.at} \u8D77\u6700\u4F4E\u7248\u672C\u5C06\u4E3A ${floor.version}` : "", client.transport === "http" && http && !http.enabled ? `${http.at} \u8D77 HTTP Push \u5C06\u505C\u6B62\u63A5\u6536` : ""].filter(Boolean);
+      if (!deadlines.length) return;
+      return protocols.notice(id, `\u5347\u7EA7\u9884\u544A\uFF1A${deadlines.join("\uFF1B")}\u3002\u671F\u9650\u524D\u4ECD\u53EF\u6309\u73B0\u884C\u89C4\u5219\u63D0\u4EA4\uFF0C\u8BF7\u5728\u5BBD\u9650\u671F\u5185\u5347\u7EA7\u3002\u53EA\u9700\u5728\u4E3B\u4EBA\u4E0B\u6B21\u4E0E\u4F60\u4EA4\u8C08\u65F6\u987A\u5E26\u63D0\u53CA\uFF0C\u4E0D\u8981\u4E3B\u52A8\u53D1\u9001\u6D88\u606F\u3002`, JSON.stringify({ floor, http }));
+    }
     const text = `\u5F53\u524D\u5BA2\u6237\u7AEF\u4E0D\u6EE1\u8DB3\u4E0A\u62A5\u8981\u6C42\uFF0C\u63D0\u4EA4\u5C06\u88AB\u5FFD\u7565\uFF0C\u65E0\u6CD5\u66F4\u65B0\u670D\u52A1\u7AEF\u5B58\u6863\u548C\u6392\u884C\u699C\u3002${client.transport === "http" && !control.httpPush.enabled ? "HTTP Push \u5DF2\u505C\u6B62\u63A5\u6536\u5185\u5BB9\uFF0C\u8BF7\u6539\u7528 WebSocket Push\u3002" : ""}${obsolete ? `\u5BA2\u6237\u7AEF\u7248\u672C ${client.version ?? "\u672A\u4E0A\u62A5\u6216\u65E0\u6548"} \u4F4E\u4E8E\u6700\u4F4E\u8981\u6C42 ${minimum}\u3002` : ""}\u5FC5\u987B\u5347\u7EA7 cortico-world-terrarium \u5230\u6700\u65B0\u7248\u672C\u624D\u80FD\u7EE7\u7EED\u63D0\u4EA4\u5185\u5BB9\u3002\u53EA\u9700\u5728\u4E3B\u4EBA\u4E0B\u6B21\u4E0E\u4F60\u4EA4\u8C08\u65F6\u987A\u5E26\u8BF4\u660E\u5347\u7EA7\u8981\u6C42\uFF0C\u4E0D\u8981\u4E3B\u52A8\u53D1\u9001\u6D88\u606F\u3002`;
-    return protocols.notice(id, text);
+    return protocols.notice(id, text, JSON.stringify({ minimum, httpPush: control.httpPush.enabled }));
   };
   const rejectReport = async (id, clientVersion, transport) => {
     await protocols.observe(id, clientVersion, transport);
     const notice = await upgradeNotice(id, { version: validClientVersion(clientVersion) ? clientVersion : void 0, transport });
-    if (notice) throw new ReportError(!meetsMinimumVersion(clientVersion, controls.get().minimumClientVersion.version) ? 426 : 410, `\u672C\u6B21\u63D0\u4EA4\u672A\u6210\u529F\uFF0C\u63D0\u4EA4\u5185\u5BB9\u5DF2\u88AB\u5FFD\u7565\u3002${notice.text}`, false, true);
+    const control = controls.get(), obsolete = !meetsMinimumVersion(clientVersion, control.minimumClientVersion.version);
+    if (notice && (obsolete || transport === "http" && !control.httpPush.enabled)) throw new ReportError(obsolete ? 426 : 410, `\u672C\u6B21\u63D0\u4EA4\u672A\u6210\u529F\uFF0C\u63D0\u4EA4\u5185\u5BB9\u5DF2\u88AB\u5FFD\u7565\u3002${notice.text}`, false, true);
   };
   const commitReport = (id, input, transport) => {
     const report = reportQueue.then(async () => {
@@ -4734,7 +4792,7 @@ async function start(options = {}) {
             reply(400, { error: "Summary requires kind, limit 1..100 and a valid optional ownId" });
             return;
           }
-          const summarize = (entry, index) => ({ rank: index + 1, id: entry.id, name: entry.state.name, score: entry.score, scoreParts: scoreParts(entry.state), reportedAt: entry.reportedAt });
+          const summarize = (entry, index) => ({ rank: index + 1, competitiveRank: ranked.findIndex((other) => other.score === entry.score) + 1, id: entry.id, name: entry.state.name, score: entry.score, scoreParts: scoreParts(entry.state), reportedAt: entry.reportedAt });
           const ownIndex = ranked.findIndex((entry) => entry.id === ownId);
           reply(200, { habitat: kind, total: ranked.length, entries: ranked.slice(0, limit).map(summarize), own: ownIndex < 0 ? null : summarize(ranked[ownIndex], ownIndex) });
           return;

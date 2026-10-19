@@ -50,3 +50,5 @@
 :root[data-color-mode="dark"] .terrarium-cell { background: hsl(195 25% var(--terrarium-dark-moisture)) !important; color: #d6e6e8 !important; }
 :root[data-color-mode="dark"] .terrarium-cell[aria-pressed="true"] { box-shadow: inset 0 0 0 2px #9bcbd0; }
 :root[data-color-mode="dark"] .terrarium-plant-critical { color: #eea18b; }
+
+.terrarium-watering-buttons button[aria-pressed=true],.terrarium-grid button[aria-pressed=true]{outline:2px solid var(--accent,#408f75);transform:translateY(-1px)}.terrarium-care button{transition:transform .15s ease,background-color .15s ease}.terrarium-care button:hover{transform:translateY(-2px)}.terrarium-cell{font-size:11px}

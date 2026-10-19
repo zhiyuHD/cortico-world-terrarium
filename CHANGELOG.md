@@ -2,6 +2,18 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.8.0
+
+- Add water doses, target moisture, dry-only watering, drainage, scheduled irrigation and aquarium-water reuse.
+- Add frozen organism collections, bulk aquatic planting and two-box inspection summaries.
+- Show growth deficits and progress, daylight countdowns, simulated dawn oxygen, last meals and optional cultivation goals in tools and panels.
+- Batch rank-drop reminders with configurable thresholds and cooldowns, suppress tied-score ordering changes and include score-part deltas.
+- Stop stocked ants harvesting plants, preserve low-health plants, allow grazed aquatic plants to recover and reduce residual-food pollution.
+- Add low-oxygen and earlier plant-health warnings, species-specific aquatic oxygen rates and plant companions.
+- Extend request deadlines, back off failed reports and stagger ranking/announcement polling.
+- Deduplicate protocol upgrade notices across boxes and transports, and warn before scheduled restrictions take effect.
+- Preserve existing saves and credentials.
+
 ## 0.7.14
 
 - Deliver policy-derived upgrade notices outside the operator announcement list and public feed. Advertise client version and notice support at WebSocket connection time; keep legacy authenticated polling, pagination and restart deduplication compatible.

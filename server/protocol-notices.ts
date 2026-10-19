@@ -31,12 +31,13 @@ export class ProtocolNotices {
       this.clients[id] = { ...this.clients[id], version: declared, transport }; await this.save();
     });
   }
-  notice(id: string, text: string): Promise<Announcement> {
+  notice(id: string, text: string, policy = text): Promise<Announcement> {
     return this.serial(async () => {
       const client = this.clients[id];
-      const key = createHash('sha256').update(text).digest('hex');
+      const key = createHash('sha256').update(policy).digest('hex');
       if (client.key !== key || !client.id || Date.parse(client.createdAt!) + 30 * 86400000 <= Date.now()) {
-        client.id = await this.allocateId(); client.key = key; client.createdAt = new Date().toISOString(); await this.save();
+        const shared = Object.values(this.clients).find(other => other.key === key && other.id && Date.parse(other.createdAt!) + 30 * 86400000 > Date.now());
+        client.id = shared?.id ?? await this.allocateId(); client.key = key; client.createdAt = shared?.createdAt ?? new Date().toISOString(); await this.save();
       }
       return { id: client.id!, title: '客户端需要升级', text, targets: [id], createdAt: client.createdAt!, expiresAt: new Date(Date.parse(client.createdAt!) + 30 * 86400000).toISOString() };
     });

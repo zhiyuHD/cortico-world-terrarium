@@ -420,7 +420,8 @@ it('warns once on low health from drought and rearms only after sufficient recov
   expect(advance(state, state.updatedAtMs + 60_000, 'UTC').filter(c => c.kind === 'health')).toEqual([]);
   water(state, plant.id);
   expect(plant.healthWarning).toBe(true);
-  while (plant.health < TERRARIUM_PLANT_RECOVERED_HEALTH) water(state, plant.id);
+  for (let i = 0; i < 20 && plant.health < TERRARIUM_PLANT_RECOVERED_HEALTH; i++) { state.soil[plant.y * 5 + plant.x].moisture = 30; water(state, plant.id); }
+  expect(plant.health).toBeGreaterThanOrEqual(TERRARIUM_PLANT_RECOVERED_HEALTH);
   expect(plant.healthWarning).toBeUndefined();
   plant.health = TERRARIUM_PLANT_LOW_HEALTH;
   expect(advance(state, state.updatedAtMs + 60_000, 'UTC').filter(c => c.kind === 'health')).toHaveLength(1);

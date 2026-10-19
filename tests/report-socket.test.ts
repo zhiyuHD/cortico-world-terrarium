@@ -1,3 +1,4 @@
+import { TERRARIUM_DEFAULTS } from '../src/config.ts';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -134,7 +135,7 @@ it('resends a full snapshot after a lost acknowledgement without applying a delt
     const deadline = performance.now() + 2_000;
     while ((await get()).state.bugs.length === 0) { if (performance.now() > deadline) throw new Error('Report not committed'); await nextTurn(); }
     expect(client.status().state).toBe('syncing');
-    await vi.advanceTimersByTimeAsync(5_000); await pending;
+    await vi.advanceTimersByTimeAsync(TERRARIUM_DEFAULTS.requestTimeoutMs!); await pending;
     expect(proxy.frames.map(frame => frame.kind)).toEqual(['full', 'delta', 'full']);
     expect((await get()).state).toEqual(state);
   } finally { vi.useRealTimers(); }
@@ -224,7 +225,10 @@ it('tracks acknowledged uploads and failures independently of reads, and full sy
   const invalid = { ...state, version: 999 } as unknown as typeof state;
   const lastSuccessAt = client.status().lastSuccessAt;
   await expect(client.report(invalid, 'day')).rejects.toThrow();
-  await expect(client.report(invalid, 'day')).rejects.toThrow();
+  await client.report(invalid, 'day');
+  expect(client.status().consecutiveFailures).toBe(1);
+  expect(client.status().nextRetryAt).toBeTruthy();
+  await expect(client.report(invalid, 'day', true)).rejects.toThrow();
   const failed = client.status();
   expect(failed).toMatchObject({ state: 'error', consecutiveFailures: 2, lastSuccessAt });
   expect(failed.lastError).toBeTruthy();

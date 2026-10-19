@@ -7,6 +7,11 @@ export const TERRARIUM: WorldDefinition<TerrariumConfigSection> = {
   create: ctx => new TerrariumWorld({ cfg: ctx.cfg, timezone: ctx.timezone, stateFile: `${ctx.dataDir}/terrarium/land/state.json`, waterStateFile: `${ctx.dataDir}/terrarium/water/state.json`, reportToken: ctx.secret('CORTICO_TERRARIUM_REPORT_TOKEN') }),
   describe: {
     tools: describeTools([...TERRARIUM_TOOL_DECLS, ...TERRARIUM_AQUATIC_TOOL_DECLS], {
+      terrarium_collection: { zh: '收藏生物并暂停模拟，或在容量允许时放回。', en: 'Freezes collected organisms or restores them within active capacity.' },
+      terrarium_drain: { zh: '为指定地箱格子排水。', en: 'Drains moisture from a land cell.' },
+      terrarium_set_irrigation: { zh: '设置或关闭一格的定时补水。', en: 'Sets or disables scheduled watering for a cell.' },
+      terrarium_plant_aquatic_area: { zh: '批量种植矩形空格中的水草。', en: 'Plants aquatic vegetation in free plots of a rectangle.' },
+      terrarium_reuse_water: { zh: '换水并将取出的水用于浇灌地箱。', en: 'Changes aquarium water and reuses it on the land box.' },
       terrarium_water_area: { zh: '给地箱内的矩形区域批量浇水，只保存上报一次。', en: 'Waters a land rectangle with one save and report.' },
       terrarium_feedback: { zh: '向服务端管理员提交意见反馈，不公开展示。', en: 'Sends private feedback to the service administrator.' },
       terrarium_sync: { zh: '立即完整上报指定生态箱，返回同步状态及错误。', en: 'Uploads a full snapshot and returns sync status and errors.' },
@@ -34,6 +39,7 @@ export const TERRARIUM: WorldDefinition<TerrariumConfigSection> = {
       terrarium_remove: { zh: '移出指定植物、种子或虫子。', en: 'Removes one organism.' },
     }),
     events: [
+      { type: 'terrarium.oxygen', description: { zh: '含氧量降至 40 或以下，恢复到 50 后可再次提醒。', en: 'Oxygen reached 40 or below; rearms after recovery to 50.' } },
       { type: 'terrarium.egg', description: { zh: '虫子产下卵，附带孵化等待时间。', en: 'Bugs laid eggs with an incubation time.' } },
       { type: 'terrarium.nest', description: { zh: '蚂蚁挖出巢穴或完成扩建。', en: 'Ants dug a nest or completed its expansion.' } },
       { type: 'terrarium.announcement', description: { zh: '服务端向所有客户端或本客户端发布的外部公告。', en: 'An external service announcement for all clients or this client.' } },

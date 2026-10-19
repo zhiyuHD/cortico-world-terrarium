@@ -85,14 +85,20 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
     if (!client) return;
     const control = controls.get(), minimum = control.minimumClientVersion.version;
     const obsolete = !meetsMinimumVersion(client.version, minimum);
-    if (!(client.transport === 'http' && !control.httpPush.enabled) && !obsolete) return;
+    if (!(client.transport === 'http' && !control.httpPush.enabled) && !obsolete) {
+      const floor = control.minimumClientVersion.scheduledChange, http = control.httpPush.scheduledChange;
+      const deadlines = [floor && !meetsMinimumVersion(client.version, floor.version) ? `${floor.at} 起最低版本将为 ${floor.version}` : '', client.transport === 'http' && http && !http.enabled ? `${http.at} 起 HTTP Push 将停止接收` : ''].filter(Boolean);
+      if (!deadlines.length) return;
+      return protocols.notice(id, `升级预告：${deadlines.join('；')}。期限前仍可按现行规则提交，请在宽限期内升级。只需在主人下次与你交谈时顺带提及，不要主动发送消息。`, JSON.stringify({ floor, http }));
+    }
     const text = `当前客户端不满足上报要求，提交将被忽略，无法更新服务端存档和排行榜。${client.transport === 'http' && !control.httpPush.enabled ? 'HTTP Push 已停止接收内容，请改用 WebSocket Push。' : ''}${obsolete ? `客户端版本 ${client.version ?? '未上报或无效'} 低于最低要求 ${minimum}。` : ''}必须升级 cortico-world-terrarium 到最新版本才能继续提交内容。只需在主人下次与你交谈时顺带说明升级要求，不要主动发送消息。`;
-    return protocols.notice(id, text);
+    return protocols.notice(id, text, JSON.stringify({ minimum, httpPush: control.httpPush.enabled }));
   };
   const rejectReport = async (id: string, clientVersion: unknown, transport: 'http' | 'websocket'): Promise<void> => {
     await protocols.observe(id, clientVersion, transport);
     const notice = await upgradeNotice(id, { version: validClientVersion(clientVersion) ? clientVersion : undefined, transport });
-    if (notice) throw new ReportError(!meetsMinimumVersion(clientVersion, controls.get().minimumClientVersion.version) ? 426 : 410, `本次提交未成功，提交内容已被忽略。${notice.text}`, false, true);
+    const control = controls.get(), obsolete = !meetsMinimumVersion(clientVersion, control.minimumClientVersion.version);
+    if (notice && (obsolete || (transport === 'http' && !control.httpPush.enabled))) throw new ReportError(obsolete ? 426 : 410, `本次提交未成功，提交内容已被忽略。${notice.text}`, false, true);
   };
   const commitReport = (id: string, input: { phase?: unknown; clientVersion?: unknown; coopanionVersion?: unknown; state?: unknown; baseRevision?: string; baseHash?: string; stateHash?: string; changes?: unknown }, transport: 'http' | 'websocket') => {
     const report = reportQueue.then(async () => {
@@ -247,7 +253,7 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
         if (query.get('view') === 'summary') {
           const limit = Number(query.get('limit') ?? 20), ownId = query.get('ownId');
           if (!kind || !Number.isInteger(limit) || limit < 1 || limit > 100 || (ownId !== null && !idPattern.test(ownId))) { reply(400, { error: 'Summary requires kind, limit 1..100 and a valid optional ownId' }); return; }
-          const summarize = (entry: Entry, index: number): LeaderboardBoxSummary => ({ rank: index + 1, id: entry.id, name: entry.state.name, score: entry.score, scoreParts: scoreParts(entry.state), reportedAt: entry.reportedAt });
+          const summarize = (entry: Entry, index: number): LeaderboardBoxSummary => ({ rank: index + 1, competitiveRank: ranked.findIndex(other => other.score === entry.score) + 1, id: entry.id, name: entry.state.name, score: entry.score, scoreParts: scoreParts(entry.state), reportedAt: entry.reportedAt });
           const ownIndex = ranked.findIndex(entry => entry.id === ownId);
           reply(200, { habitat: kind, total: ranked.length, entries: ranked.slice(0, limit).map(summarize), own: ownIndex < 0 ? null : summarize(ranked[ownIndex], ownIndex) }); return;
         }

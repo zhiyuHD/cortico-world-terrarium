@@ -22,7 +22,7 @@ export function wateringReport(plants: ReadonlyArray<WateredPlant>, cells: Reado
   const watered = plants.filter(plant => cells.some(cell => cell.x === plant.x && cell.y === plant.y)).map(plant => {
     const { minMoisture, maxMoisture } = TERRARIUM_PLANT_REQUIREMENTS[plant.species];
     const moisture = cells.find(cell => cell.x === plant.x && cell.y === plant.y)!.moisture;
-    return { ...plant, moisture, minMoisture, maxMoisture, moistureStatus: moisture > maxMoisture ? 'high' as const : moisture < minMoisture ? 'low' as const : 'suitable' as const };
+    return { ...plant, moisture, minMoisture, maxMoisture, belowMaximum: maxMoisture - moisture, moistureDeficit: Math.max(0, minMoisture - moisture), moistureStatus: moisture > maxMoisture ? 'high' as const : moisture < minMoisture ? 'low' as const : 'suitable' as const };
   });
   const warnings = watered.filter(plant => plant.moistureStatus !== 'suitable').map(plant =>
     `${plant.id}（${plant.species}）(${plant.x},${plant.y}) 水分${plant.moistureStatus === 'high' ? '过高' : '过低'}：${plant.moisture.toFixed(1)}，适宜 ${plant.minMoisture}–${plant.maxMoisture}；持续超限每小时损失 0.5 健康。`);
@@ -52,3 +52,16 @@ export function flowerStage(plant: { species: string; growthHours?: number; heal
   if ((plant.growthHours ?? 0) >= TERRARIUM_FLOWER_BLOOM_HOURS) return 'bloom';
   if ((plant.growthHours ?? 0) >= TERRARIUM_FLOWER_BUD_HOURS) return 'bud';
 }
+
+export interface WateringOptions { amount?: number; targetMoisture?: number; onlyDry?: boolean }
+export function validateWatering(options: WateringOptions): void {
+  if ((options.amount !== undefined && (typeof options.amount !== 'number' || !Number.isFinite(options.amount) || options.amount <= 0 || options.amount > 100)) ||
+      (options.targetMoisture !== undefined && (typeof options.targetMoisture !== 'number' || !Number.isFinite(options.targetMoisture) || options.targetMoisture < 0 || options.targetMoisture > 100)) ||
+      (options.amount !== undefined && options.targetMoisture !== undefined) || (options.onlyDry !== undefined && typeof options.onlyDry !== 'boolean')) throw new Error('Supply amount (0..100, excluding zero) OR targetMoisture (0..100), and optional onlyDry');
+}
+export function waterAdded(moisture: number, options: WateringOptions): number {
+  validateWatering(options);
+  return Math.max(0, Math.min(100 - moisture, options.targetMoisture === undefined ? options.amount ?? 35 : options.targetMoisture - moisture));
+}
+
+export const TERRARIUM_GROWTH_STAGE_HOURS = [0, 2, 6, 12] as const;

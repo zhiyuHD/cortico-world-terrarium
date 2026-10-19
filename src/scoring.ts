@@ -17,5 +17,5 @@ export function scoreParts(state: TerrariumState | AquariumState): ScoreParts {
 export function score(state: TerrariumState | AquariumState): number {
   return Object.values(scoreParts(state)).reduce((sum, part) => sum + part, 0);
 }
-export interface LeaderboardBoxSummary { rank: number; id: string; name?: string; score: number; scoreParts: ScoreParts; reportedAt: string }
+export interface LeaderboardBoxSummary { rank: number; competitiveRank?: number; id: string; name?: string; score: number; scoreParts: ScoreParts; reportedAt: string }
 export interface LeaderboardSummary { habitat: 'land' | 'water'; total: number; entries: LeaderboardBoxSummary[]; own: LeaderboardBoxSummary | null }

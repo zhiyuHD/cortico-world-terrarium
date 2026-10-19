@@ -1,3 +1,5 @@
+import { careText, createCareControls } from './care.ts';
+import type { landCare } from '../src/care.ts';
 import type { TerrariumState } from '../src/state.ts';
 import { createWateringControls } from './watering.ts';
 import { createFeedbackControls } from './feedback.ts';
@@ -29,6 +31,8 @@ function mount(ctx: WebUiPanelContext): void {
   ctx.signal.addEventListener('abort', () => replay.dispose(), { once: true });
   ctx.signal.addEventListener('abort', () => scene.dispose(), { once: true });
   const details = ctx.ui.h('div', 'terrarium-details');
+  const diagnosis = ctx.ui.h('div', 'terrarium-details');
+  const careControls = createCareControls(ctx, 'land', () => load());
   const sync = createSyncControls(ctx, () => load());
   const refresh = ctx.ui.button(copy.refresh, { size: 'sm', onClick: () => { void load(); } });
   const habitat = ctx.ui.h('div', 'terrarium-habitat');
@@ -50,22 +54,23 @@ function mount(ctx: WebUiPanelContext): void {
     const index = selected.startsWith('soil:') ? Number(selected.slice(5)) : plant ? plant.y * 5 + plant.x : -1;
     const cell = current.soil[index];
     watering.update(true, cell, current);
+    careControls.update(current, cell);
     cellStatus.textContent = cell ? `(${cell.x},${cell.y}) · ${copy.moisture} ${cell.moisture.toFixed(1)} · ${copy.light} ${(current.phase === 'day' ? daylight(current, cell.x, cell.y) : 0).toFixed(2)}` : '';
     grid.querySelectorAll('button').forEach((button, i) => { button.setAttribute('aria-pressed', String(i === index)); });
     chart.replaceChildren(drawHistory(current.history, selected, copy, ctx.language));
   };
   select.addEventListener('change', () => { selected = select.value; renderHistory(); });
-  card.body.append(name, status, sync.el, canvas, replayContainer, details, habitat, historyTitle, select, chart, refresh, createFeedbackControls(ctx));
+  card.body.append(name, status, sync.el, canvas, replayContainer, details, diagnosis, habitat, careControls.el, historyTitle, select, chart, refresh, createFeedbackControls(ctx));
   ctx.root.appendChild(card.el);
   const load = async (): Promise<void> => {
     try {
-      const response = await ctx.invoke<{ sync: TerrariumSyncStatus; claimed: boolean; id?: string; state?: SceneState & TerrariumState }>('state');
+      const response = await ctx.invoke<{ sync: TerrariumSyncStatus; claimed: boolean; id?: string; state?: SceneState & TerrariumState & { care: ReturnType<typeof landCare> } }>('state');
       if (ctx.signal.aborted) return;
       sync.update(response.sync, response.claimed);
       watering.update(response.claimed);
       const state = response.state;
-      for (const el of [canvas, replayContainer, details, habitat, historyTitle, select, chart]) el.hidden = !response.claimed;
-      if (!response.claimed || !state) { status.textContent = pick(ctx.language, { zh: '未认领', en: 'Unclaimed' }); return; }
+      for (const el of [canvas, replayContainer, details, diagnosis, habitat, careControls.el, historyTitle, select, chart]) el.hidden = !response.claimed;
+      if (!response.claimed || !state) { status.textContent = pick(ctx.language, { zh: '未认领 · 先通过 terrarium_claim 认领地箱，再检查每格水分和光照后播种。', en: 'Unclaimed · Use terrarium_claim, inspect moisture and light, then sow.' }); return; }
       if (ctx.signal.aborted) return;
       name.textContent = state.name ?? pick(ctx.language, { zh: '生态箱', en: 'Terrarium' });
       status.textContent = `${state.phase === 'day' ? copy.day : copy.night}${response.id ? ` · ID ${response.id}` : ''}`;
@@ -73,6 +78,7 @@ function mount(ctx: WebUiPanelContext): void {
       scene.setState(state);
       replay.setReplays(state.replays ?? []);
       current = state;
+      diagnosis.replaceChildren(...careText(state.care, ctx.language.startsWith('zh')).map(text => ctx.ui.h('div', '', text)));
       const cells = state.soil.map((cell, index) => {
         const light = state.phase === 'day' ? daylight(state, cell.x, cell.y) : 0;
         const label = `(${cell.x},${cell.y}) · ${copy.moisture} ${cell.moisture.toFixed(1)} · ${copy.light} ${light.toFixed(2)}`;
@@ -81,7 +87,7 @@ function mount(ctx: WebUiPanelContext): void {
         button.style.setProperty('--terrarium-dark-moisture', `${28 - cell.moisture * .14}%`);
         button.style.backgroundColor = `hsl(195 35% ${85 - cell.moisture * .45}%)`;
         button.style.color = cell.moisture > 65 ? '#fff' : '#18313b';
-        button.textContent = `${Math.round(cell.moisture)}`;
+        button.textContent = `${Math.round(cell.moisture)} · ${light.toFixed(2)}`;
         button.title = label; button.setAttribute('aria-label', label);
         button.addEventListener('click', () => {
           selected = `soil:${index}`; select.value = selected;

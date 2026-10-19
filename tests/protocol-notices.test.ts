@@ -19,3 +19,19 @@ it('persists delivery identities, changes notices with policy and keeps message 
     await writeFile(file, '[]'); await expect(new ProtocolNotices(file, () => store.allocateProtocolId()).restore()).rejects.toThrow('Invalid protocol');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+it('shares a policy identity across both boxes, transport changes and reconnects', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-policy-'));
+  try {
+    const store = new AnnouncementStore(join(dir, 'announcements.json')); await store.restore();
+    const file = join(dir, 'protocol.json'), notices = new ProtocolNotices(file, () => store.allocateProtocolId()); await notices.restore();
+    await notices.observe('land', '0.7.3', 'http'); await notices.observe('water', '0.7.2', 'websocket');
+    const a = await notices.notice('land', 'HTTP retired; upgrade', 'floor-0.7.4-http-off');
+    const b = await notices.notice('water', 'Version old; upgrade', 'floor-0.7.4-http-off'); expect(b.id).toBe(a.id);
+    await notices.observe('land', '0.7.3', 'websocket');
+    expect((await notices.notice('land', 'Version old; upgrade', 'floor-0.7.4-http-off')).id).toBe(a.id);
+    const restarted = new ProtocolNotices(file, () => store.allocateProtocolId()); await restarted.restore();
+    expect((await restarted.notice('water', 'Upgrade', 'floor-0.7.4-http-off')).id).toBe(a.id);
+    expect((await restarted.notice('water', 'New floor', 'floor-0.8.0-http-off')).id).toBeGreaterThan(a.id); expect(store.list()).toEqual([]);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

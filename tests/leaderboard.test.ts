@@ -194,7 +194,7 @@ it('persists renamed boxes across World restarts without changing credentials', 
     log: { warn: (...args: unknown[]) => { warnings.push(args); } },
     async pushEvent(event: Omit<EventEnvelope, 'cursor'>) { events.push(event); return { ...event, cursor: events.length } as EventEnvelope; },
   } as unknown as WorldHost;
-  const options = { cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: url }, stateFile, timezone: 'Asia/Shanghai', now: () => now };
+  const options = { cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: url, rankAlertMinDrop: 1, rankAlertCooldownMinutes: 0 }, stateFile, timezone: 'Asia/Shanghai', now: () => now };
   const world = new TerrariumWorld(options);
   try {
     await world.start(host);
@@ -259,7 +259,7 @@ it('reads both rankings before claiming and preserves each claimed identity thro
   const readHeaders: Array<string | undefined> = [];
   server.on('request', req => { if (req.method === 'POST') registrations++; if (req.method === 'GET' && req.url?.startsWith('/api/leaderboard')) readHeaders.push(req.headers.authorization); });
   const now = Date.now(), stateFile = join(dir, 'deployment', 'land', 'state.json'), waterStateFile = join(dir, 'deployment', 'water', 'state.json');
-  const options = { cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: url }, stateFile, waterStateFile, timezone: 'Asia/Shanghai', now: () => now };
+  const options = { cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: url, rankAlertMinDrop: 1, rankAlertCooldownMinutes: 0 }, stateFile, waterStateFile, timezone: 'Asia/Shanghai', now: () => now };
   let world = new TerrariumWorld(options);
   const call = async (name: string, args: Record<string, unknown> = {}) => JSON.parse(String(await world.tools().find(tool => tool.name === name)!.handler(args, context)));
   try {
@@ -335,7 +335,7 @@ it('emits rank drops once per habitat, persists baselines and opt-outs, and sile
   });
   const events: Array<Omit<EventEnvelope, 'cursor'>> = [], warnings: unknown[] = [];
   const host = { log: { warn: (...args: unknown[]) => warnings.push(args) }, async pushEvent(event: Omit<EventEnvelope, 'cursor'>) { events.push(event); return { ...event, cursor: events.length }; } } as unknown as WorldHost;
-  const options = { cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: url }, stateFile: join(dir, 'land', 'state.json'), waterStateFile: join(dir, 'water', 'state.json'), timezone: 'Asia/Shanghai', now: () => now };
+  const options = { cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: url, rankAlertMinDrop: 1, rankAlertCooldownMinutes: 0 }, stateFile: join(dir, 'land', 'state.json'), waterStateFile: join(dir, 'water', 'state.json'), timezone: 'Asia/Shanghai', now: () => now };
   let world = new TerrariumWorld(options);
   const call = async (name: string, args: Record<string, unknown> = {}) => JSON.parse(String(await world.tools().find(tool => tool.name === name)!.handler(args, context)));
   const alerts = () => events.filter(event => event.type === 'terrarium.overtaken');
@@ -394,7 +394,7 @@ it('emits rank drops once per habitat, persists baselines and opt-outs, and sile
 it('can disable reminders before claiming without contacting the server or creating a box', async () => {
   const { dir, url, server } = await rankingService();
   let requests = 0; server.on('request', () => requests++);
-  const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: url }, stateFile: join(dir, 'land', 'state.json'), timezone: 'Asia/Shanghai' });
+  const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: url, rankAlertMinDrop: 1, rankAlertCooldownMinutes: 0 }, stateFile: join(dir, 'land', 'state.json'), timezone: 'Asia/Shanghai' });
   try {
     await world.start(host);
     requests = 0;
@@ -411,7 +411,7 @@ it('checks water ranks when no land box is owned', async () => {
   let now = Date.now() - 60_000;
   const events: Array<Omit<EventEnvelope, 'cursor'>> = [];
   const host = { log: { warn() {} }, async pushEvent(event: Omit<EventEnvelope, 'cursor'>) { events.push(event); return { ...event, cursor: events.length }; } } as unknown as WorldHost;
-  const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: url }, stateFile: join(dir, 'land', 'state.json'), timezone: 'Asia/Shanghai', now: () => now });
+  const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: url, rankAlertMinDrop: 1, rankAlertCooldownMinutes: 0 }, stateFile: join(dir, 'land', 'state.json'), timezone: 'Asia/Shanghai', now: () => now });
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   try {
     await world.start(host);
