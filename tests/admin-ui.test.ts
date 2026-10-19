@@ -1,0 +1,58 @@
+// @vitest-environment jsdom
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createServer } from 'node:http';
+import { afterEach, expect, it, vi } from 'vitest';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { newState } from '../src/state.ts';
+const cleanup: Array<() => Promise<unknown> | void> = [];
+afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await dispose(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+it('previews an immutable audience, sends a private reply, renders untrusted text literally and clears the session on logout', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-admin-ui-')); cleanup.push(() => rm(dir, { recursive: true, force: true }));
+  const probe = createServer(); await new Promise<void>(resolve => probe.listen(0, '127.0.0.1', resolve));
+  const address = probe.address(); if (!address || typeof address === 'string') throw new Error('Missing port');
+  await new Promise<void>(resolve => probe.close(() => resolve()));
+  const credentialsFile = join(dir, 'credentials.json'); await writeFile(credentialsFile, JSON.stringify({ first: 'first-token', second: 'second-token' }));
+  const publicProbe = createServer(); await new Promise<void>(resolve => publicProbe.listen(0, '127.0.0.1', resolve));
+  const publicAddress = publicProbe.address(); if (!publicAddress || typeof publicAddress === 'string') throw new Error('Missing port');
+  await new Promise<void>(resolve => publicProbe.close(() => resolve()));
+  const child = spawn(process.execPath, ['--import', 'tsx', 'server/index.ts'], { env: { ...process.env, PORT: String(publicAddress.port), TERRARIUM_DATA_FILE: join(dir, 'leaderboard.json'), TERRARIUM_CREDENTIALS_FILE: credentialsFile, TERRARIUM_SERVER_MAIN: '1', CORTICO_TERRARIUM_ADMIN_TOKEN: 'admin-token', CORTICO_TERRARIUM_ADMIN_HOST: '127.0.0.1', CORTICO_TERRARIUM_ADMIN_PORT: String(address.port) }, stdio: ['ignore', 'ignore', 'pipe'] });
+  let errors = ''; child.stderr.on('data', chunk => { errors += String(chunk); });
+  cleanup.push(async () => { if (child.exitCode === null) { const closed = once(child, 'exit'); child.kill(); await closed; } });
+  const publicUrl = `http://127.0.0.1:${publicAddress.port}`, adminUrl = `http://127.0.0.1:${address.port}`;
+  await expect.poll(async () => { if (child.exitCode !== null) throw new Error(errors); try { return (await fetch(publicUrl + '/health')).status; } catch { return 0; } }, { timeout: 5000 }).toBe(200);
+  const nativeFetch = globalThis.fetch;
+  for (const id of ['first', 'second']) {
+    const state = newState(Date.now()); state.name = id === 'first' ? '<img src=x onerror=alert(1)>' : 'Second box';
+    expect((await nativeFetch(publicUrl + '/api/reports', { method: 'PUT', headers: { authorization: `Bearer ${id}-token` }, body: JSON.stringify({ id, state, ...(id === 'first' ? {} : { clientVersion: '0.7.11' }) }) })).status).toBe(200);
+  }
+  const html = await readFile('server/console/index.html', 'utf8'); document.body.innerHTML = html.match(/<body>([\s\S]*)<\/body>/)![1];
+  const dom = (globalThis as unknown as { jsdom: { window: Window } }).jsdom;
+  for (const key of ['localStorage', 'sessionStorage']) vi.stubGlobal(key, Object.getOwnPropertyDescriptor(dom.window, key)!.get!.call(dom.window));
+  localStorage.clear(); sessionStorage.clear();
+  vi.stubGlobal('fetch', (path: string, options: RequestInit) => nativeFetch(new URL(path, adminUrl), { ...options, signal: undefined }));
+  const intervals: ReturnType<typeof setInterval>[] = [], nativeInterval = globalThis.setInterval;
+  vi.spyOn(globalThis, 'setInterval').mockImplementation(((...args: Parameters<typeof setInterval>) => { const timer = nativeInterval(...args); intervals.push(timer); return timer; }) as typeof setInterval);
+  cleanup.push(() => { for (const timer of intervals) clearInterval(timer); });
+  vi.resetModules(); await import('../server/console/client.ts');
+  const element = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+  element<HTMLInputElement>('token').value = 'admin-token'; element('login-form').dispatchEvent(new Event('submit', { cancelable: true }));
+  await expect.poll(() => ({ hidden: element('app').hidden, error: element('login-error').textContent })).toEqual({ hidden: false, error: '' });
+  expect(document.querySelectorAll('img')).toHaveLength(0);
+  const legacy = Array.from(document.querySelectorAll<HTMLButtonElement>('#versions button')).find(button => button.textContent?.includes('≤0.7.3'))!; legacy.click();
+  expect(element('box-rows').children).toHaveLength(1); element('select-visible').click(); element('compose-selected').click();
+  element<HTMLInputElement>('notice-text').value = '<script>alert("untrusted")</script>';
+  element('notice-form').dispatchEvent(new Event('submit', { cancelable: true }));
+  expect(element('modal').hidden).toBe(false); expect(element('modal-body').textContent).toContain('(first)'); expect(element('modal-body').textContent).not.toContain('(second)'); expect(element('modal-body').querySelector('script')).toBeNull();
+  expect((await (await nativeFetch(adminUrl + '/api/admin/announcements', { headers: { authorization: 'Bearer admin-token' } })).json()).announcements).toHaveLength(0);
+  // Selection changes after preview cannot broaden the confirmed audience.
+  element('scope-all').click(); element('modal-confirm').click();
+  await expect.poll(() => element('modal').hidden).toBe(true);
+  const notice = await (await nativeFetch(adminUrl + '/api/admin/announcements', { headers: { authorization: 'Bearer admin-token' } })).json();
+  expect(notice.announcements).toMatchObject([{ targets: ['first'], text: '<script>alert("untrusted")</script>' }]);
+  expect((await (await nativeFetch(publicUrl + '/api/announcements/public')).json()).announcements).toHaveLength(0);
+  await expect.poll(() => element('notice-list').textContent).toContain('untrusted'); expect(element('notice-list').querySelector('script')).toBeNull();
+  element('logout').click(); expect(sessionStorage.getItem('terrarium-admin-token')).toBeNull(); expect(element('app').hidden).toBe(true); expect(element('box-rows').children).toHaveLength(0);
+});

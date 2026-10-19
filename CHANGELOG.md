@@ -2,6 +2,15 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.7.12
+
+- Remove the configurable land box ID. New land and water claims always request server-assigned identities; old ID settings cannot affect new registrations.
+- Migrate saved named identities and legacy supplied tokens to automatic credential lookup while keeping existing IDs, tokens and original entries. Refuse ambiguous migrations instead of creating another identity.
+- Show recognized registration rejection reasons and preserve generic handling for non-JSON proxy errors.
+- Add atomic server release installation, checksums, activation journals, startup health checks, rollback and flat-deployment migration. Keep shared data outside release payloads.
+- Add the private LAN-only administration console with Lucide icons and MiSans, and include server operation documentation in the package.
+- Add authenticated, persisted server controls for immediately enabling or disabling HTTP Push and scheduling or cancelling one future switch. Disabled HTTP reports return 410; WebSocket reports remain available.
+
 ## 0.7.11
 
 - Limit beetle and spider prey sensing to two Manhattan steps and pause movement and hunting at 80 energy or above.

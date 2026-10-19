@@ -1,6 +1,10 @@
 import { FeedbackStore, FeedbackError } from './feedback.ts';
 import { AnnouncementStore } from './announcements.ts';
-import { createServer } from 'node:http';
+import { ControlStore, ControlError } from './controls.ts';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { CONSOLE_ASSETS, historicalAsset, pinConsoleHtml } from './release-assets.ts';
+import { validReleaseId } from './releases.ts';
+import { createAdminServer } from './admin-network.ts';
 import { readFile, mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
@@ -12,9 +16,9 @@ import { validAquarium, type AquariumState } from '../src/aquarium.ts';
 import { score, scoreParts, type LeaderboardBoxSummary } from '../src/scoring.ts';
 export { score } from '../src/scoring.ts';
 
-interface Entry { id: string; kind?: 'land' | 'water'; state: TerrariumState | AquariumState; phase?: 'day' | 'night'; score: number; reportedAt: string; clientVersion?: string; coopanionVersion?: string; reportRevision?: string }
+interface Entry { id: string; kind?: 'land' | 'water'; state: TerrariumState | AquariumState; phase?: 'day' | 'night'; score: number; reportedAt: string; clientVersion?: string; coopanionVersion?: string; reportRevision?: string; reportTransport?: 'http' | 'websocket' }
 const idPattern = /^[a-z0-9][a-z0-9_-]{1,39}$/;
-export interface ServerOptions { dataFile?: string; credentialsFile?: string; port?: number; announcementsFile?: string; adminToken?: string; adminTokenFile?: string }
+export interface ServerOptions { dataFile?: string; credentialsFile?: string; port?: number; announcementsFile?: string; controlsFile?: string; adminToken?: string; adminTokenFile?: string; adminHost?: string; adminPort?: number; adminAllowedCidr?: string }
 
 class ReportError extends Error {
   constructor(readonly status: number, message: string, readonly resync = false) { super(message); }
@@ -32,6 +36,8 @@ async function writeJson(file: string, value: unknown): Promise<void> {
 }
 export async function start(options: ServerOptions = {}): Promise<ReturnType<typeof createServer>> {
   const file = options.dataFile ?? process.env.TERRARIUM_DATA_FILE ?? './data/leaderboard.json';
+  const controls = new ControlStore(options.controlsFile ?? process.env.CORTICO_TERRARIUM_CONTROLS_FILE ?? `${dirname(file)}/controls.json`);
+  await controls.restore();
   const feedback = new FeedbackStore(`${dirname(file)}/feedback.json`);
   await feedback.restore();
   const credentialsFile = options.credentialsFile ?? process.env.TERRARIUM_CREDENTIALS_FILE ?? './data/credentials.json';
@@ -49,6 +55,11 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
     }
     if (!adminToken) throw new Error('Empty announcement admin token');
   }
+  const adminHost = options.adminHost ?? process.env.CORTICO_TERRARIUM_ADMIN_HOST;
+  const adminPort = options.adminPort ?? Number(process.env.CORTICO_TERRARIUM_ADMIN_PORT ?? 8788);
+  const adminCidr = options.adminAllowedCidr ?? process.env.CORTICO_TERRARIUM_ADMIN_ALLOWED_CIDR ?? (adminHost ? `${adminHost}/32` : '127.0.0.1/32');
+  const acceptedReports = { http: 0, websocket: 0 };
+  const connections = new Map<string, Set<WebSocket>>();
   const port = options.port ?? Number(process.env.PORT ?? 8787);
   let registry: Record<string, Entry> = Object.create(null);
   let credentials: Record<string, string> = Object.create(null);
@@ -58,13 +69,19 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   try { credentials = Object.assign(Object.create(null), JSON.parse(await readFile(credentialsFile, 'utf8'))); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  const releaseId = process.env.CORTICO_TERRARIUM_RELEASE_ID;
+  const deploymentRoot = process.env.CORTICO_TERRARIUM_DEPLOY_ROOT;
+  if (releaseId && !validReleaseId(releaseId)) throw new Error('Invalid server release ID');
+  if (releaseId && !deploymentRoot) throw new Error('Managed releases require CORTICO_TERRARIUM_DEPLOY_ROOT');
   const page = await readFile(new URL('./index.html', import.meta.url));
   const sceneScript = await readFile(new URL('./scene.js', import.meta.url)).catch(async error => {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     return readFile(new URL('../dist/scene.js', import.meta.url));
   });
-  const commitReport = (id: string, input: { phase?: unknown; clientVersion?: unknown; coopanionVersion?: unknown; state?: unknown; baseRevision?: string; baseHash?: string; stateHash?: string; changes?: unknown }) => {
+  const httpPushDisabled = 'HTTP Push is disabled. Update cortico-world-terrarium and use WebSocket Push at /api/reports/ws';
+  const commitReport = (id: string, input: { phase?: unknown; clientVersion?: unknown; coopanionVersion?: unknown; state?: unknown; baseRevision?: string; baseHash?: string; stateHash?: string; changes?: unknown }, transport: 'http' | 'websocket') => {
     const report = reportQueue.then(async () => {
+      if (transport === 'http' && !controls.get().httpPush.enabled) throw new ReportError(410, httpPushDisabled);
       if ((input.phase !== undefined && input.phase !== 'day' && input.phase !== 'night') || (input.clientVersion !== undefined && !validClientVersion(input.clientVersion)) || (input.coopanionVersion !== undefined && !validClientVersion(input.coopanionVersion))) throw new ReportError(400, 'Invalid report metadata');
       let raw = input.state;
       if (input.baseRevision !== undefined) {
@@ -86,29 +103,63 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
       const kind = 'fish' in state ? 'water' : 'land';
       if (registry[id] && (registry[id].kind ?? 'land') !== kind) throw new ReportError(409, 'Box habitat cannot change');
       if (registry[id] && state.updatedAtMs < registry[id].state.updatedAtMs) throw new ReportError(409, 'Stale report');
-      const entry: Entry = { id, kind, state, phase: input.phase as Entry['phase'], score: score(state), reportedAt: new Date(now).toISOString(), reportRevision: randomBytes(16).toString('hex'), ...(input.clientVersion === undefined ? {} : { clientVersion: input.clientVersion as string }), ...(input.coopanionVersion === undefined ? {} : { coopanionVersion: input.coopanionVersion as string }) };
+      const entry: Entry = { id, kind, state, reportTransport: transport, phase: input.phase as Entry['phase'], score: score(state), reportedAt: new Date(now).toISOString(), reportRevision: randomBytes(16).toString('hex'), ...(input.clientVersion === undefined ? {} : { clientVersion: input.clientVersion as string }), ...(input.coopanionVersion === undefined ? {} : { coopanionVersion: input.coopanionVersion as string }) };
       const next = Object.assign(Object.create(null), registry, { [id]: entry });
       await writeJson(file, next);
-      registry = next;
+      registry = next; acceptedReports[transport]++;
       return entry;
     });
     reportQueue = report.catch(() => {});
     return report;
   };
-  const server = createServer(async (req, res) => {
+  const handleRequest = async (req: IncomingMessage, res: ServerResponse, privateAdmin = false) => {
     const reply = (status: number, value: unknown): void => {
       res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
       res.end(JSON.stringify(value));
     };
     try {
       const path = new URL(req.url ?? '/', 'http://localhost').pathname;
+      if (!privateAdmin && adminHost && path.startsWith('/api/admin/')) { reply(404, { error: 'Not found' }); return; }
+      if (deploymentRoot && path.startsWith('/releases/')) {
+        const asset = req.method === 'GET' ? await historicalAsset(deploymentRoot, path, privateAdmin) : undefined;
+        if (!asset) { reply(404, { error: 'Not found' }); return; }
+        res.writeHead(200, { 'content-type': asset.type, 'cache-control': 'public, max-age=31536000, immutable', 'x-content-type-options': 'nosniff' }); res.end(asset.bytes); return;
+      }
+      if (privateAdmin && !path.startsWith('/api/admin/')) {
+        const asset = CONSOLE_ASSETS[path];
+        if (req.method !== 'GET' || !asset) { reply(404, { error: 'Not found' }); return; }
+        const content = await readFile(new URL(`./console/${asset[0]}`, import.meta.url)).catch(async error => {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+          return readFile(new URL(`../dist/console/${asset[0]}`, import.meta.url));
+        });
+        res.writeHead(200, { 'content-type': asset[1], 'cache-control': asset[1] === 'font/woff2' ? 'private, max-age=86400' : 'no-store' }); res.end(asset[0] === 'index.html' ? pinConsoleHtml(content, releaseId) : content); return;
+      }
+      if (path === '/api/admin/boxes') {
+        if (!equal(req.headers.authorization?.replace(/^Bearer /, '') ?? '', adminToken)) { reply(401, { error: 'Unauthorized' }); return; }
+        if (req.method !== 'GET') { reply(405, { error: 'Method not allowed' }); return; }
+        const boxes = [...new Set([...Object.keys(credentials), ...Object.keys(registry)])].map(id => {
+          const entry = registry[id];
+          return { id, registered: Object.hasOwn(credentials, id), name: entry?.state.name ?? id, kind: entry ? entry.kind ?? 'land' : null, score: entry?.score ?? null, reportedAt: entry?.reportedAt ?? null, clientVersion: entry?.clientVersion ?? null, coopanionVersion: entry?.coopanionVersion ?? null, reportTransport: entry?.reportTransport ?? null, wsConnections: connections.get(id)?.size ?? 0 };
+        });
+        reply(200, { boxes, serverAt: new Date().toISOString(), uptimeSec: process.uptime(), memoryBytes: process.memoryUsage().rss, acceptedReports }); return;
+      }
       if (req.method === 'GET' && path === '/') {
-        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); res.end(page); return;
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); res.end(releaseId ? page.toString().replace('./scene.js?v=dark-mode', `/releases/${releaseId}/scene.js`) : page); return;
       }
       if (req.method === 'GET' && path === '/scene.js') {
         res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); res.end(sceneScript); return;
       }
-      if (req.method === 'GET' && path === '/health') { reply(200, { ok: true }); return; }
+      if (req.method === 'GET' && path === '/health') { reply(200, { ok: true, ...(process.env.CORTICO_TERRARIUM_RELEASE_ID ? { releaseId: process.env.CORTICO_TERRARIUM_RELEASE_ID } : {}) }); return; }
+      if (path === '/api/admin/controls' || path === '/api/admin/controls/http-push') {
+        if (!equal(req.headers.authorization?.replace(/^Bearer /, '') ?? '', adminToken)) { reply(401, { error: 'Unauthorized' }); return; }
+        if (path === '/api/admin/controls' && req.method === 'GET') { reply(200, controls.get()); return; }
+        if (path === '/api/admin/controls/http-push' && req.method === 'PUT') {
+          let raw = '';
+          for await (const chunk of req) { raw += String(chunk); if (Buffer.byteLength(raw) > 1024) { reply(413, { error: 'Control too large' }); return; } }
+          reply(200, await controls.updateHttpPush(JSON.parse(raw))); return;
+        }
+        reply(405, { error: 'Method not allowed' }); return;
+      }
       if (path === '/api/feedback') {
         if (req.method !== 'POST') { reply(405, { error: 'Method not allowed' }); return; }
         let raw = '';
@@ -213,6 +264,9 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
         return;
       }
       if (req.method === 'PUT' && path === '/api/reports') {
+        const control = controls.get().httpPush;
+        if (!control.enabled) { reply(410, { error: httpPushDisabled }); return; }
+        if (control.scheduledChange?.enabled === false) res.setHeader('Sunset', new Date(control.scheduledChange.at).toUTCString());
         let raw = '';
         for await (const chunk of req) {
           raw += String(chunk);
@@ -223,13 +277,15 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
         const expected = credentials[input.id];
         const token = req.headers.authorization?.replace(/^Bearer /, '') ?? '';
         if (!expected || !equal(token, expected)) { reply(401, { error: 'Unauthorized' }); return; }
-        const entry = await commitReport(input.id, { state: input.state, phase: input.phase, clientVersion: input.clientVersion, coopanionVersion: input.coopanionVersion });
+        const entry = await commitReport(input.id, { state: input.state, phase: input.phase, clientVersion: input.clientVersion, coopanionVersion: input.coopanionVersion }, 'http');
         reply(200, { score: entry.score });
         return;
       }
       reply(404, { error: 'Not found' });
-    } catch (error) { reply(error instanceof ReportError || error instanceof FeedbackError ? error.status : error instanceof SyntaxError ? 400 : 500, { error: error instanceof ReportError || error instanceof FeedbackError ? error.message : error instanceof SyntaxError ? 'Invalid JSON' : 'Request failed' }); }
-  });
+    } catch (error) { reply(error instanceof ReportError || error instanceof FeedbackError ? error.status : error instanceof SyntaxError || error instanceof ControlError ? 400 : 500, { error: error instanceof ReportError || error instanceof FeedbackError || error instanceof ControlError ? error.message : error instanceof SyntaxError ? 'Invalid JSON' : 'Request failed' }); }
+  };
+  const server = createServer((req, res) => { void handleRequest(req, res); });
+  const adminServer = adminHost ? createAdminServer(adminHost, adminCidr, (req, res) => { void handleRequest(req, res, true); }) : undefined;
   const sockets = new WebSocketServer({ noServer: true, maxPayload: TERRARIUM_REPORT_MAX_BYTES, perMessageDeflate: false });
   const alive = new Set<WebSocket>();
   server.on('upgrade', (req, socket, head) => {
@@ -239,9 +295,11 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
       : !idPattern.test(id) || !credentials[id] || !equal(req.headers.authorization?.replace(/^Bearer /, '') ?? '', credentials[id]) ? 401 : 0;
     if (status) { socket.end(`HTTP/1.1 ${status} ${status === 404 ? 'Not Found' : 'Unauthorized'}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); return; }
     sockets.handleUpgrade(req, socket, head, ws => {
+      const group = connections.get(id) ?? new Set<WebSocket>();
+      group.add(ws); connections.set(id, group);
       alive.add(ws);
       ws.on('pong', () => alive.add(ws));
-      ws.on('close', () => alive.delete(ws));
+      ws.on('close', () => { alive.delete(ws); group.delete(ws); if (!group.size) connections.delete(id); });
       ws.on('error', () => ws.terminate());
       let queue: Promise<unknown> = Promise.resolve(), requireFull = true, requireHashes = false, lastSeq = 0, queued = 0;
       ws.on('message', (raw, binary) => {
@@ -259,7 +317,7 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
             requireHashes ||= input.stateHash !== undefined || (input.kind === 'delta' && input.baseHash !== undefined);
             if (requireHashes && (!validReportHash(input.stateHash) || (input.kind === 'delta' && !validReportHash(input.baseHash)))) throw new ReportError(409, 'Report checksums required', true);
             if (input.kind === 'delta' && (requireFull || typeof input.baseRevision !== 'string')) throw new ReportError(409, 'Full report required', true);
-            const entry = await commitReport(id, { phase: input.phase, clientVersion: input.clientVersion, coopanionVersion: input.coopanionVersion, stateHash: input.stateHash, ...(input.kind === 'full' ? { state: input.state } : { baseRevision: input.baseRevision, baseHash: input.baseHash, changes: input.changes }) });
+            const entry = await commitReport(id, { phase: input.phase, clientVersion: input.clientVersion, coopanionVersion: input.coopanionVersion, stateHash: input.stateHash, ...(input.kind === 'full' ? { state: input.state } : { baseRevision: input.baseRevision, baseHash: input.baseHash, changes: input.changes }) }, 'websocket');
             requireFull = false;
             reply = { kind: 'ack', seq, revision: entry.reportRevision!, score: entry.score, stateHash: reportStateHash(entry.state) };
           } catch (error) {
@@ -284,9 +342,22 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
     clearInterval(heartbeat);
     for (const ws of sockets.clients) ws.terminate();
     sockets.close();
-    return close(callback);
+    const pending = [new Promise<void>((resolve, reject) => { close(error => error ? reject(error) : resolve()); })];
+    if (adminServer?.listening) pending.push(new Promise<void>((resolve, reject) => { adminServer.close(error => error ? reject(error) : resolve()); }));
+    void Promise.all(pending).then(() => callback?.(), error => callback?.(error));
+    return server;
   };
-  await new Promise<void>(resolve => server.listen(port, '127.0.0.1', resolve));
+  const listen = (target: ReturnType<typeof createServer>, targetPort: number, host: string) => new Promise<void>((resolve, reject) => {
+    target.once('error', reject); target.listen(targetPort, host, () => { target.off('error', reject); resolve(); });
+  });
+  try {
+    if (adminServer) await listen(adminServer, adminPort, adminHost!);
+    await listen(server, port, '127.0.0.1');
+  } catch (error) {
+    clearInterval(heartbeat); sockets.close();
+    if (adminServer?.listening) await new Promise<void>(resolve => { adminServer.close(() => resolve()); });
+    throw error;
+  }
   return server;
 }
 if (process.env.TERRARIUM_SERVER_MAIN === '1') void start();

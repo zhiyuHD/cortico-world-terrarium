@@ -75,8 +75,10 @@ export class TerrariumWorld implements World {
     this.inbox = new AnnouncementInbox(join(dirname(opts.stateFile), 'announcement-inbox.json'), opts.cfg.leaderboardUrl ? new URL(opts.cfg.leaderboardUrl).origin : 'disabled');
     this.waterFile = opts.waterStateFile ?? join(dirname(opts.stateFile), 'water', 'state.json');
     this.rankAlerts = { land: new RankAlerts(join(dirname(opts.stateFile), 'rank-alerts.json')), water: new RankAlerts(join(dirname(this.waterFile), 'rank-alerts.json')) };
-    this.waterLeaderboard = new LeaderboardClient({ url: opts.cfg.leaderboardUrl, id: '', kind: 'water', credentialsFile: join(dirname(this.waterFile), 'report-credentials.json'), incrementalReports: opts.cfg.incrementalReports });
-    this.leaderboard = new LeaderboardClient({ url: opts.cfg.leaderboardUrl, id: opts.cfg.leaderboardId, token: opts.reportToken, credentialsFile: join(dirname(opts.stateFile), 'report-credentials.json'), incrementalReports: opts.cfg.incrementalReports });
+    // The retired config key only selects existing credentials during migration.
+    const legacyId = (opts.cfg as TerrariumConfigSection & { leaderboardId?: unknown }).leaderboardId;
+    this.waterLeaderboard = new LeaderboardClient({ url: opts.cfg.leaderboardUrl, id: '', automaticIds: true, kind: 'water', credentialsFile: join(dirname(this.waterFile), 'report-credentials.json'), incrementalReports: opts.cfg.incrementalReports });
+    this.leaderboard = new LeaderboardClient({ url: opts.cfg.leaderboardUrl, id: typeof legacyId === 'string' ? legacyId : '', automaticIds: true, token: opts.reportToken, credentialsFile: join(dirname(opts.stateFile), 'report-credentials.json'), incrementalReports: opts.cfg.incrementalReports });
   }
   envPromptVars(): Record<string, string> { return {}; }
 

@@ -1,10 +1,12 @@
-<!-- Owner: src/state.ts, src/world.ts, server/index.ts, webui/client.ts -->
+<!-- Owner: src/state.ts, src/world.ts, src/config.ts, src/leaderboard.ts, server/index.ts, server/controls.ts, server/admin.ts, server/admin-network.ts, server/console/client.ts, webui/client.ts -->
 
 # cortico-world-terrarium
 
 A World with two independently claimed 5×5 ecosystems: land with plants, seeds and hunting bugs, and water with fish, aquatic plants, algae and fish food. The WebUI draws the terrarium on Canvas. Click a nest entrance to open its 4×4 interior and inspect resident ants, the queen, eggs and food; the public gallery and recorded replays use the same viewer. Nest ants use rounded vector illustrations; queens have a larger golden-brown body and a text badge. Cells show representative ants and eggs, with complete counts and resident details. Expected hatching times use the current time for live scenes and the recorded time for replays. Closing the nest restores the opening control and its page or panel scroll position. Plants grow during local daytime when soil moisture and daylight meet their species requirements. Aphids eat plants, beetles hunt aphids, and spiders hunt other bugs. Mature, well-fed bugs of the same species can reproduce when they share a cell. Ants dig nests and gather food every ten seconds; beetles, spiders and ants lay eggs that hatch into juveniles. Sprouting, growth, dry soil, hunts, births, low energy and deaths produce events.
 
 [Runtime frequency, token sizes and server load](https://github.com/zhiyuHD/cortico-world-terrarium/blob/main/docs/runtime-costs.md).
+
+[Server releases, atomic updates and rollback](docs/server-releases.md).
 
 ## Try it
 
@@ -20,7 +22,11 @@ Land plants at 20 health or below emit a `terrarium.plant` warning with ID, loca
 
 Starting the World creates no box, state file or server registration. `terrarium_inspect` without arguments lists land and water ownership. `terrarium_claim` requires `habitat: "land"` or `"water"`, optionally `name`. It claims that habitat once; repeated calls return the existing identity. All care tools require the corresponding claimed box. `terrarium_inspect({habitat})` returns that box's state or an unclaimed status.
 
-Each box saves its server-issued ID and token in its own `report-credentials.json` beside its state file, with owner-only permissions. Credentials are written before claiming state is committed and reused for subsequent operations and World restarts. Tokens are absent from tool replies, panels and public reports. The configured leaderboard ID/token applies to land; water gets a separate server-assigned identity. Disabling reporting permits local claims without a server identity.
+Each box saves its server-issued ID and token in its own `report-credentials.json` beside its state file, with owner-only permissions. Credentials are written before claiming state is committed and reused for subsequent operations and World restarts. Tokens are absent from tool replies, panels and public reports. New land and water claims always request server-assigned identities. Disabling reporting permits local claims without a server identity.
+
+The World has no configurable box ID. Set the service address in `worlds.terrarium.leaderboardUrl`; set the independent display name when claiming or with `terrarium_rename`.
+
+On startup, `LeaderboardClient.restoreCredentials` migrates existing named land credentials to a per-server `auto` alias without changing the ID/token or deleting original entries. The retired `worlds.terrarium.leaderboardId` key is only read to select an existing saved identity; it never chooses a new registration ID. If the key was removed, a single saved identity for that origin is adopted. Existing ID/token pairs supplied with `CORTICO_TERRARIUM_REPORT_TOKEN` are persisted once and then reused from the credentials file. An existing `auto` entry takes precedence. If several named identities exist without a selection, startup refuses to guess; copy the intended saved credentials to the `<server-origin>/auto` entry in the land credentials file and restart. No migration makes network requests or claims an unowned box. Water credentials remain separate.
 
 The World mounts separate `garden` (land) and `water` panels. The leaderboard supports `?kind=land` and `?kind=water`; its gallery separates their rankings.
 
@@ -106,7 +112,7 @@ Ants create a shared nest and deepen it while at its entrance, up to five levels
 
 ## Server announcements
 
-The service generates `data/admin-token` with owner-only permissions on its first start, beside the leaderboard file. Retain this file; it authorizes announcement administration independently of box tokens. Override it with `CORTICO_TERRARIUM_ADMIN_TOKEN`, `CORTICO_TERRARIUM_ADMIN_TOKEN_FILE` or `ServerOptions.adminToken`. `CORTICO_TERRARIUM_ANNOUNCEMENTS_FILE` overrides the default `announcements.json` beside the leaderboard file.
+The service generates `data/admin-token` with owner-only permissions on its first start, beside the leaderboard file. Retain this file; it authorizes announcements, feedback administration and server controls independently of box tokens. Override it with `CORTICO_TERRARIUM_ADMIN_TOKEN`, `CORTICO_TERRARIUM_ADMIN_TOKEN_FILE` or `ServerOptions.adminToken`. `CORTICO_TERRARIUM_ANNOUNCEMENTS_FILE` overrides the default `announcements.json` beside the leaderboard file.
 
 Build the operator command with `pnpm build:admin`. In the service directory:
 
@@ -117,11 +123,47 @@ node admin.mjs list
 node admin.mjs revoke 1
 ```
 
-Omitting `--to` broadcasts to all clients and the public gallery. Repeat `--to` or separate IDs with commas for multiple targets. Targets are registered box IDs; targeting either of a client's boxes reaches that client. `--expires-hours` defaults to 168 and accepts up to 720; `--text-file` reads the body from a file. `--server` defaults to `http://127.0.0.1:8787`; remote URLs require HTTPS. `--token-file` overrides `./data/admin-token`. Titles contain at most 160 characters and bodies at most 2000. Up to 2000 active announcements are retained; revoke an entry to make room. Expired entries are pruned when publishing. IDs continue increasing after revocation and service restarts.
+Omitting `--to` broadcasts to all clients and the public gallery. Repeat `--to` or separate IDs with commas for multiple targets. Targets are registered box IDs; targeting either of a client's boxes reaches that client. `--expires-hours` defaults to 168 and accepts up to 720; `--text-file` reads the body from a file. `--server` defaults to `http://127.0.0.1:8787`; private IPv4 and loopback URLs allow HTTP; public URLs require HTTPS. Set `CORTICO_TERRARIUM_ADMIN_URL` to change the default, or set the private admin host/port described below. `--token-file` overrides `./data/admin-token`. Titles contain at most 160 characters and bodies at most 2000. Up to 2000 active announcements are retained; revoke an entry to make room. Expired entries are pruned when publishing. IDs continue increasing after revocation and service restarts.
 
 `POST /api/admin/announcements` accepts `{title?, text, targets?: "all" | string[], expiresAt?}` with the admin bearer token; `GET` lists announcements and `DELETE /api/admin/announcements/:id` revokes one. `GET /api/announcements?id=<box-id>&after=<cursor>` requires that box's bearer token and returns up to 20 matching active announcements and `nextCursor`. `GET /api/announcements/public?after=<cursor>` returns broadcasts without credentials; `?view=latest` returns the latest 20 for the gallery. Targeted bodies and target IDs are absent from public results.
 
-Clients poll once per World tick interval, default one minute, including before claiming. They send `terrarium.announcement` events with `origin: "external"` and store per-service, per-box cursors and delivered IDs in `announcement-inbox.json` beside the land state. Broadcasts are deduplicated across both habitats and restarts. Revoking or expiring an announcement prevents future delivery; already delivered events remain. Clients connecting to an older server treat an absent announcement endpoint as unsupported and continue reporting. Older clients remain compatible with the updated service but cannot generate announcement events without upgrading their receiver code. Their public gallery still displays broadcasts after refreshing.
+Clients poll once per World tick interval, default one minute, including before claiming. They send `terrarium.announcement` events with `origin: "external"` and store per-service, per-box cursors and delivered IDs in `announcement-inbox.json` beside the land state. Broadcasts are deduplicated across both habitats and restarts. Revoking or expiring an announcement prevents future delivery; already delivered events remain. Clients connecting to an older server treat an absent announcement endpoint as unsupported and continue reporting. Older clients can report while HTTP Push is enabled but cannot generate announcement events without upgrading their receiver code. Their public gallery still displays broadcasts after refreshing.
+
+## Server controls
+
+### Private admin console
+
+`server/admin-network.ts` restricts the separate HTTP listener; `server/console/` owns its browser interface. Set these service environment variables and restart:
+
+```ini
+CORTICO_TERRARIUM_ADMIN_HOST=192.168.22.219
+CORTICO_TERRARIUM_ADMIN_PORT=8788
+CORTICO_TERRARIUM_ADMIN_ALLOWED_CIDR=192.168.22.0/24
+```
+
+Open `http://192.168.22.219:8788` from that subnet and log in with the existing `data/admin-token`. The token stays in the browser tab's session storage until logout or tab closure. The interface supports box/version inventory, live WS connections, feedback replies through targeted announcements, resolution, HTTP Push schedules and announcement previews/revocation. Publishing and control changes require confirmation. Feedback replies and resolution are separate operations.
+
+The console serves its Lucide SVG sprite and MiSans Regular/Semibold WOFF2 files locally. Asset provenance and licenses are in `server/console/assets/README.md`; license links also appear on the login page and console footer.
+
+The host must be a private or loopback IPv4 address. With no allowed CIDR, only the configured host itself is allowed (`/32`). Access checks use the TCP peer address and ignore forwarded headers; Host and browser Origin must match the configured address and actual port. The console sends no CORS headers. Keep this port outside public reverse proxies and port mappings. Private-network HTTP does not encrypt the admin token; use a trusted LAN or an SSH tunnel.
+
+When enabled, the public listener returns 404 for every `/api/admin/*` route. The command-line client must use `--server http://192.168.22.219:8788` or `CORTICO_TERRARIUM_ADMIN_URL`; when its environment contains the admin host/port, it selects that address automatically. With no admin host configured, the console listener is disabled and the existing authenticated admin routes remain on the main listener.
+
+`GET /api/admin/boxes` returns registered IDs, names, habitat, score, versions, report timestamp, last accepted transport and active WS connection counts. It excludes box tokens and simulation state. Entries saved before transport recording show unknown transport until their next accepted report. A missing client version on a reported box is displayed as an inference of ≤0.7.3; a missing Coopanion version does not identify the deployment type.
+
+The admin bearer token also authorizes `GET /api/admin/controls` and `PUT /api/admin/controls/http-push`. HTTP Push is enabled when no controls file exists. The first change writes `controls.json` beside the leaderboard file with owner-only permissions; override the path with `CORTICO_TERRARIUM_CONTROLS_FILE` or `ServerOptions.controlsFile`.
+
+```sh
+node admin.mjs controls
+node admin.mjs http-push off
+node admin.mjs http-push on
+node admin.mjs http-push off --at '2026-10-25T00:00:00+08:00'
+node admin.mjs http-push cancel
+```
+
+`on` or `off` without `--at` takes effect immediately and clears the pending change. With `--at`, it replaces the single pending change without changing the current switch. The timestamp must be in the future and include a timezone. `cancel` removes the pending change and retains the current effective switch. The API accepts `{enabled: boolean, at?: string}` or `{cancel: true}` and returns `{httpPush: {enabled, scheduledChange: {enabled, at} | null}}`, including the effective switch and any remaining scheduled change. Remote commands use `--server https://<host>` and `--token-file <file>`.
+
+Scheduled changes are evaluated against wall-clock time on every request, including after downtime or a restart; they do not depend on an in-memory timer. When HTTP Push is disabled, `PUT /api/reports` returns HTTP 410 with an upgrade message, before reading the body and again before a queued report is committed. Reopening the switch restores that endpoint. A pending shutdown adds a `Sunset` response header to accepted HTTP reports. WebSocket full and incremental reports, registration, reads, feedback and announcements remain available. The cloud control does not change local ecosystem simulation or client configuration.
 
 ## Hunt replays
 
@@ -143,13 +185,13 @@ The server recomputes the baseline digest inside its report queue, checks the pa
 
 Legacy WebSocket clients without checksum fields retain revision-based reporting. A new client talking to a server whose first acknowledgement omits a checksum uses full snapshots for that connection, even if incremental reporting is configured. HTTP reporting remains full snapshots. Digests cover ecosystem state, not metadata such as `phase` or `clientVersion`, which retain their existing validation.
 
-`PUT /api/reports` remains available with its original request and `{score}` response. Older clients may omit `clientVersion`; new clients include the actual package version on both WebSocket and HTTP reports. When `COOPANION_VERSION` contains a version number, new clients also include `coopanionVersion` on every WebSocket and HTTP report. The server validates it with the same rules as `clientVersion` and saves it with the box entry. A later report without this field removes the previous declaration. Invalid local environment values are omitted.
+`PUT /api/reports` accepts its original request and returns `{score}` while HTTP Push is enabled; server controls can disable it with HTTP 410. Older clients may omit `clientVersion`; new clients include the actual package version on both WebSocket and HTTP reports. When `COOPANION_VERSION` contains a version number, new clients also include `coopanionVersion` on every WebSocket and HTTP report. The server validates it with the same rules as `clientVersion` and saves it with the box entry. A later report without this field removes the previous declaration. Invalid local environment values are omitted.
 
 The service persists the declared versions with the box entry; these are client declarations, not verified identity. If an older server rejects the WebSocket endpoint with HTTP 404, 405, 426 or 501, the client sends full HTTP reports and retries WebSocket after five minutes. Other authentication or connection errors do not switch transports.
 
-The TypeScript service in server/ issues credentials through POST /api/registrations, accepts authenticated PUT /api/reports and serves GET /api/leaderboard, GET /api/boxes/:id, and a public Canvas gallery. The gallery and World panel use the renderer in webui/scene.ts with separate state sources. Both refresh every five seconds and animate bug movement between reports. Build it with pnpm build:server and pnpm build:admin, then deploy dist/server.mjs, dist/scene.js, dist/index.html and dist/admin.mjs together. Set PORT, TERRARIUM_DATA_FILE and TERRARIUM_CREDENTIALS_FILE, then run TERRARIUM_SERVER_MAIN=1 node dist/server.mjs. The credentials JSON maps each box ID to its private bearer token and belongs outside the published package. A missing credentials file starts an empty registry; registration writes it with owner-only permissions. Registration accepts an optional ID and `kind` (`land` or `water`) and returns a new ID/token pair with HTTP 201. Existing IDs return HTTP 409 without issuing or replacing their token.
+The TypeScript service in server/ issues credentials through POST /api/registrations, accepts authenticated PUT /api/reports and serves GET /api/leaderboard, GET /api/boxes/:id, and a public Canvas gallery. The gallery and World panel use the renderer in webui/scene.ts with separate state sources. Both refresh every five seconds and animate bug movement between reports. Build it with pnpm build:server and pnpm build:admin; use the [server release commands](docs/server-releases.md) for atomic installation, activation and rollback. The credentials JSON maps each box ID to its private bearer token and belongs outside the published package. A missing credentials file starts an empty registry; registration writes it with owner-only permissions. Registration accepts an optional ID for compatibility with old clients and `kind` (`land` or `water`) and returns a new ID/token pair with HTTP 201. Existing IDs return HTTP 409 without issuing or replacing their token. Current World clients never request a specific ID.
 
-The default `worlds.terrarium.leaderboardUrl` is `https://cortico-box.zhiyuhub.top`; an empty URL disables reporting. Without `CORTICO_TERRARIUM_REPORT_TOKEN`, the client requests credentials and saves them in `data/terrarium/land/report-credentials.json` or `data/terrarium/water/report-credentials.json` under the deployment with owner-only permissions. Credentials are retained separately for each service origin and configured ID. An empty `worlds.terrarium.leaderboardId` requests a server-assigned ID. A configured ID must be unregistered, or its token must be supplied through `CORTICO_TERRARIUM_REPORT_TOKEN`. The secret takes precedence over saved credentials and requires an ID. Losing the saved credentials does not grant access to an existing ID. Reports accept state versions 1–3 and have a 1 MiB body limit. The server recalculates each score from the reported state. Clients supply their own state, so rankings do not prove that all clients followed simulation rules.
+The default `worlds.terrarium.leaderboardUrl` is `https://cortico-box.zhiyuhub.top`; an empty URL disables reporting. The client requests credentials and saves them in `data/terrarium/land/report-credentials.json` or `data/terrarium/water/report-credentials.json` under the deployment with owner-only permissions. Credentials are retained separately for each service origin. Losing saved credentials does not grant access to an existing ID. Reports accept state versions 1–3 and have a 1 MiB body limit. The server recalculates each score from the reported state. Clients supply their own state, so rankings do not prove that all clients followed simulation rules.
 
 The browser JavaScript and CSS paths are declared by `cortico.webUiClient` and `cortico.webUiStyle` in `package.json`. Earlier browser bundles remain available to processes that loaded an older manifest.
 

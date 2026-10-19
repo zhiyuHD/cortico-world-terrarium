@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": { "lib": ["ES2022", "DOM", "DOM.Iterable"] },
-  "include": ["webui/**/*.ts"]
+  "include": ["webui/**/*.ts", "server/console/**/*.ts"]
 }

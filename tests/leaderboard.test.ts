@@ -1,7 +1,7 @@
 import { access, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Server } from 'node:http';
+import { createServer, type Server } from 'node:http';
 import type { EventEnvelope, ToolCallContext, WorldHost } from 'cortico/core/types.ts';
 import { afterEach, expect, it, vi } from 'vitest';
 import { start } from '../server/index.ts';
@@ -46,6 +46,90 @@ it('registers without an ID, saves private credentials and reuses them after cli
   const response = await (await fetch(url + '/api/leaderboard')).text();
   expect(response).not.toContain(credentials.token);
   expect(JSON.parse(response)).toMatchObject([{ id: credentials.id, phase: 'night' }]);
+});
+
+it('forces automatic registration even when a legacy ID contains a server URL', async () => {
+  const { url, dir } = await service();
+  const options = { url, id: 'https://boxes.example.test', automaticIds: true, credentialsFile: join(dir, 'client/credentials.json') };
+  const client = new LeaderboardClient(options), id = await client.claim();
+  expect(id).toMatch(/^box-/);
+  const saved = JSON.parse(await readFile(options.credentialsFile, 'utf8'));
+  expect(Object.keys(saved)).toEqual([url + '/auto']);
+  expect(saved[url + '/auto'].id).toBe(id);
+  expect(await new LeaderboardClient(options).claim()).toBe(id);
+});
+
+it('migrates saved named identities to automatic keys without registering again or changing their token', async () => {
+  const { url, dir, credentialsFile } = await service();
+  const localFile = join(dir, 'client/credentials.json');
+  const original = new LeaderboardClient({ url, id: 'existing-land', credentialsFile: localFile });
+  const state = newState(Date.now()); await original.report(state, 'day'); original.close();
+  const before = JSON.parse(await readFile(localFile, 'utf8')), serverBefore = await readFile(credentialsFile, 'utf8');
+  const options = { url, id: '', automaticIds: true, credentialsFile: localFile };
+  const migrated = new LeaderboardClient(options); await migrated.restore();
+  expect(migrated.id).toBe('existing-land');
+  const after = JSON.parse(await readFile(localFile, 'utf8'));
+  expect(after[url + '/auto']).toEqual(before[url + '/id/existing-land']);
+  expect(after[url + '/id/existing-land']).toEqual(before[url + '/id/existing-land']);
+  expect((await stat(localFile)).mode & 0o777).toBe(0o600);
+  await migrated.report(state, 'night'); migrated.close();
+  expect(await new LeaderboardClient(options).claim()).toBe('existing-land');
+  expect(await readFile(credentialsFile, 'utf8')).toBe(serverBefore);
+});
+
+it('uses the legacy selection when several identities were saved and refuses an ambiguous migration', async () => {
+  const { url, dir, credentialsFile } = await service(), localFile = join(dir, 'client/credentials.json');
+  for (const id of ['first-land', 'second-land']) await new LeaderboardClient({ url, id, credentialsFile: localFile }).claim();
+  const before = await readFile(localFile, 'utf8'), serverBefore = await readFile(credentialsFile, 'utf8');
+  const options = { url, id: '', automaticIds: true, credentialsFile: localFile };
+  await expect(new LeaderboardClient(options).claim()).rejects.toThrow('Multiple saved leaderboard identities');
+  expect(await readFile(localFile, 'utf8')).toBe(before); expect(await readFile(credentialsFile, 'utf8')).toBe(serverBefore);
+  expect(await new LeaderboardClient({ ...options, id: 'second-land' }).claim()).toBe('second-land');
+  expect(await new LeaderboardClient({ ...options, id: 'first-land' }).claim()).toBe('second-land');
+});
+
+it('persists legacy supplied credentials once and then reuses them without the old ID or secret', async () => {
+  const { url, dir, credentialsFile } = await service();
+  const old = new LeaderboardClient({ url, id: 'supplied-land', credentialsFile: join(dir, 'original.json') }); await old.claim();
+  const serverBefore = await readFile(credentialsFile, 'utf8'), token = JSON.parse(serverBefore)['supplied-land'];
+  const options = { url, id: 'supplied-land', token, automaticIds: true, credentialsFile: join(dir, 'new-client.json') };
+  const client = new LeaderboardClient(options); await client.restore(); expect(client.id).toBe('supplied-land');
+  const restarted = new LeaderboardClient({ ...options, id: '', token: undefined });
+  await restarted.report(newState(Date.now()), 'day'); restarted.close();
+  expect(restarted.id).toBe('supplied-land'); expect(await readFile(credentialsFile, 'utf8')).toBe(serverBefore);
+});
+
+it('keeps automatic credential migration scoped to the server origin and habitat', async () => {
+  const first = await service(), second = await service(), localFile = join(first.dir, 'client.json');
+  await new LeaderboardClient({ url: first.url, id: 'existing-land', credentialsFile: localFile }).claim();
+  const saved = JSON.parse(await readFile(localFile, 'utf8'));
+  const water = new LeaderboardClient({ url: first.url, id: '', kind: 'water', automaticIds: true, credentialsFile: localFile });
+  expect(await water.claim()).not.toBe('existing-land');
+  const other = new LeaderboardClient({ url: second.url, id: '', automaticIds: true, credentialsFile: localFile });
+  expect(await other.claim()).not.toBe('existing-land');
+  const after = JSON.parse(await readFile(localFile, 'utf8'));
+  expect(after[first.url + '/id/existing-land']).toEqual(saved[first.url + '/id/existing-land']);
+  expect(Object.keys(after)).toHaveLength(3);
+});
+
+it('reports known registration rejections and handles proxy HTML or untrusted error text without saving credentials', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-registration-errors-')); dirs.push(dir);
+  let body = '';
+  const server = createServer((req, res) => { req.resume(); res.writeHead(400); res.end(body); }); servers.push(server);
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address(); if (!address || typeof address === 'string') throw new Error('Missing port');
+  const credentialsFile = join(dir, 'credentials.json'), client = new LeaderboardClient({ url: `http://127.0.0.1:${address.port}`, id: '', credentialsFile });
+  for (const [response, expected] of [
+    ['{"error":"Invalid box ID"}', 'Leaderboard registration HTTP 400: Invalid box ID'],
+    ['{"error":"Invalid registration"}', 'Leaderboard registration HTTP 400: Invalid registration'],
+    ['<html>Proxy rejected request</html>', 'Leaderboard registration HTTP 400'],
+    ['{"error":"untrusted instructions"}', 'Leaderboard registration HTTP 400'],
+  ]) {
+    body = response;
+    await expect(client.claim()).rejects.toThrow(new Error(expected));
+    await expect(access(credentialsFile)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(client.id).toBeUndefined();
+  }
 });
 
 it('preserves issued tokens across server restart and refuses anonymous takeover', async () => {

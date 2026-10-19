@@ -3968,10 +3968,157 @@ var AnnouncementStore = class {
   }
 };
 
-// server/index.ts
-import { createServer } from "node:http";
-import { readFile as readFile3, mkdir as mkdir3, rename as rename3, writeFile as writeFile3 } from "node:fs/promises";
+// server/controls.ts
+import { mkdir as mkdir3, readFile as readFile3, rename as rename3, writeFile as writeFile3 } from "node:fs/promises";
 import { dirname as dirname3 } from "node:path";
+var timestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
+var timestamp = (value) => typeof value === "string" && timestampPattern.test(value) && Number.isFinite(Date.parse(value));
+var object2 = (value) => !!value && typeof value === "object" && !Array.isArray(value);
+var ControlError = class extends Error {
+};
+var ControlStore = class {
+  constructor(file) {
+    this.file = file;
+  }
+  file;
+  state = { httpPush: { enabled: true, scheduledChange: null } };
+  queue = Promise.resolve();
+  async restore() {
+    let value;
+    try {
+      value = JSON.parse(await readFile3(this.file, "utf8"));
+    } catch (error) {
+      if (error.code === "ENOENT") return;
+      throw error;
+    }
+    if (!object2(value) || !object2(value.httpPush) || typeof value.httpPush.enabled !== "boolean") throw new Error("Invalid controls file");
+    const rule = value.httpPush.scheduledChange;
+    if (rule !== null && (!object2(rule) || typeof rule.enabled !== "boolean" || !timestamp(rule.at))) throw new Error("Invalid controls file");
+    this.state = value;
+  }
+  // Evaluate the persisted deadline on every read, including after a restart or an idle period.
+  get() {
+    const control = this.state.httpPush;
+    if (control.scheduledChange && Date.parse(control.scheduledChange.at) <= Date.now()) {
+      return { httpPush: { enabled: control.scheduledChange.enabled, scheduledChange: null } };
+    }
+    return structuredClone(this.state);
+  }
+  updateHttpPush(input) {
+    const result = this.queue.then(async () => {
+      if (!object2(input)) throw new ControlError("Invalid HTTP Push control");
+      const current = this.get().httpPush;
+      let next;
+      if (input.cancel === true && Object.keys(input).length === 1) next = { ...current, scheduledChange: null };
+      else {
+        if (typeof input.enabled !== "boolean" || Object.keys(input).some((key) => key !== "enabled" && key !== "at")) throw new ControlError("Supply enabled and an optional timestamp with timezone");
+        if (input.at !== void 0) {
+          if (!timestamp(input.at) || Date.parse(input.at) <= Date.now()) throw new ControlError("Scheduled time must be in the future and include a timezone");
+          next = { ...current, scheduledChange: { enabled: input.enabled, at: new Date(input.at).toISOString() } };
+        } else next = { enabled: input.enabled, scheduledChange: null };
+      }
+      const state = { httpPush: next };
+      await mkdir3(dirname3(this.file), { recursive: true });
+      await writeFile3(`${this.file}.tmp`, JSON.stringify(state), { mode: 384 });
+      await rename3(`${this.file}.tmp`, this.file);
+      this.state = state;
+      return this.get();
+    });
+    this.queue = result.catch(() => {
+    });
+    return result;
+  }
+};
+
+// server/index.ts
+import { createServer as createServer2 } from "node:http";
+
+// server/release-assets.ts
+import { readFile as readFile4 } from "node:fs/promises";
+import { join } from "node:path";
+
+// server/releases.ts
+var idPattern = /^[a-z0-9][a-z0-9._-]{0,79}$/;
+function validReleaseId(id) {
+  return typeof id === "string" && idPattern.test(id) && id !== "." && id !== "..";
+}
+
+// server/release-assets.ts
+var CONSOLE_ASSETS = {
+  "/": ["index.html", "text/html; charset=utf-8"],
+  "/client.js": ["client.js", "text/javascript; charset=utf-8"],
+  "/client.css": ["client.css", "text/css; charset=utf-8"],
+  "/assets/icons.svg": ["assets/icons.svg", "image/svg+xml"],
+  "/assets/MiSans-Regular.woff2": ["assets/MiSans-Regular.woff2", "font/woff2"],
+  "/assets/MiSans-Semibold.woff2": ["assets/MiSans-Semibold.woff2", "font/woff2"],
+  "/assets/MiSans-LICENSE.pdf": ["assets/MiSans-LICENSE.pdf", "application/pdf"],
+  "/assets/Lucide-LICENSE.txt": ["assets/Lucide-LICENSE.txt", "text/plain; charset=utf-8"]
+};
+function pinConsoleHtml(page, id) {
+  if (!id || !validReleaseId(id)) return page;
+  return Buffer.from(Buffer.from(page).toString().replace(/(href|src)="\/(client\.js|client\.css|assets\/[a-zA-Z0-9._-]+)"/g, `$1="/releases/${id}/$2"`));
+}
+async function historicalAsset(root, path, privateAdmin) {
+  const match = /^\/releases\/([^/]+)(\/.*)$/.exec(path);
+  if (!match || !validReleaseId(match[1])) return;
+  const asset = privateAdmin ? CONSOLE_ASSETS[match[2]] : match[2] === "/scene.js" ? ["scene.js", "text/javascript; charset=utf-8"] : void 0;
+  if (!asset || match[2] === "/") return;
+  const file = join(root, "versions", match[1], ...privateAdmin ? ["console", asset[0]] : [asset[0]]);
+  try {
+    return { bytes: await readFile4(file), type: asset[1] };
+  } catch (error) {
+    if (error.code === "ENOENT") return;
+    throw error;
+  }
+}
+
+// server/admin-network.ts
+import { createServer } from "node:http";
+function ipv4(value) {
+  if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(value)) return;
+  const parts = value.split(".").map(Number);
+  if (parts.some((part) => part > 255)) return;
+  return parts.reduce((result, part) => result * 256 + part >>> 0, 0);
+}
+function privateAddress(host) {
+  const value = ipv4(host);
+  return value !== void 0 && (host.startsWith("10.") || host.startsWith("192.168.") || host.startsWith("127.") || value >>> 20 === 2753);
+}
+function adminNetwork(host, cidr) {
+  if (!privateAddress(host)) throw new Error("Admin host must be a private or loopback IPv4 address");
+  const [network, bits, extra] = cidr.split("/");
+  const address = ipv4(network), prefix = Number(bits);
+  if (extra !== void 0 || !privateAddress(network) || !/^\d+$/.test(bits ?? "") || prefix < 8 || prefix > 32) throw new Error("Invalid private admin CIDR");
+  const mask = 4294967295 << 32 - prefix >>> 0;
+  const contains = (ip) => {
+    const value = ipv4(ip.replace(/^::ffff:/, ""));
+    return value !== void 0 && privateAddress(ip.replace(/^::ffff:/, "")) && (value & mask) >>> 0 === (address & mask) >>> 0;
+  };
+  if (!contains(host)) throw new Error("Admin host must belong to the allowed CIDR");
+  return contains;
+}
+function trustedAdminRequest(req, host, allowed) {
+  const authority = `${host}:${req.socket.localPort}`;
+  return allowed(req.socket.remoteAddress ?? "") && req.headers.host === authority && (req.headers.origin === void 0 || req.headers.origin === `http://${authority}`);
+}
+function createAdminServer(host, cidr, handler) {
+  const allowed = adminNetwork(host, cidr);
+  return createServer((req, res) => {
+    res.setHeader("cache-control", "no-store");
+    res.setHeader("x-content-type-options", "nosniff");
+    res.setHeader("content-security-policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+    if (!trustedAdminRequest(req, host, allowed)) {
+      res.writeHead(403);
+      res.end("Forbidden");
+      return;
+    }
+    handler(req, res);
+  });
+}
+
+// server/index.ts
+import { readFile as readFile5, mkdir as mkdir4, rename as rename4, writeFile as writeFile4 } from "node:fs/promises";
+import { dirname as dirname4 } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 
 // node_modules/.pnpm/ws@8.22.0/node_modules/ws/wrapper.mjs
@@ -4128,7 +4275,7 @@ function score(state) {
 }
 
 // server/index.ts
-var idPattern = /^[a-z0-9][a-z0-9_-]{1,39}$/;
+var idPattern2 = /^[a-z0-9][a-z0-9_-]{1,39}$/;
 var ReportError = class extends Error {
   constructor(status, message, resync = false) {
     super(message);
@@ -4143,53 +4290,66 @@ function equal(a, b) {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 async function writeJson(file, value) {
-  await mkdir3(dirname3(file), { recursive: true });
+  await mkdir4(dirname4(file), { recursive: true });
   const temp = file + ".tmp";
-  await writeFile3(temp, JSON.stringify(value), { mode: 384 });
-  await rename3(temp, file);
+  await writeFile4(temp, JSON.stringify(value), { mode: 384 });
+  await rename4(temp, file);
 }
 async function start(options = {}) {
   const file = options.dataFile ?? process.env.TERRARIUM_DATA_FILE ?? "./data/leaderboard.json";
-  const feedback = new FeedbackStore(`${dirname3(file)}/feedback.json`);
+  const controls = new ControlStore(options.controlsFile ?? process.env.CORTICO_TERRARIUM_CONTROLS_FILE ?? `${dirname4(file)}/controls.json`);
+  await controls.restore();
+  const feedback = new FeedbackStore(`${dirname4(file)}/feedback.json`);
   await feedback.restore();
   const credentialsFile = options.credentialsFile ?? process.env.TERRARIUM_CREDENTIALS_FILE ?? "./data/credentials.json";
-  const announcements = new AnnouncementStore(options.announcementsFile ?? process.env.CORTICO_TERRARIUM_ANNOUNCEMENTS_FILE ?? `${dirname3(file)}/announcements.json`);
+  const announcements = new AnnouncementStore(options.announcementsFile ?? process.env.CORTICO_TERRARIUM_ANNOUNCEMENTS_FILE ?? `${dirname4(file)}/announcements.json`);
   await announcements.restore();
-  const adminTokenFile = options.adminTokenFile ?? process.env.CORTICO_TERRARIUM_ADMIN_TOKEN_FILE ?? `${dirname3(file)}/admin-token`;
+  const adminTokenFile = options.adminTokenFile ?? process.env.CORTICO_TERRARIUM_ADMIN_TOKEN_FILE ?? `${dirname4(file)}/admin-token`;
   let adminToken = options.adminToken ?? process.env.CORTICO_TERRARIUM_ADMIN_TOKEN;
   if (!adminToken) {
     try {
-      adminToken = (await readFile3(adminTokenFile, "utf8")).trim();
+      adminToken = (await readFile5(adminTokenFile, "utf8")).trim();
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
       adminToken = randomBytes(32).toString("hex");
-      await mkdir3(dirname3(adminTokenFile), { recursive: true });
-      await writeFile3(adminTokenFile, adminToken, { mode: 384, flag: "wx" });
+      await mkdir4(dirname4(adminTokenFile), { recursive: true });
+      await writeFile4(adminTokenFile, adminToken, { mode: 384, flag: "wx" });
     }
     if (!adminToken) throw new Error("Empty announcement admin token");
   }
+  const adminHost = options.adminHost ?? process.env.CORTICO_TERRARIUM_ADMIN_HOST;
+  const adminPort = options.adminPort ?? Number(process.env.CORTICO_TERRARIUM_ADMIN_PORT ?? 8788);
+  const adminCidr = options.adminAllowedCidr ?? process.env.CORTICO_TERRARIUM_ADMIN_ALLOWED_CIDR ?? (adminHost ? `${adminHost}/32` : "127.0.0.1/32");
+  const acceptedReports = { http: 0, websocket: 0 };
+  const connections = /* @__PURE__ */ new Map();
   const port = options.port ?? Number(process.env.PORT ?? 8787);
   let registry = /* @__PURE__ */ Object.create(null);
   let credentials = /* @__PURE__ */ Object.create(null);
   let registrationQueue = Promise.resolve();
   let reportQueue = Promise.resolve();
   try {
-    registry = Object.assign(/* @__PURE__ */ Object.create(null), JSON.parse(await readFile3(file, "utf8")));
+    registry = Object.assign(/* @__PURE__ */ Object.create(null), JSON.parse(await readFile5(file, "utf8")));
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
   try {
-    credentials = Object.assign(/* @__PURE__ */ Object.create(null), JSON.parse(await readFile3(credentialsFile, "utf8")));
+    credentials = Object.assign(/* @__PURE__ */ Object.create(null), JSON.parse(await readFile5(credentialsFile, "utf8")));
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
-  const page = await readFile3(new URL("./index.html", import.meta.url));
-  const sceneScript = await readFile3(new URL("./scene.js", import.meta.url)).catch(async (error) => {
+  const releaseId = process.env.CORTICO_TERRARIUM_RELEASE_ID;
+  const deploymentRoot = process.env.CORTICO_TERRARIUM_DEPLOY_ROOT;
+  if (releaseId && !validReleaseId(releaseId)) throw new Error("Invalid server release ID");
+  if (releaseId && !deploymentRoot) throw new Error("Managed releases require CORTICO_TERRARIUM_DEPLOY_ROOT");
+  const page = await readFile5(new URL("./index.html", import.meta.url));
+  const sceneScript = await readFile5(new URL("./scene.js", import.meta.url)).catch(async (error) => {
     if (error.code !== "ENOENT") throw error;
-    return readFile3(new URL("../dist/scene.js", import.meta.url));
+    return readFile5(new URL("../dist/scene.js", import.meta.url));
   });
-  const commitReport = (id, input) => {
+  const httpPushDisabled = "HTTP Push is disabled. Update cortico-world-terrarium and use WebSocket Push at /api/reports/ws";
+  const commitReport = (id, input, transport) => {
     const report = reportQueue.then(async () => {
+      if (transport === "http" && !controls.get().httpPush.enabled) throw new ReportError(410, httpPushDisabled);
       if (input.phase !== void 0 && input.phase !== "day" && input.phase !== "night" || input.clientVersion !== void 0 && !validClientVersion(input.clientVersion) || input.coopanionVersion !== void 0 && !validClientVersion(input.coopanionVersion)) throw new ReportError(400, "Invalid report metadata");
       let raw = input.state;
       if (input.baseRevision !== void 0) {
@@ -4216,26 +4376,71 @@ async function start(options = {}) {
       const kind = "fish" in state ? "water" : "land";
       if (registry[id] && (registry[id].kind ?? "land") !== kind) throw new ReportError(409, "Box habitat cannot change");
       if (registry[id] && state.updatedAtMs < registry[id].state.updatedAtMs) throw new ReportError(409, "Stale report");
-      const entry = { id, kind, state, phase: input.phase, score: score(state), reportedAt: new Date(now).toISOString(), reportRevision: randomBytes(16).toString("hex"), ...input.clientVersion === void 0 ? {} : { clientVersion: input.clientVersion }, ...input.coopanionVersion === void 0 ? {} : { coopanionVersion: input.coopanionVersion } };
+      const entry = { id, kind, state, reportTransport: transport, phase: input.phase, score: score(state), reportedAt: new Date(now).toISOString(), reportRevision: randomBytes(16).toString("hex"), ...input.clientVersion === void 0 ? {} : { clientVersion: input.clientVersion }, ...input.coopanionVersion === void 0 ? {} : { coopanionVersion: input.coopanionVersion } };
       const next = Object.assign(/* @__PURE__ */ Object.create(null), registry, { [id]: entry });
       await writeJson(file, next);
       registry = next;
+      acceptedReports[transport]++;
       return entry;
     });
     reportQueue = report.catch(() => {
     });
     return report;
   };
-  const server = createServer(async (req, res) => {
+  const handleRequest = async (req, res, privateAdmin = false) => {
     const reply = (status, value) => {
       res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
       res.end(JSON.stringify(value));
     };
     try {
       const path = new URL(req.url ?? "/", "http://localhost").pathname;
+      if (!privateAdmin && adminHost && path.startsWith("/api/admin/")) {
+        reply(404, { error: "Not found" });
+        return;
+      }
+      if (deploymentRoot && path.startsWith("/releases/")) {
+        const asset = req.method === "GET" ? await historicalAsset(deploymentRoot, path, privateAdmin) : void 0;
+        if (!asset) {
+          reply(404, { error: "Not found" });
+          return;
+        }
+        res.writeHead(200, { "content-type": asset.type, "cache-control": "public, max-age=31536000, immutable", "x-content-type-options": "nosniff" });
+        res.end(asset.bytes);
+        return;
+      }
+      if (privateAdmin && !path.startsWith("/api/admin/")) {
+        const asset = CONSOLE_ASSETS[path];
+        if (req.method !== "GET" || !asset) {
+          reply(404, { error: "Not found" });
+          return;
+        }
+        const content = await readFile5(new URL(`./console/${asset[0]}`, import.meta.url)).catch(async (error) => {
+          if (error.code !== "ENOENT") throw error;
+          return readFile5(new URL(`../dist/console/${asset[0]}`, import.meta.url));
+        });
+        res.writeHead(200, { "content-type": asset[1], "cache-control": asset[1] === "font/woff2" ? "private, max-age=86400" : "no-store" });
+        res.end(asset[0] === "index.html" ? pinConsoleHtml(content, releaseId) : content);
+        return;
+      }
+      if (path === "/api/admin/boxes") {
+        if (!equal(req.headers.authorization?.replace(/^Bearer /, "") ?? "", adminToken)) {
+          reply(401, { error: "Unauthorized" });
+          return;
+        }
+        if (req.method !== "GET") {
+          reply(405, { error: "Method not allowed" });
+          return;
+        }
+        const boxes = [.../* @__PURE__ */ new Set([...Object.keys(credentials), ...Object.keys(registry)])].map((id) => {
+          const entry = registry[id];
+          return { id, registered: Object.hasOwn(credentials, id), name: entry?.state.name ?? id, kind: entry ? entry.kind ?? "land" : null, score: entry?.score ?? null, reportedAt: entry?.reportedAt ?? null, clientVersion: entry?.clientVersion ?? null, coopanionVersion: entry?.coopanionVersion ?? null, reportTransport: entry?.reportTransport ?? null, wsConnections: connections.get(id)?.size ?? 0 };
+        });
+        reply(200, { boxes, serverAt: (/* @__PURE__ */ new Date()).toISOString(), uptimeSec: process.uptime(), memoryBytes: process.memoryUsage().rss, acceptedReports });
+        return;
+      }
       if (req.method === "GET" && path === "/") {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
-        res.end(page);
+        res.end(releaseId ? page.toString().replace("./scene.js?v=dark-mode", `/releases/${releaseId}/scene.js`) : page);
         return;
       }
       if (req.method === "GET" && path === "/scene.js") {
@@ -4244,7 +4449,31 @@ async function start(options = {}) {
         return;
       }
       if (req.method === "GET" && path === "/health") {
-        reply(200, { ok: true });
+        reply(200, { ok: true, ...process.env.CORTICO_TERRARIUM_RELEASE_ID ? { releaseId: process.env.CORTICO_TERRARIUM_RELEASE_ID } : {} });
+        return;
+      }
+      if (path === "/api/admin/controls" || path === "/api/admin/controls/http-push") {
+        if (!equal(req.headers.authorization?.replace(/^Bearer /, "") ?? "", adminToken)) {
+          reply(401, { error: "Unauthorized" });
+          return;
+        }
+        if (path === "/api/admin/controls" && req.method === "GET") {
+          reply(200, controls.get());
+          return;
+        }
+        if (path === "/api/admin/controls/http-push" && req.method === "PUT") {
+          let raw = "";
+          for await (const chunk of req) {
+            raw += String(chunk);
+            if (Buffer.byteLength(raw) > 1024) {
+              reply(413, { error: "Control too large" });
+              return;
+            }
+          }
+          reply(200, await controls.updateHttpPush(JSON.parse(raw)));
+          return;
+        }
+        reply(405, { error: "Method not allowed" });
         return;
       }
       if (path === "/api/feedback") {
@@ -4378,7 +4607,7 @@ async function start(options = {}) {
         const ranked = Object.values(registry).filter((entry) => kind === null || (entry.kind ?? "land") === kind).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
         if (query.get("view") === "summary") {
           const limit = Number(query.get("limit") ?? 20), ownId = query.get("ownId");
-          if (!kind || !Number.isInteger(limit) || limit < 1 || limit > 100 || ownId !== null && !idPattern.test(ownId)) {
+          if (!kind || !Number.isInteger(limit) || limit < 1 || limit > 100 || ownId !== null && !idPattern2.test(ownId)) {
             reply(400, { error: "Summary requires kind, limit 1..100 and a valid optional ownId" });
             return;
           }
@@ -4415,7 +4644,7 @@ async function start(options = {}) {
           reply(400, { error: "Invalid box kind" });
           return;
         }
-        if (requested !== void 0 && (typeof requested !== "string" || !idPattern.test(requested))) {
+        if (requested !== void 0 && (typeof requested !== "string" || !idPattern2.test(requested))) {
           reply(400, { error: "Invalid box ID" });
           return;
         }
@@ -4437,6 +4666,12 @@ async function start(options = {}) {
         return;
       }
       if (req.method === "PUT" && path === "/api/reports") {
+        const control = controls.get().httpPush;
+        if (!control.enabled) {
+          reply(410, { error: httpPushDisabled });
+          return;
+        }
+        if (control.scheduledChange?.enabled === false) res.setHeader("Sunset", new Date(control.scheduledChange.at).toUTCString());
         let raw = "";
         for await (const chunk of req) {
           raw += String(chunk);
@@ -4446,7 +4681,7 @@ async function start(options = {}) {
           }
         }
         const input = JSON.parse(raw);
-        if (!input || typeof input.id !== "string" || !idPattern.test(input.id)) {
+        if (!input || typeof input.id !== "string" || !idPattern2.test(input.id)) {
           reply(400, { error: "Invalid report" });
           return;
         }
@@ -4456,21 +4691,27 @@ async function start(options = {}) {
           reply(401, { error: "Unauthorized" });
           return;
         }
-        const entry = await commitReport(input.id, { state: input.state, phase: input.phase, clientVersion: input.clientVersion, coopanionVersion: input.coopanionVersion });
+        const entry = await commitReport(input.id, { state: input.state, phase: input.phase, clientVersion: input.clientVersion, coopanionVersion: input.coopanionVersion }, "http");
         reply(200, { score: entry.score });
         return;
       }
       reply(404, { error: "Not found" });
     } catch (error) {
-      reply(error instanceof ReportError || error instanceof FeedbackError ? error.status : error instanceof SyntaxError ? 400 : 500, { error: error instanceof ReportError || error instanceof FeedbackError ? error.message : error instanceof SyntaxError ? "Invalid JSON" : "Request failed" });
+      reply(error instanceof ReportError || error instanceof FeedbackError ? error.status : error instanceof SyntaxError || error instanceof ControlError ? 400 : 500, { error: error instanceof ReportError || error instanceof FeedbackError || error instanceof ControlError ? error.message : error instanceof SyntaxError ? "Invalid JSON" : "Request failed" });
     }
+  };
+  const server = createServer2((req, res) => {
+    void handleRequest(req, res);
   });
+  const adminServer = adminHost ? createAdminServer(adminHost, adminCidr, (req, res) => {
+    void handleRequest(req, res, true);
+  }) : void 0;
   const sockets = new import_websocket_server.default({ noServer: true, maxPayload: TERRARIUM_REPORT_MAX_BYTES, perMessageDeflate: false });
   const alive = /* @__PURE__ */ new Set();
   server.on("upgrade", (req, socket, head) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const id = url.searchParams.get("id") ?? "";
-    const status = url.pathname !== "/api/reports/ws" ? 404 : !idPattern.test(id) || !credentials[id] || !equal(req.headers.authorization?.replace(/^Bearer /, "") ?? "", credentials[id]) ? 401 : 0;
+    const status = url.pathname !== "/api/reports/ws" ? 404 : !idPattern2.test(id) || !credentials[id] || !equal(req.headers.authorization?.replace(/^Bearer /, "") ?? "", credentials[id]) ? 401 : 0;
     if (status) {
       socket.end(`HTTP/1.1 ${status} ${status === 404 ? "Not Found" : "Unauthorized"}\r
 Connection: close\r
@@ -4480,9 +4721,16 @@ Content-Length: 0\r
       return;
     }
     sockets.handleUpgrade(req, socket, head, (ws) => {
+      const group = connections.get(id) ?? /* @__PURE__ */ new Set();
+      group.add(ws);
+      connections.set(id, group);
       alive.add(ws);
       ws.on("pong", () => alive.add(ws));
-      ws.on("close", () => alive.delete(ws));
+      ws.on("close", () => {
+        alive.delete(ws);
+        group.delete(ws);
+        if (!group.size) connections.delete(id);
+      });
       ws.on("error", () => ws.terminate());
       let queue = Promise.resolve(), requireFull = true, requireHashes = false, lastSeq = 0, queued = 0;
       ws.on("message", (raw, binary) => {
@@ -4504,7 +4752,7 @@ Content-Length: 0\r
             requireHashes ||= input.stateHash !== void 0 || input.kind === "delta" && input.baseHash !== void 0;
             if (requireHashes && (!validReportHash(input.stateHash) || input.kind === "delta" && !validReportHash(input.baseHash))) throw new ReportError(409, "Report checksums required", true);
             if (input.kind === "delta" && (requireFull || typeof input.baseRevision !== "string")) throw new ReportError(409, "Full report required", true);
-            const entry = await commitReport(id, { phase: input.phase, clientVersion: input.clientVersion, coopanionVersion: input.coopanionVersion, stateHash: input.stateHash, ...input.kind === "full" ? { state: input.state } : { baseRevision: input.baseRevision, baseHash: input.baseHash, changes: input.changes } });
+            const entry = await commitReport(id, { phase: input.phase, clientVersion: input.clientVersion, coopanionVersion: input.coopanionVersion, stateHash: input.stateHash, ...input.kind === "full" ? { state: input.state } : { baseRevision: input.baseRevision, baseHash: input.baseHash, changes: input.changes } }, "websocket");
             requireFull = false;
             reply = { kind: "ack", seq, revision: entry.reportRevision, score: entry.score, stateHash: reportStateHash(entry.state) };
           } catch (error) {
@@ -4533,9 +4781,33 @@ Content-Length: 0\r
     clearInterval(heartbeat);
     for (const ws of sockets.clients) ws.terminate();
     sockets.close();
-    return close(callback);
+    const pending = [new Promise((resolve, reject) => {
+      close((error) => error ? reject(error) : resolve());
+    })];
+    if (adminServer?.listening) pending.push(new Promise((resolve, reject) => {
+      adminServer.close((error) => error ? reject(error) : resolve());
+    }));
+    void Promise.all(pending).then(() => callback?.(), (error) => callback?.(error));
+    return server;
   };
-  await new Promise((resolve) => server.listen(port, "127.0.0.1", resolve));
+  const listen = (target, targetPort, host) => new Promise((resolve, reject) => {
+    target.once("error", reject);
+    target.listen(targetPort, host, () => {
+      target.off("error", reject);
+      resolve();
+    });
+  });
+  try {
+    if (adminServer) await listen(adminServer, adminPort, adminHost);
+    await listen(server, port, "127.0.0.1");
+  } catch (error) {
+    clearInterval(heartbeat);
+    sockets.close();
+    if (adminServer?.listening) await new Promise((resolve) => {
+      adminServer.close(() => resolve());
+    });
+    throw error;
+  }
   return server;
 }
 if (process.env.TERRARIUM_SERVER_MAIN === "1") void start();

@@ -21,7 +21,11 @@ export interface TerrariumSyncStatus {
   lastError?: string;
   consecutiveFailures: number;
 }
-export interface LeaderboardClientOptions { url: string; id: string; token?: string; credentialsFile: string; kind?: 'land' | 'water'; incrementalReports?: boolean }
+export interface LeaderboardClientOptions {
+  url: string; id: string; token?: string; credentialsFile: string; kind?: 'land' | 'water'; incrementalReports?: boolean;
+  /** New registrations omit id; existing id/token options only select credentials to migrate. */
+  automaticIds?: boolean;
+}
 
 export class LeaderboardClient {
   private credentials: Credentials | undefined;
@@ -37,7 +41,7 @@ export class LeaderboardClient {
 
   status(): TerrariumSyncStatus { return { ...this.syncStatus }; }
 
-  get id(): string | undefined { return this.credentials?.id ?? (this.options.token ? this.options.id : undefined); }
+  get id(): string | undefined { return this.credentials?.id ?? (!this.options.automaticIds && this.options.token ? this.options.id : undefined); }
 
   async feedback(value: unknown, source: 'world' | 'ai'): Promise<TerrariumFeedbackReceipt> {
     const input = parseFeedback(value);
@@ -88,18 +92,41 @@ export class LeaderboardClient {
   }
 
   async restore(): Promise<void> {
-    if (!this.options.url || this.credentials || this.options.token) return;
+    if (!this.options.url || this.credentials || (!this.options.automaticIds && this.options.token)) return;
     const url = new URL(this.options.url);
+    this.credentials = (await this.restoreCredentials(url)).credentials;
+  }
+
+  private key(url: URL): string { return `${url.origin}/${this.options.kind === 'water' ? 'water/' : ''}${!this.options.automaticIds && this.options.id ? `id/${this.options.id}` : 'auto'}`; }
+
+  private async saveCredentials(saved: Record<string, Credentials>): Promise<void> {
+    await mkdir(dirname(this.options.credentialsFile), { recursive: true });
+    const temporary = `${this.options.credentialsFile}.tmp`;
+    await writeFile(temporary, JSON.stringify(saved, null, 2), { mode: 0o600 });
+    await rename(temporary, this.options.credentialsFile);
+  }
+
+  private async restoreCredentials(url: URL): Promise<{ saved: Record<string, Credentials>; credentials?: Credentials }> {
+    let saved: Record<string, Credentials> = Object.create(null);
     try {
       const value: unknown = parseJson(await readFile(this.options.credentialsFile, 'utf8'));
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid leaderboard credentials file');
-      const saved = Object.assign(Object.create(null), value);
-      const credentials = saved[this.key(url)];
-      if (credentials) this.credentials = parseCredentials(credentials, this.options.id);
+      saved = Object.assign(Object.create(null), value);
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    const key = this.key(url);
+    if (saved[key]) return { saved, credentials: parseCredentials(saved[key], this.options.automaticIds ? '' : this.options.id) };
+    if (!this.options.automaticIds) return { saved };
+    const prefix = `${url.origin}/${this.options.kind === 'water' ? 'water/' : ''}id/`;
+    const legacyKey = prefix + this.options.id;
+    const candidates = Object.keys(saved).filter(candidate => candidate.startsWith(prefix));
+    let credentials: Credentials | undefined;
+    if (this.options.token) credentials = parseCredentials({ id: this.options.id, token: this.options.token }, this.options.id);
+    else if (saved[legacyKey]) credentials = parseCredentials(saved[legacyKey], this.options.id);
+    else if (candidates.length === 1) credentials = parseCredentials(saved[candidates[0]], candidates[0].slice(prefix.length));
+    else if (candidates.length > 1) throw new Error('Multiple saved leaderboard identities; select the existing box in report-credentials.json by copying its credentials to the server auto key before restarting.');
+    if (credentials) { saved[key] = credentials; await this.saveCredentials(saved); }
+    return { saved, credentials };
   }
-
-  private key(url: URL): string { return `${url.origin}/${this.options.kind === 'water' ? 'water/' : ''}${this.options.id ? `id/${this.options.id}` : 'auto'}`; }
 
   close(): void { this.reportSocket?.close(); this.reportSocket = undefined; }
 
@@ -149,31 +176,32 @@ export class LeaderboardClient {
   }
 
   private async authorizeOnce(url: URL): Promise<Credentials> {
-    if (this.options.token) {
+    if (!this.options.automaticIds && this.options.id && !/^[a-z0-9][a-z0-9_-]{1,39}$/.test(this.options.id)) throw new Error('Invalid leaderboard box ID');
+    if (!this.options.automaticIds && this.options.token) {
       if (!this.options.id) throw new Error('A configured report token requires a box ID');
       return { id: this.options.id, token: this.options.token };
     }
     if (this.credentials) return this.credentials;
     const key = this.key(url);
-    let saved: Record<string, Credentials> = Object.create(null);
-    try {
-      const value: unknown = parseJson(await readFile(this.options.credentialsFile, 'utf8'));
-      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid leaderboard credentials file');
-      saved = Object.assign(Object.create(null), value);
-    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-    if (saved[key]) {
-      this.credentials = parseCredentials(saved[key], this.options.id);
-      return this.credentials;
+    const { saved, credentials: existing } = await this.restoreCredentials(url);
+    if (existing) {
+      this.credentials = existing;
+      return existing;
     }
-    const response = await request(new URL('/api/registrations', url), 'POST', { ...(this.options.id ? { id: this.options.id } : {}), kind: this.options.kind ?? 'land' });
+    const requested = this.options.automaticIds ? '' : this.options.id;
+    const response = await request(new URL('/api/registrations', url), 'POST', { ...(requested ? { id: requested } : {}), kind: this.options.kind ?? 'land' });
     if (response.status === 409) throw new Error('Box ID is already registered; supply its token or choose another ID');
-    if (response.status !== 201) throw new Error(`Leaderboard registration HTTP ${response.status}`);
-    const credentials = parseCredentials(parseJson(response.body), this.options.id);
+    if (response.status !== 201) {
+      let reason = '';
+      try {
+        const value = parseJson(response.body) as { error?: unknown } | null;
+        if (typeof value?.error === 'string' && ['Invalid registration', 'Invalid box ID', 'Invalid box kind', 'Invalid JSON', 'Registration too large'].includes(value.error)) reason = `: ${value.error}`;
+      } catch {}
+      throw new Error(`Leaderboard registration HTTP ${response.status}${reason}`);
+    }
+    const credentials = parseCredentials(parseJson(response.body), requested);
     saved[key] = credentials;
-    await mkdir(dirname(this.options.credentialsFile), { recursive: true });
-    const temporary = `${this.options.credentialsFile}.tmp`;
-    await writeFile(temporary, JSON.stringify(saved, null, 2), { mode: 0o600 });
-    await rename(temporary, this.options.credentialsFile);
+    await this.saveCredentials(saved);
     this.credentials = credentials;
     return credentials;
   }

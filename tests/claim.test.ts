@@ -4,8 +4,10 @@ import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import type { ToolCallContext, WorldHost } from 'cortico/core/types.ts';
 import { start } from '../server/index.ts';
-import { TERRARIUM_DEFAULTS } from '../src/config.ts';
+import { TERRARIUM_CONFIG_GROUP, TERRARIUM_DEFAULTS } from '../src/config.ts';
 import { TerrariumWorld } from '../src/world.ts';
+import { LeaderboardClient } from '../src/leaderboard.ts';
+import { newState, saveState } from '../src/state.ts';
 
 it('registers each claimed habitat once across repeated tool calls and World restarts', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'terrarium-claim-'));
@@ -99,4 +101,60 @@ it('does not claim or register anything when starting and restarting with no sav
     }
     await expect(stat(options.stateFile)).rejects.toMatchObject({ code: 'ENOENT' });
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+it.each(['https://boxes.example.test', 'custom-land'])('ignores the retired ID %s for registration and preserves automatically assigned identities on restart', async legacyId => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-claim-id-'));
+  const server = await start({ port: 0, dataFile: join(dir, 'server/leaderboard.json'), credentialsFile: join(dir, 'server/credentials.json') });
+  const address = server.address(); if (!address || typeof address === 'string') throw new Error('Missing port');
+  const cfg = { ...TERRARIUM_DEFAULTS, leaderboardUrl: `http://127.0.0.1:${address.port}`, leaderboardId: legacyId };
+  const options = { cfg, stateFile: join(dir, 'local/land/state.json'), waterStateFile: join(dir, 'local/water/state.json'), timezone: 'Asia/Shanghai' };
+  const host = { log: { warn() {} }, async pushEvent(event: unknown) { return event; } } as unknown as WorldHost;
+  let registrations = 0;
+  server.on('request', req => { if (req.method === 'POST' && req.url === '/api/registrations') registrations++; });
+  let world = new TerrariumWorld(options);
+  const call = async (name: string, args: Record<string, unknown> = {}) => JSON.parse(String(await world.tools().find(tool => tool.name === name)!.handler(args, {} as ToolCallContext)));
+  try {
+    await world.start(host);
+    expect(Object.hasOwn(TERRARIUM_CONFIG_GROUP.schema.properties, 'worlds.terrarium.leaderboardId')).toBe(false);
+    expect(Object.hasOwn(TERRARIUM_DEFAULTS, 'leaderboardId')).toBe(false);
+    expect(registrations).toBe(0);
+    const land = await call('terrarium_claim', { habitat: 'land', name: '显示名称' });
+    expect(land).toMatchObject({ claimed: true, name: '显示名称' }); expect(land.id).toMatch(/^box-/);
+    const water = await call('terrarium_claim', { habitat: 'water', name: '水箱' });
+    const waterCredentials = await readFile(join(dir, 'local/water/report-credentials.json'), 'utf8');
+    expect(registrations).toBe(2);
+    await world.stop(); world = new TerrariumWorld({ ...options, cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: cfg.leaderboardUrl } }); await world.start(host);
+    expect(await call('terrarium_claim', { habitat: 'land' })).toMatchObject({ id: land.id });
+    expect(land.id).not.toBe(water.id);
+    expect(await call('terrarium_inspect', { habitat: 'water' })).toMatchObject({ id: water.id, name: '水箱' });
+    expect(await readFile(join(dir, 'local/water/report-credentials.json'), 'utf8')).toBe(waterCredentials);
+    expect(registrations).toBe(2);
+  } finally {
+    await world.stop(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); await rm(dir, { recursive: true, force: true });
+  }
+});
+
+it('restores an existing named land box and its token when the ID config is absent', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-claim-legacy-'));
+  const credentialsFile = join(dir, 'server/credentials.json'), server = await start({ port: 0, dataFile: join(dir, 'server/leaderboard.json'), credentialsFile });
+  const address = server.address(); if (!address || typeof address === 'string') throw new Error('Missing port');
+  const url = `http://127.0.0.1:${address.port}`, stateFile = join(dir, 'local/land/state.json'), localCredentials = join(dir, 'local/land/report-credentials.json');
+  const old = new LeaderboardClient({ url, id: 'existing-land', credentialsFile: localCredentials });
+  const state = newState(Date.now()); state.name = '保留的地箱';
+  await old.report(state, 'day'); old.close(); await saveState(stateFile, state);
+  const original = JSON.parse(await readFile(localCredentials, 'utf8')), serverBefore = await readFile(credentialsFile, 'utf8');
+  const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: url }, stateFile, timezone: 'Asia/Shanghai' });
+  const host = { log: { warn() {} }, async pushEvent(event: unknown) { return event; } } as unknown as WorldHost;
+  try {
+    await world.start(host);
+    const claim = world.tools().find(tool => tool.name === 'terrarium_claim')!;
+    expect(JSON.parse(String(await claim.handler({ habitat: 'land' }, {} as ToolCallContext)))).toMatchObject({ id: 'existing-land', name: state.name });
+    const migrated = JSON.parse(await readFile(localCredentials, 'utf8'));
+    expect(migrated[url + '/auto']).toEqual(original[url + '/id/existing-land']);
+    expect(migrated[url + '/id/existing-land']).toEqual(original[url + '/id/existing-land']);
+    expect(await readFile(credentialsFile, 'utf8')).toBe(serverBefore);
+  } finally {
+    await world.stop(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); await rm(dir, { recursive: true, force: true });
+  }
 });

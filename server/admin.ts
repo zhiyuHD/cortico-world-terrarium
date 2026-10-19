@@ -1,25 +1,28 @@
+import { realpathSync } from 'node:fs';
+import { privateAddress } from './admin-network.ts';
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
 export async function runAdmin(args: string[]): Promise<unknown> {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
-    server: { type: 'string', default: 'http://127.0.0.1:8787' }, 'token-file': { type: 'string' }, title: { type: 'string' }, text: { type: 'string' }, 'text-file': { type: 'string' }, to: { type: 'string', multiple: true }, 'expires-hours': { type: 'string', default: '168' }, after: { type: 'string', default: '0' }, help: { type: 'boolean' },
+    server: { type: 'string', default: process.env.CORTICO_TERRARIUM_ADMIN_URL ?? (process.env.CORTICO_TERRARIUM_ADMIN_HOST ? `http://${process.env.CORTICO_TERRARIUM_ADMIN_HOST}:${process.env.CORTICO_TERRARIUM_ADMIN_PORT ?? 8788}` : 'http://127.0.0.1:8787') }, 'token-file': { type: 'string' }, title: { type: 'string' }, text: { type: 'string' }, 'text-file': { type: 'string' }, to: { type: 'string', multiple: true }, 'expires-hours': { type: 'string', default: '168' }, after: { type: 'string', default: '0' }, at: { type: 'string' }, help: { type: 'boolean' },
   } });
-  if (values.help) return 'publish --text "公告内容" [--title "标题"] [--to box-id] [--expires-hours 168] | list | revoke <id> | feedback-list [--after <id>] | feedback-resolve <id>\nOptional: --text-file <file>, --server <url>, --token-file <file>. Default token file: ./data/admin-token.';
+  if (values.help) return 'publish --text "公告内容" [--title "标题"] [--to box-id] [--expires-hours 168] | list | revoke <id> | feedback-list [--after <id>] | feedback-resolve <id> | controls | http-push on|off [--at <ISO timestamp with timezone>] | http-push cancel\nOptional: --text-file <file>, --server <url>, --token-file <file>. Default token file: ./data/admin-token.';
   const [command, id] = positionals;
-  if (!['publish', 'list', 'revoke', 'feedback-list', 'feedback-resolve'].includes(command) || (['revoke', 'feedback-resolve'].includes(command) ? !/^[1-9][0-9]*$/.test(id ?? '') || positionals.length !== 2 : positionals.length !== 1)) throw new Error('Unknown admin command or invalid ID; see --help');
-  const url = new URL(command.startsWith('feedback-') ? `/api/admin/feedback${command === 'feedback-resolve' ? `/${id}/resolve` : ''}` : `/api/admin/announcements${command === 'revoke' ? `/${id}` : ''}`, values.server);
+  if (!['publish', 'list', 'revoke', 'feedback-list', 'feedback-resolve', 'controls', 'http-push'].includes(command) || (command === 'http-push' ? !['on', 'off', 'cancel'].includes(id) || positionals.length !== 2 : ['revoke', 'feedback-resolve'].includes(command) ? !/^[1-9][0-9]*$/.test(id ?? '') || positionals.length !== 2 : positionals.length !== 1)) throw new Error('Unknown admin command or invalid ID; see --help');
+  if (values.at !== undefined && (command !== 'http-push' || id === 'cancel')) throw new Error('--at requires http-push on or off');
+  const url = new URL(command === 'controls' ? '/api/admin/controls' : command === 'http-push' ? '/api/admin/controls/http-push' : command.startsWith('feedback-') ? `/api/admin/feedback${command === 'feedback-resolve' ? `/${id}/resolve` : ''}` : `/api/admin/announcements${command === 'revoke' ? `/${id}` : ''}`, values.server);
   if (command === 'feedback-list') {
     const after = Number(values.after);
     if (!Number.isSafeInteger(after) || after < 0) throw new Error('Feedback cursor must be a nonnegative integer');
     url.searchParams.set('after', String(after));
   }
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) throw new Error('Remote admin requests require HTTPS');
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && (['localhost', '[::1]'].includes(url.hostname) || privateAddress(url.hostname)))) throw new Error('Public admin requests require HTTPS');
   const token = process.env.CORTICO_TERRARIUM_ADMIN_TOKEN ?? (await readFile(values['token-file'] ?? process.env.CORTICO_TERRARIUM_ADMIN_TOKEN_FILE ?? './data/admin-token', 'utf8')).trim();
   if (!token) throw new Error('Admin token is empty');
   let body: string | undefined;
+  if (command === 'http-push') body = JSON.stringify(id === 'cancel' ? { cancel: true } : { enabled: id === 'on', ...(values.at === undefined ? {} : { at: values.at }) });
   if (command === 'publish') {
     if (values.text !== undefined && values['text-file'] !== undefined) throw new Error('Supply --text or --text-file');
     const hours = Number(values['expires-hours']);
@@ -28,12 +31,12 @@ export async function runAdmin(args: string[]): Promise<unknown> {
     const targets = values.to?.flatMap(value => value.split(',').map(id => id.trim()).filter(Boolean));
     body = JSON.stringify({ text, title: values.title, targets: targets ? [...new Set(targets)] : 'all', expiresAt: new Date(Date.now() + hours * 3600000).toISOString() });
   }
-  const response = await fetch(url, { method: command === 'publish' || command === 'feedback-resolve' ? 'POST' : command === 'revoke' ? 'DELETE' : 'GET', headers: { authorization: `Bearer ${token}`, ...(body ? { 'content-type': 'application/json' } : {}) }, body, signal: AbortSignal.timeout(10000) });
+  const response = await fetch(url, { method: command === 'http-push' ? 'PUT' : command === 'publish' || command === 'feedback-resolve' ? 'POST' : command === 'revoke' ? 'DELETE' : 'GET', headers: { authorization: `Bearer ${token}`, ...(body ? { 'content-type': 'application/json' } : {}) }, body, redirect: 'error', signal: AbortSignal.timeout(10000) });
   const result = await response.json();
   if (!response.ok) throw new Error(`Admin HTTP ${response.status}: ${JSON.stringify(result)}`);
   return result;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.argv[1])) {
   void runAdmin(process.argv.slice(2)).then(result => console.log(typeof result === 'string' ? result : JSON.stringify(result, null, 2))).catch(error => { console.error((error as Error).message); process.exitCode = 1; });
 }
