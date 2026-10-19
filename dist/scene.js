@@ -1,3 +1,9 @@
+// src/flight.ts
+var TERRARIUM_FLY_SPECIES = ["fruit_fly", "mosquito", "moth"];
+function isFlying(species) {
+  return TERRARIUM_FLY_SPECIES.includes(species);
+}
+
 // src/habitat.ts
 var TERRARIUM_PLANT_RECOVERED_HEALTH = 35;
 var TERRARIUM_PLANT_REQUIREMENTS = {
@@ -958,6 +964,31 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
     const { x, y } = plotPosition(nest.x, nest.y);
     drawAntNest(g, x, y, night);
   }
+  for (const web of state.webs ?? []) {
+    const { x, y } = plotPosition(web.x, web.y);
+    g.save();
+    g.translate(x, y - 38);
+    g.strokeStyle = night ? "#cfdfed9c" : "#fff8e5b8";
+    g.lineWidth = 1;
+    for (let i = 0; i < 8; i++) {
+      const angle = i * Math.PI / 4;
+      g.beginPath();
+      g.moveTo(0, 0);
+      g.lineTo(Math.cos(angle) * 28, Math.sin(angle) * 28);
+      g.stroke();
+    }
+    for (const radius of [9, 18, 27]) {
+      g.beginPath();
+      for (let i = 0; i <= 8; i++) {
+        const angle = i * Math.PI / 4;
+        const px = Math.cos(angle) * radius, py = Math.sin(angle) * radius;
+        if (!i) g.moveTo(px, py);
+        else g.lineTo(px, py);
+      }
+      g.stroke();
+    }
+    g.restore();
+  }
   for (const food of state.food ?? []) {
     const { x, y } = plotPosition(food.x, food.y);
     g.fillStyle = "#e4b66c";
@@ -1029,12 +1060,41 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
   const surfaceBugs = state.bugs.filter((bug) => !bug.inside);
   const locations = bugPositions(surfaceBugs, positions);
   for (const bug of surfaceBugs) {
-    const { x, y } = locations.get(bug.id);
+    const location = locations.get(bug.id);
+    const x = location.x, y = location.y - (isFlying(bug.species) ? 30 : 0);
     g.fillStyle = "rgba(33,28,20,.26)";
     g.beginPath();
     g.ellipse(x, y + 9, 14, 4, 0, 0, Math.PI * 2);
     g.fill();
-    if (bug.species === "spider") {
+    if (isFlying(bug.species)) {
+      g.fillStyle = bug.species === "moth" ? "#d9bfa1" : "rgba(228,246,247,.85)";
+      const span = bug.species === "moth" ? 12 : bug.species === "mosquito" ? 8 : 7;
+      for (const side of [-1, 1]) {
+        g.beginPath();
+        g.ellipse(x + side * span * 0.6, y - 3, span, span * 0.55, side * -0.55, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.fillStyle = bug.species === "fruit_fly" ? "#be8056" : bug.species === "moth" ? "#8a6851" : "#465357";
+      g.beginPath();
+      g.ellipse(x, y, 3, bug.species === "mosquito" ? 8 : 6, 0, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = "#5d5149";
+      g.lineWidth = 1;
+      for (const side of [-1, 1]) {
+        g.beginPath();
+        g.moveTo(x, y - 5);
+        g.lineTo(x + side * 4, y - 11);
+        g.stroke();
+      }
+      if (bug.species === "moth") {
+        g.fillStyle = "#97745c";
+        for (const side of [-1, 1]) {
+          g.beginPath();
+          g.arc(x + side * 9, y - 5, 2.4, 0, Math.PI * 2);
+          g.fill();
+        }
+      }
+    } else if (bug.species === "spider") {
       g.strokeStyle = "#282a36";
       g.lineWidth = 2.4;
       for (const side of [-1, 1]) for (let i = -1; i <= 1; i++) {

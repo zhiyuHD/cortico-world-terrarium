@@ -2297,7 +2297,7 @@ var require_websocket = __commonJS({
     var http = __require("http");
     var net = __require("net");
     var tls = __require("tls");
-    var { randomBytes: randomBytes2, createHash: createHash2 } = __require("crypto");
+    var { randomBytes: randomBytes2, createHash: createHash3 } = __require("crypto");
     var { Duplex, Readable } = __require("stream");
     var { URL: URL2 } = __require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -2978,7 +2978,7 @@ var require_websocket = __commonJS({
           abortHandshake(websocket, socket, "Invalid Upgrade header");
           return;
         }
-        const digest = createHash2("sha1").update(key + GUID).digest("base64");
+        const digest = createHash3("sha1").update(key + GUID).digest("base64");
         if (res.headers["sec-websocket-accept"] !== digest) {
           abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
           return;
@@ -3347,7 +3347,7 @@ var require_websocket_server = __commonJS({
     var EventEmitter = __require("events");
     var http = __require("http");
     var { Duplex } = __require("stream");
-    var { createHash: createHash2 } = __require("crypto");
+    var { createHash: createHash3 } = __require("crypto");
     var extension2 = require_extension();
     var PerMessageDeflate2 = require_permessage_deflate();
     var subprotocol2 = require_subprotocol();
@@ -3654,7 +3654,7 @@ var require_websocket_server = __commonJS({
           );
         }
         if (this._state > RUNNING) return abortHandshake(socket, 503);
-        const digest = createHash2("sha1").update(key + GUID).digest("base64");
+        const digest = createHash3("sha1").update(key + GUID).digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
           "Upgrade: websocket",
@@ -3892,9 +3892,69 @@ var FeedbackStore = class {
   }
 };
 
-// server/announcements.ts
-import { mkdir as mkdir2, readFile as readFile2, rename as rename2, writeFile as writeFile2 } from "node:fs/promises";
+// server/protocol-notices.ts
+import { readFile as readFile2, mkdir as mkdir2, writeFile as writeFile2, rename as rename2 } from "node:fs/promises";
 import { dirname as dirname2 } from "node:path";
+import { createHash as createHash2 } from "node:crypto";
+var ProtocolNotices = class {
+  constructor(file, allocateId) {
+    this.file = file;
+    this.allocateId = allocateId;
+  }
+  file;
+  allocateId;
+  clients = /* @__PURE__ */ Object.create(null);
+  queue = Promise.resolve();
+  async restore() {
+    try {
+      const saved = JSON.parse(await readFile2(this.file, "utf8"));
+      if (!saved || typeof saved !== "object" || Array.isArray(saved)) throw new Error("Invalid protocol notice identities");
+      this.clients = Object.assign(/* @__PURE__ */ Object.create(null), saved);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    if (!this.clients || Object.values(this.clients).some((client) => !client || !["http", "websocket"].includes(client.transport) || client.version !== void 0 && !validClientVersion(client.version) || client.id !== void 0 && (!Number.isSafeInteger(client.id) || client.id < 1 || typeof client.key !== "string" || !Number.isFinite(Date.parse(client.createdAt))))) throw new Error("Invalid protocol notice identities");
+  }
+  client(id) {
+    return this.clients[id];
+  }
+  serial(work) {
+    const result = this.queue.then(work);
+    this.queue = result.catch(() => {
+    });
+    return result;
+  }
+  observe(id, version2, transport) {
+    return this.serial(async () => {
+      const declared = validClientVersion(version2) ? version2 : void 0;
+      if (this.clients[id]?.version === declared && this.clients[id]?.transport === transport) return;
+      this.clients[id] = { ...this.clients[id], version: declared, transport };
+      await this.save();
+    });
+  }
+  notice(id, text) {
+    return this.serial(async () => {
+      const client = this.clients[id];
+      const key = createHash2("sha256").update(text).digest("hex");
+      if (client.key !== key || !client.id || Date.parse(client.createdAt) + 30 * 864e5 <= Date.now()) {
+        client.id = await this.allocateId();
+        client.key = key;
+        client.createdAt = (/* @__PURE__ */ new Date()).toISOString();
+        await this.save();
+      }
+      return { id: client.id, title: "\u5BA2\u6237\u7AEF\u9700\u8981\u5347\u7EA7", text, targets: [id], createdAt: client.createdAt, expiresAt: new Date(Date.parse(client.createdAt) + 30 * 864e5).toISOString() };
+    });
+  }
+  async save() {
+    await mkdir2(dirname2(this.file), { recursive: true });
+    await writeFile2(`${this.file}.tmp`, JSON.stringify(this.clients), { mode: 384 });
+    await rename2(`${this.file}.tmp`, this.file);
+  }
+};
+
+// server/announcements.ts
+import { mkdir as mkdir3, readFile as readFile3, rename as rename3, writeFile as writeFile3 } from "node:fs/promises";
+import { dirname as dirname3 } from "node:path";
 
 // src/announcements.ts
 var TERRARIUM_MAX_ANNOUNCEMENTS = 2e3;
@@ -3915,7 +3975,7 @@ var AnnouncementStore = class {
   async restore() {
     let state;
     try {
-      state = JSON.parse(await readFile2(this.file, "utf8"));
+      state = JSON.parse(await readFile3(this.file, "utf8"));
     } catch (error) {
       if (error.code === "ENOENT") return;
       throw error;
@@ -3947,14 +4007,11 @@ var AnnouncementStore = class {
       return notice;
     });
   }
-  ensureUpgradeNotice(id, text) {
+  allocateProtocolId() {
     return this.serial(async () => {
-      const now = Date.now();
-      if (this.state.announcements.some((notice2) => notice2.title === "\u5BA2\u6237\u7AEF\u9700\u8981\u5347\u7EA7" && notice2.text === text && Array.isArray(notice2.targets) && notice2.targets.includes(id) && Date.parse(notice2.expiresAt) > now)) return;
-      const retained = this.state.announcements.filter((notice2) => Date.parse(notice2.expiresAt) > now);
-      if (retained.length >= TERRARIUM_MAX_ANNOUNCEMENTS) return;
-      const notice = { id: this.state.nextId, title: "\u5BA2\u6237\u7AEF\u9700\u8981\u5347\u7EA7", text, targets: [id], createdAt: new Date(now).toISOString(), expiresAt: new Date(now + 30 * 864e5).toISOString() };
-      await this.save({ nextId: notice.id + 1, announcements: [...retained, notice] });
+      const id = this.state.nextId;
+      await this.save({ ...this.state, nextId: id + 1 });
+      return id;
     });
   }
   revoke(id) {
@@ -3971,16 +4028,16 @@ var AnnouncementStore = class {
     return result;
   }
   async save(state) {
-    await mkdir2(dirname2(this.file), { recursive: true });
-    await writeFile2(`${this.file}.tmp`, JSON.stringify(state), { mode: 384 });
-    await rename2(`${this.file}.tmp`, this.file);
+    await mkdir3(dirname3(this.file), { recursive: true });
+    await writeFile3(`${this.file}.tmp`, JSON.stringify(state), { mode: 384 });
+    await rename3(`${this.file}.tmp`, this.file);
     this.state = state;
   }
 };
 
 // server/controls.ts
-import { mkdir as mkdir3, readFile as readFile3, rename as rename3, writeFile as writeFile3 } from "node:fs/promises";
-import { dirname as dirname3 } from "node:path";
+import { mkdir as mkdir4, readFile as readFile4, rename as rename4, writeFile as writeFile4 } from "node:fs/promises";
+import { dirname as dirname4 } from "node:path";
 var timestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
 var timestamp = (value) => typeof value === "string" && timestampPattern.test(value) && Number.isFinite(Date.parse(value));
 var object2 = (value) => !!value && typeof value === "object" && !Array.isArray(value);
@@ -4005,7 +4062,7 @@ var ControlStore = class {
   async restore() {
     let value;
     try {
-      value = JSON.parse(await readFile3(this.file, "utf8"));
+      value = JSON.parse(await readFile4(this.file, "utf8"));
     } catch (error) {
       if (error.code === "ENOENT") return;
       throw error;
@@ -4028,9 +4085,9 @@ var ControlStore = class {
     const result = this.queue.then(async () => {
       const state = this.get();
       work(state);
-      await mkdir3(dirname3(this.file), { recursive: true });
-      await writeFile3(`${this.file}.tmp`, JSON.stringify(state), { mode: 384 });
-      await rename3(`${this.file}.tmp`, this.file);
+      await mkdir4(dirname4(this.file), { recursive: true });
+      await writeFile4(`${this.file}.tmp`, JSON.stringify(state), { mode: 384 });
+      await rename4(`${this.file}.tmp`, this.file);
       this.state = state;
       return this.get();
     });
@@ -4072,7 +4129,7 @@ var ControlStore = class {
 import { createServer as createServer2 } from "node:http";
 
 // server/release-assets.ts
-import { readFile as readFile4 } from "node:fs/promises";
+import { readFile as readFile5 } from "node:fs/promises";
 import { join } from "node:path";
 
 // server/releases.ts
@@ -4103,7 +4160,7 @@ async function historicalAsset(root, path, privateAdmin) {
   if (!asset || match[2] === "/") return;
   const file = join(root, "versions", match[1], ...privateAdmin ? ["console", asset[0]] : [asset[0]]);
   try {
-    return { bytes: await readFile4(file), type: asset[1] };
+    return { bytes: await readFile5(file), type: asset[1] };
   } catch (error) {
     if (error.code === "ENOENT") return;
     throw error;
@@ -4155,8 +4212,8 @@ function createAdminServer(host, cidr, handler) {
 }
 
 // server/index.ts
-import { readFile as readFile5, mkdir as mkdir4, rename as rename4, writeFile as writeFile4 } from "node:fs/promises";
-import { dirname as dirname4 } from "node:path";
+import { readFile as readFile6, mkdir as mkdir5, rename as rename5, writeFile as writeFile5 } from "node:fs/promises";
+import { dirname as dirname5 } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 
 // node_modules/.pnpm/ws@8.22.0/node_modules/ws/wrapper.mjs
@@ -4168,6 +4225,12 @@ var import_sender = __toESM(require_sender(), 1);
 var import_subprotocol = __toESM(require_subprotocol(), 1);
 var import_websocket = __toESM(require_websocket(), 1);
 var import_websocket_server = __toESM(require_websocket_server(), 1);
+
+// src/flight.ts
+var TERRARIUM_FLY_SPECIES = ["fruit_fly", "mosquito", "moth"];
+function isFlying(species) {
+  return TERRARIUM_FLY_SPECIES.includes(species);
+}
 
 // src/colony.ts
 var TERRARIUM_NEST_SIZE = 4;
@@ -4201,6 +4264,8 @@ var TERRARIUM_MAX_NAME_LENGTH = 64;
 function validName(value) {
   return typeof value === "string" && value === value.trim() && Array.from(value).length >= 1 && Array.from(value).length <= TERRARIUM_MAX_NAME_LENGTH && !/[\u0000-\u001f\u007f-\u009f]/.test(value);
 }
+var TERRARIUM_WEB_LIFETIME_MS = 6 * 60 * 6e4;
+var TERRARIUM_WEBS_PER_SPIDER = 3;
 var HOUR_MS = 60 * 6e4;
 var MAX_CATCHUP_MS = 30 * 24 * HOUR_MS;
 function newState(nowMs) {
@@ -4271,7 +4336,7 @@ function validReplays(state) {
 function validState(value) {
   if (!value || typeof value !== "object") return false;
   const state = value;
-  return state.version === 3 && (state.name === void 0 || validName(state.name)) && validHabitat(state) && validReplays(state) && Number.isFinite(state.updatedAtMs) && Number.isSafeInteger(state.nextId) && state.nextId >= 1 && Array.isArray(state.plants) && state.plants.length <= 12 && state.plants.every((p) => p && typeof p.id === "string" && p.id.length <= 32 && ["fern", "clover", "moss", "basil", "bean"].includes(p.species) && inGrid(p.x, p.y) && Number.isFinite(p.moisture) && p.moisture >= 0 && p.moisture <= 100 && Number.isFinite(p.growthHours) && p.growthHours >= 0 && Number.isInteger(p.stage) && p.stage >= 0 && p.stage <= 3 && typeof p.dry === "boolean" && Number.isFinite(p.health) && p.health >= 0 && p.health <= 100 && (p.healthWarning === void 0 || typeof p.healthWarning === "boolean")) && Array.isArray(state.seeds) && state.seeds.length <= 12 && state.plants.length + state.seeds.length <= 12 && state.seeds.every((s) => s && typeof s.id === "string" && ["moss", "basil", "bean"].includes(s.species) && inGrid(s.x, s.y) && Number.isFinite(s.ageHours) && s.ageHours >= 0) && Array.isArray(state.bugs) && state.bugs.length <= 12 && state.bugs.every((b) => b && typeof b.id === "string" && ["aphid", "beetle", "spider", "ant"].includes(b.species) && inGrid(b.x, b.y) && Number.isFinite(b.energy) && b.energy >= 0 && b.energy <= 100 && (b.hunger === void 0 || Number.isFinite(b.hunger) && b.hunger >= 0 && b.hunger <= 100) && (b.carrying === void 0 || b.species === "ant" && Number.isInteger(b.carrying) && b.carrying >= 0 && b.carrying <= 5) && Number.isFinite(b.ageHours) && b.ageHours >= 0) && (state.eggs === void 0 || Array.isArray(state.eggs) && state.eggs.length <= 12 && state.eggs.every((egg) => egg && typeof egg.id === "string" && egg.id.length <= 32 && ["beetle", "spider", "ant"].includes(egg.species) && inGrid(egg.x, egg.y) && Number.isFinite(egg.laidAtMs) && egg.laidAtMs <= state.updatedAtMs && Number.isFinite(egg.hatchesAtMs) && egg.hatchesAtMs > egg.laidAtMs && egg.hatchesAtMs <= egg.laidAtMs + 6 * HOUR_MS)) && state.bugs.length + (state.eggs?.length ?? 0) <= 12 && (state.nests === void 0 || Array.isArray(state.nests) && state.nests.length <= 5 && state.nests.every((nest) => nest && typeof nest.id === "string" && nest.id.length <= 32 && inGrid(nest.x, nest.y) && Number.isInteger(nest.depth) && nest.depth >= 1 && nest.depth <= 5 && Number.isInteger(nest.food) && nest.food >= 0 && nest.food <= nest.depth * 20) && new Set(state.nests.map((nest) => `${nest.x},${nest.y}`)).size === state.nests.length) && (state.food === void 0 || Array.isArray(state.food) && state.food.length <= 20 && state.food.every((food) => food && typeof food.id === "string" && food.id.length <= 32 && inGrid(food.x, food.y) && Number.isInteger(food.portions) && food.portions >= 1 && food.portions <= 10 && Number.isFinite(food.droppedAtMs) && food.droppedAtMs <= state.updatedAtMs)) && Array.isArray(state.items) && state.items.length === 2 && ["coin", "pebble"].every((id) => state.items.filter((item) => item.id === id && inGrid(item.x, item.y)).length === 1) && !(state.items[0].x === state.items[1].x && state.items[0].y === state.items[1].y) && new Set([...state.plants, ...state.seeds, ...state.bugs, ...state.eggs ?? [], ...state.nests ?? [], ...state.food ?? []].map((v) => v.id)).size === state.plants.length + state.seeds.length + state.bugs.length + (state.eggs?.length ?? 0) + (state.nests?.length ?? 0) + (state.food?.length ?? 0) && new Set([...state.plants, ...state.seeds].map((v) => `${v.x},${v.y}`)).size === state.plants.length + state.seeds.length && validColony(state);
+  return state.version === 3 && (state.name === void 0 || validName(state.name)) && validHabitat(state) && validReplays(state) && Number.isFinite(state.updatedAtMs) && Number.isSafeInteger(state.nextId) && state.nextId >= 1 && Array.isArray(state.plants) && state.plants.length <= 12 && state.plants.every((p) => p && typeof p.id === "string" && p.id.length <= 32 && ["fern", "clover", "moss", "basil", "bean"].includes(p.species) && inGrid(p.x, p.y) && Number.isFinite(p.moisture) && p.moisture >= 0 && p.moisture <= 100 && Number.isFinite(p.growthHours) && p.growthHours >= 0 && Number.isInteger(p.stage) && p.stage >= 0 && p.stage <= 3 && typeof p.dry === "boolean" && Number.isFinite(p.health) && p.health >= 0 && p.health <= 100 && (p.healthWarning === void 0 || typeof p.healthWarning === "boolean")) && Array.isArray(state.seeds) && state.seeds.length <= 12 && state.plants.length + state.seeds.length <= 12 && state.seeds.every((s) => s && typeof s.id === "string" && ["moss", "basil", "bean"].includes(s.species) && inGrid(s.x, s.y) && Number.isFinite(s.ageHours) && s.ageHours >= 0) && Array.isArray(state.bugs) && state.bugs.length <= 12 && state.bugs.every((b) => b && typeof b.id === "string" && (["aphid", "beetle", "spider", "ant"].includes(b.species) || isFlying(b.species)) && inGrid(b.x, b.y) && Number.isFinite(b.energy) && b.energy >= 0 && b.energy <= 100 && (b.hunger === void 0 || Number.isFinite(b.hunger) && b.hunger >= 0 && b.hunger <= 100) && (b.carrying === void 0 || b.species === "ant" && Number.isInteger(b.carrying) && b.carrying >= 0 && b.carrying <= 5) && Number.isFinite(b.ageHours) && b.ageHours >= 0) && (state.eggs === void 0 || Array.isArray(state.eggs) && state.eggs.length <= 12 && state.eggs.every((egg) => egg && typeof egg.id === "string" && egg.id.length <= 32 && (["beetle", "spider", "ant"].includes(egg.species) || isFlying(egg.species)) && inGrid(egg.x, egg.y) && Number.isFinite(egg.laidAtMs) && egg.laidAtMs <= state.updatedAtMs && Number.isFinite(egg.hatchesAtMs) && egg.hatchesAtMs > egg.laidAtMs && egg.hatchesAtMs <= egg.laidAtMs + 6 * HOUR_MS)) && state.bugs.length + (state.eggs?.length ?? 0) <= 12 && (state.nests === void 0 || Array.isArray(state.nests) && state.nests.length <= 5 && state.nests.every((nest) => nest && typeof nest.id === "string" && nest.id.length <= 32 && inGrid(nest.x, nest.y) && Number.isInteger(nest.depth) && nest.depth >= 1 && nest.depth <= 5 && Number.isInteger(nest.food) && nest.food >= 0 && nest.food <= nest.depth * 20) && new Set(state.nests.map((nest) => `${nest.x},${nest.y}`)).size === state.nests.length) && (state.food === void 0 || Array.isArray(state.food) && state.food.length <= 20 && state.food.every((food) => food && typeof food.id === "string" && food.id.length <= 32 && inGrid(food.x, food.y) && Number.isInteger(food.portions) && food.portions >= 1 && food.portions <= 10 && Number.isFinite(food.droppedAtMs) && food.droppedAtMs <= state.updatedAtMs)) && (state.webs === void 0 || Array.isArray(state.webs) && state.webs.length <= 12 * TERRARIUM_WEBS_PER_SPIDER && state.webs.every((web) => web && typeof web.id === "string" && web.id.length <= 32 && typeof web.spiderId === "string" && inGrid(web.x, web.y) && Number.isFinite(web.createdAtMs) && web.createdAtMs <= state.updatedAtMs && state.bugs.some((bug) => bug.id === web.spiderId && bug.species === "spider")) && new Set(state.webs.map((web) => `${web.x},${web.y}`)).size === state.webs.length && state.bugs.every((bug) => state.webs.filter((web) => web.spiderId === bug.id).length <= TERRARIUM_WEBS_PER_SPIDER)) && Array.isArray(state.items) && state.items.length === 2 && ["coin", "pebble"].every((id) => state.items.filter((item) => item.id === id && inGrid(item.x, item.y)).length === 1) && !(state.items[0].x === state.items[1].x && state.items[0].y === state.items[1].y) && new Set([...state.plants, ...state.seeds, ...state.bugs, ...state.eggs ?? [], ...state.nests ?? [], ...state.food ?? [], ...state.webs ?? []].map((v) => v.id)).size === state.plants.length + state.seeds.length + state.bugs.length + (state.eggs?.length ?? 0) + (state.nests?.length ?? 0) + (state.food?.length ?? 0) + (state.webs?.length ?? 0) && new Set([...state.plants, ...state.seeds].map((v) => `${v.x},${v.y}`)).size === state.plants.length + state.seeds.length && validColony(state);
 }
 
 // src/aquarium.ts
@@ -4330,30 +4395,32 @@ function equal(a, b) {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 async function writeJson(file, value) {
-  await mkdir4(dirname4(file), { recursive: true });
+  await mkdir5(dirname5(file), { recursive: true });
   const temp = file + ".tmp";
-  await writeFile4(temp, JSON.stringify(value), { mode: 384 });
-  await rename4(temp, file);
+  await writeFile5(temp, JSON.stringify(value), { mode: 384 });
+  await rename5(temp, file);
 }
 async function start(options = {}) {
   const file = options.dataFile ?? process.env.TERRARIUM_DATA_FILE ?? "./data/leaderboard.json";
-  const controls = new ControlStore(options.controlsFile ?? process.env.CORTICO_TERRARIUM_CONTROLS_FILE ?? `${dirname4(file)}/controls.json`);
+  const controls = new ControlStore(options.controlsFile ?? process.env.CORTICO_TERRARIUM_CONTROLS_FILE ?? `${dirname5(file)}/controls.json`);
   await controls.restore();
-  const feedback = new FeedbackStore(`${dirname4(file)}/feedback.json`);
+  const feedback = new FeedbackStore(`${dirname5(file)}/feedback.json`);
   await feedback.restore();
   const credentialsFile = options.credentialsFile ?? process.env.TERRARIUM_CREDENTIALS_FILE ?? "./data/credentials.json";
-  const announcements = new AnnouncementStore(options.announcementsFile ?? process.env.CORTICO_TERRARIUM_ANNOUNCEMENTS_FILE ?? `${dirname4(file)}/announcements.json`);
+  const announcements = new AnnouncementStore(options.announcementsFile ?? process.env.CORTICO_TERRARIUM_ANNOUNCEMENTS_FILE ?? `${dirname5(file)}/announcements.json`);
   await announcements.restore();
-  const adminTokenFile = options.adminTokenFile ?? process.env.CORTICO_TERRARIUM_ADMIN_TOKEN_FILE ?? `${dirname4(file)}/admin-token`;
+  const protocols = new ProtocolNotices(`${dirname5(file)}/protocol-notices.json`, () => announcements.allocateProtocolId());
+  await protocols.restore();
+  const adminTokenFile = options.adminTokenFile ?? process.env.CORTICO_TERRARIUM_ADMIN_TOKEN_FILE ?? `${dirname5(file)}/admin-token`;
   let adminToken = options.adminToken ?? process.env.CORTICO_TERRARIUM_ADMIN_TOKEN;
   if (!adminToken) {
     try {
-      adminToken = (await readFile5(adminTokenFile, "utf8")).trim();
+      adminToken = (await readFile6(adminTokenFile, "utf8")).trim();
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
       adminToken = randomBytes(32).toString("hex");
-      await mkdir4(dirname4(adminTokenFile), { recursive: true });
-      await writeFile4(adminTokenFile, adminToken, { mode: 384, flag: "wx" });
+      await mkdir5(dirname5(adminTokenFile), { recursive: true });
+      await writeFile5(adminTokenFile, adminToken, { mode: 384, flag: "wx" });
     }
     if (!adminToken) throw new Error("Empty announcement admin token");
   }
@@ -4368,12 +4435,12 @@ async function start(options = {}) {
   let registrationQueue = Promise.resolve();
   let reportQueue = Promise.resolve();
   try {
-    registry = Object.assign(/* @__PURE__ */ Object.create(null), JSON.parse(await readFile5(file, "utf8")));
+    registry = Object.assign(/* @__PURE__ */ Object.create(null), JSON.parse(await readFile6(file, "utf8")));
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
   try {
-    credentials = Object.assign(/* @__PURE__ */ Object.create(null), JSON.parse(await readFile5(credentialsFile, "utf8")));
+    credentials = Object.assign(/* @__PURE__ */ Object.create(null), JSON.parse(await readFile6(credentialsFile, "utf8")));
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
@@ -4381,19 +4448,23 @@ async function start(options = {}) {
   const deploymentRoot = process.env.CORTICO_TERRARIUM_DEPLOY_ROOT;
   if (releaseId && !validReleaseId(releaseId)) throw new Error("Invalid server release ID");
   if (releaseId && !deploymentRoot) throw new Error("Managed releases require CORTICO_TERRARIUM_DEPLOY_ROOT");
-  const page = await readFile5(new URL("./index.html", import.meta.url));
-  const sceneScript = await readFile5(new URL("./scene.js", import.meta.url)).catch(async (error) => {
+  const page = await readFile6(new URL("./index.html", import.meta.url));
+  const sceneScript = await readFile6(new URL("./scene.js", import.meta.url)).catch(async (error) => {
     if (error.code !== "ENOENT") throw error;
-    return readFile5(new URL("../dist/scene.js", import.meta.url));
+    return readFile6(new URL("../dist/scene.js", import.meta.url));
   });
+  const upgradeNotice = async (id, client = protocols.client(id)) => {
+    if (!client) return;
+    const control = controls.get(), minimum = control.minimumClientVersion.version;
+    const obsolete = !meetsMinimumVersion(client.version, minimum);
+    if (!(client.transport === "http" && !control.httpPush.enabled) && !obsolete) return;
+    const text = `\u5F53\u524D\u5BA2\u6237\u7AEF\u4E0D\u6EE1\u8DB3\u4E0A\u62A5\u8981\u6C42\uFF0C\u63D0\u4EA4\u5C06\u88AB\u5FFD\u7565\uFF0C\u65E0\u6CD5\u66F4\u65B0\u670D\u52A1\u7AEF\u5B58\u6863\u548C\u6392\u884C\u699C\u3002${client.transport === "http" && !control.httpPush.enabled ? "HTTP Push \u5DF2\u505C\u6B62\u63A5\u6536\u5185\u5BB9\uFF0C\u8BF7\u6539\u7528 WebSocket Push\u3002" : ""}${obsolete ? `\u5BA2\u6237\u7AEF\u7248\u672C ${client.version ?? "\u672A\u4E0A\u62A5\u6216\u65E0\u6548"} \u4F4E\u4E8E\u6700\u4F4E\u8981\u6C42 ${minimum}\u3002` : ""}\u5FC5\u987B\u5347\u7EA7 cortico-world-terrarium \u5230\u6700\u65B0\u7248\u672C\u624D\u80FD\u7EE7\u7EED\u63D0\u4EA4\u5185\u5BB9\u3002\u53EA\u9700\u5728\u4E3B\u4EBA\u4E0B\u6B21\u4E0E\u4F60\u4EA4\u8C08\u65F6\u987A\u5E26\u8BF4\u660E\u5347\u7EA7\u8981\u6C42\uFF0C\u4E0D\u8981\u4E3B\u52A8\u53D1\u9001\u6D88\u606F\u3002`;
+    return protocols.notice(id, text);
+  };
   const rejectReport = async (id, clientVersion, transport) => {
-    const control = controls.get();
-    const minimum = control.minimumClientVersion.version;
-    const obsolete = !meetsMinimumVersion(clientVersion, minimum);
-    if (!(transport === "http" && !control.httpPush.enabled) && !obsolete) return;
-    const text = `\u672C\u6B21\u63D0\u4EA4\u672A\u6210\u529F\uFF0C\u63D0\u4EA4\u5185\u5BB9\u5DF2\u88AB\u5FFD\u7565\uFF0C\u670D\u52A1\u7AEF\u5B58\u6863\u548C\u6392\u884C\u699C\u672A\u66F4\u65B0\u3002${transport === "http" && !control.httpPush.enabled ? "HTTP Push \u5DF2\u505C\u6B62\u63A5\u6536\u5185\u5BB9\uFF0C\u8BF7\u6539\u7528 WebSocket Push\u3002" : ""}${obsolete ? `\u5BA2\u6237\u7AEF\u7248\u672C ${validClientVersion(clientVersion) ? clientVersion : "\u672A\u4E0A\u62A5\u6216\u65E0\u6548"} \u4F4E\u4E8E\u6700\u4F4E\u8981\u6C42 ${minimum}\u3002` : ""}\u5FC5\u987B\u5347\u7EA7 cortico-world-terrarium \u5230\u6700\u65B0\u7248\u672C\u624D\u80FD\u7EE7\u7EED\u63D0\u4EA4\u5185\u5BB9\u3002\u53EA\u9700\u5728\u4E3B\u4EBA\u4E0B\u6B21\u4E0E\u4F60\u4EA4\u8C08\u65F6\u987A\u5E26\u8BF4\u660E\u5347\u7EA7\u8981\u6C42\uFF0C\u4E0D\u8981\u4E3B\u52A8\u53D1\u9001\u6D88\u606F\u3002`;
-    await announcements.ensureUpgradeNotice(id, text);
-    throw new ReportError(obsolete ? 426 : 410, text, false, true);
+    await protocols.observe(id, clientVersion, transport);
+    const notice = await upgradeNotice(id, { version: validClientVersion(clientVersion) ? clientVersion : void 0, transport });
+    if (notice) throw new ReportError(!meetsMinimumVersion(clientVersion, controls.get().minimumClientVersion.version) ? 426 : 410, `\u672C\u6B21\u63D0\u4EA4\u672A\u6210\u529F\uFF0C\u63D0\u4EA4\u5185\u5BB9\u5DF2\u88AB\u5FFD\u7565\u3002${notice.text}`, false, true);
   };
   const commitReport = (id, input, transport) => {
     const report = reportQueue.then(async () => {
@@ -4462,9 +4533,9 @@ async function start(options = {}) {
           reply(404, { error: "Not found" });
           return;
         }
-        const content = await readFile5(new URL(`./console/${asset[0]}`, import.meta.url)).catch(async (error) => {
+        const content = await readFile6(new URL(`./console/${asset[0]}`, import.meta.url)).catch(async (error) => {
           if (error.code !== "ENOENT") throw error;
-          return readFile5(new URL(`../dist/console/${asset[0]}`, import.meta.url));
+          return readFile6(new URL(`../dist/console/${asset[0]}`, import.meta.url));
         });
         res.writeHead(200, { "content-type": asset[1], "cache-control": asset[1] === "font/woff2" ? "private, max-age=86400" : "no-store" });
         res.end(asset[0] === "index.html" ? pinConsoleHtml(content, releaseId) : content);
@@ -4642,7 +4713,11 @@ async function start(options = {}) {
           reply(400, { error: "Invalid announcement cursor" });
           return;
         }
-        reply(200, announcements.page(id, after));
+        if (!protocols.client(id)) await protocols.observe(id, registry[id]?.clientVersion, registry[id]?.reportTransport === "http" ? "http" : "websocket");
+        const notice = await upgradeNotice(id), page2 = announcements.page(id, after);
+        const visible = [...page2.announcements, ...notice && notice.id > after ? [notice] : []].sort((a, b) => a.id - b.id);
+        const batch = visible.slice(0, 20);
+        reply(200, { announcements: batch, nextCursor: visible.length > 20 ? batch.at(-1).id : page2.nextCursor });
         return;
       }
       if (req.method === "GET" && path === "/api/leaderboard") {
@@ -4765,6 +4840,14 @@ Content-Length: 0\r
       return;
     }
     sockets.handleUpgrade(req, socket, head, (ws) => {
+      const versionHeader = req.headers["x-cortico-client-version"];
+      const connectionNotice = async () => {
+        await protocols.observe(id, versionHeader ?? registry[id]?.clientVersion, "websocket");
+        const notice = await upgradeNotice(id);
+        if (notice && req.headers["x-cortico-protocol-notices"] === "1" && ws.readyState === import_websocket.default.OPEN) ws.send(JSON.stringify({ kind: "notice", notice }));
+      };
+      const connected = connectionNotice();
+      void connected.catch(() => ws.terminate());
       const group = connections.get(id) ?? /* @__PURE__ */ new Set();
       group.add(ws);
       connections.set(id, group);
@@ -4776,7 +4859,7 @@ Content-Length: 0\r
         if (!group.size) connections.delete(id);
       });
       ws.on("error", () => ws.terminate());
-      let queue = Promise.resolve(), requireFull = true, requireHashes = false, lastSeq = 0, queued = 0;
+      let queue = connected, requireFull = true, requireHashes = false, lastSeq = 0, queued = 0;
       ws.on("message", (raw, binary) => {
         if (ws.readyState !== import_websocket.default.OPEN) return;
         if (++queued > 8) {

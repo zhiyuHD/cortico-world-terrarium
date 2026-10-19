@@ -1,3 +1,4 @@
+import type { Announcement } from './announcements.ts';
 import { colonySnapshot } from './colony.ts';
 import { AnnouncementInbox } from './announcement-inbox.ts';
 import { readFile } from 'node:fs/promises';
@@ -22,10 +23,10 @@ export const TERRARIUM_TOOL_DECLS: ReadonlyArray<Omit<ToolDef, 'handler'>> = [
   { name: 'terrarium_water', description: 'Water soil by plant id OR x and y, including seed and empty plots. Adds 35 moisture points up to 100. Water diffuses to adjacent cells over time. Returns plant moisture ranges and explicit overwatering warnings; watering restores 5 health and does not instantly damage plants.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { plant: { type: 'string' }, x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 } }, oneOf: [{ required: ['plant'], not: { anyOf: [{ required: ['x'] }, { required: ['y'] }] } }, { required: ['x', 'y'], not: { required: ['plant'] } }] } },
   { name: 'terrarium_move', description: 'Move the coin or pebble on the 5×5 grid. The pebble shades its cell and orthogonal neighbors, reducing daylight to 35% and slowing daytime evaporation. x and y are 0..4.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { item: { type: 'string', enum: ['coin', 'pebble'] }, x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 } }, required: ['item', 'x', 'y'] } },
   { name: 'terrarium_sow', description: 'Sow moss, basil or bean in a free plot of the 5×5 grid. Seeds sprout after two daylight hours with enough soil moisture. Plants grow within their species moisture and light ranges; inspect returns those ranges. At most 12 plants and seeds.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { species: { type: 'string', enum: ['moss', 'basil', 'bean'] }, x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 } }, required: ['species', 'x', 'y'] } },
-  { name: 'terrarium_release_bug', description: 'Release an aphid, beetle, spider or ant into the 5×5 grid. Ants act every ten seconds; one existing ant becomes the saved queen, workers dig a nest, collect food, enter it and store food; other bugs act every minute. Aphids eat plants, beetles hunt aphids, spiders hunt other bugs. At most 12 bugs and eggs combined.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { species: { type: 'string', enum: ['aphid', 'beetle', 'spider', 'ant'] }, x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 } }, required: ['species', 'x', 'y'] } },
+  { name: 'terrarium_release_bug', description: 'Release aphid, beetle, spider, ant, fruit_fly, mosquito or moth into the 5×5 grid. Flying bugs act every ten seconds: 75% chance to move, 25% stay. They eat flower nectar and are caught by spider webs. Ants act every ten seconds; one existing ant becomes the saved queen, workers dig a nest, collect food, enter it and store food; aphids, beetles and spiders act every minute. Aphids eat plants, beetles hunt aphids, spiders hunt ground bugs and weave webs to catch flying bugs. At most 12 bugs and eggs combined.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { species: { type: 'string', enum: ['aphid', 'beetle', 'spider', 'ant', 'fruit_fly', 'mosquito', 'moth'] }, x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 } }, required: ['species', 'x', 'y'] } },
   { name: 'terrarium_feed_bug', description: 'Restore 35 energy (maximum 100) to one bug. Does not reduce hunger or prevent starvation; bugs must eat plants, prey or stored ant food.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { bug: { type: 'string' } }, required: ['bug'] } },
   { name: 'terrarium_relocate_bug', description: 'Move one bug by id to a grid cell. Bugs may share cells; predators move and hunt every minute.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { bug: { type: 'string' }, x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 } }, required: ['bug', 'x', 'y'] } },
-  { name: 'terrarium_remove', description: 'Remove a plant, seed, bug, egg, food pile or ant nest by ID from the land terrarium.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { id: { type: 'string' } }, required: ['id'] } },
+  { name: 'terrarium_remove', description: 'Remove a plant, seed, bug, egg, food pile, spider web or ant nest by ID from the land terrarium.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { id: { type: 'string' } }, required: ['id'] } },
   { name: 'terrarium_history', description: 'Read hourly history for one plant (including removed or dead plants) or one soil cell. Supply plant OR x and y. Returns the latest limit samples, default 24, maximum 168. Missing plants have null values.', tags: ['read'], parameters: { type: 'object', additionalProperties: false, properties: { plant: { type: 'string' }, x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 }, limit: { type: 'integer', minimum: 1, maximum: TERRARIUM_MAX_HISTORY } }, oneOf: [{ required: ['plant'], not: { anyOf: [{ required: ['x'] }, { required: ['y'] }] } }, { required: ['x', 'y'], not: { required: ['plant'] } }] } },
   { name: 'terrarium_rename', description: 'Rename your terrarium. The name is persisted and shown in the WebUI and public leaderboard when reporting is enabled. Names may repeat and do not change the box ID or credentials. Leading and trailing whitespace is removed; use 1..64 characters without control characters.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { habitat: { type: 'string', enum: ['land', 'water'] }, name: { type: 'string', minLength: 1, maxLength: TERRARIUM_MAX_NAME_LENGTH } }, required: ['name'] } },
   { name: 'terrarium_replay', description: 'List saved hunts with timestamps and replay IDs, or supply id to read the three recorded scene frames (before movement, contact, after capture). Keeps up to 16 hunts from the last seven days. Earlier unrecorded hunts cannot be replayed.', tags: ['read'], parameters: { type: 'object', additionalProperties: false, properties: { habitat: { type: 'string', enum: ['land', 'water'] }, id: { type: 'string' } } } },
@@ -77,8 +78,8 @@ export class TerrariumWorld implements World {
     this.rankAlerts = { land: new RankAlerts(join(dirname(opts.stateFile), 'rank-alerts.json')), water: new RankAlerts(join(dirname(this.waterFile), 'rank-alerts.json')) };
     // The retired config key only selects existing credentials during migration.
     const legacyId = (opts.cfg as TerrariumConfigSection & { leaderboardId?: unknown }).leaderboardId;
-    this.waterLeaderboard = new LeaderboardClient({ url: opts.cfg.leaderboardUrl, id: '', automaticIds: true, kind: 'water', credentialsFile: join(dirname(this.waterFile), 'report-credentials.json'), incrementalReports: opts.cfg.incrementalReports });
-    this.leaderboard = new LeaderboardClient({ url: opts.cfg.leaderboardUrl, id: typeof legacyId === 'string' ? legacyId : '', automaticIds: true, token: opts.reportToken, credentialsFile: join(dirname(opts.stateFile), 'report-credentials.json'), incrementalReports: opts.cfg.incrementalReports });
+    this.waterLeaderboard = new LeaderboardClient({ url: opts.cfg.leaderboardUrl, id: '', automaticIds: true, kind: 'water', credentialsFile: join(dirname(this.waterFile), 'report-credentials.json'), incrementalReports: opts.cfg.incrementalReports, onNotice: notice => this.inbox.receive('protocol', { announcements: [notice], nextCursor: 0 }, value => this.pushAnnouncement(value)) });
+    this.leaderboard = new LeaderboardClient({ url: opts.cfg.leaderboardUrl, id: typeof legacyId === 'string' ? legacyId : '', automaticIds: true, token: opts.reportToken, credentialsFile: join(dirname(opts.stateFile), 'report-credentials.json'), incrementalReports: opts.cfg.incrementalReports, onNotice: notice => this.inbox.receive('protocol', { announcements: [notice], nextCursor: 0 }, value => this.pushAnnouncement(value)) });
   }
   envPromptVars(): Record<string, string> { return {}; }
 
@@ -397,6 +398,12 @@ export class TerrariumWorld implements World {
     } catch (error) { this.host?.log.warn('terrarium.rank.failed', { habitat, error: String(error) }); }
   }
 
+  private async pushAnnouncement(notice: Announcement): Promise<void> {
+    const host = this.host;
+    if (!host) throw new Error('Terrarium is not running');
+    await host.pushEvent({ type: 'terrarium.announcement', source: this.id, senderKey: 'terrarium.announcements', origin: 'external', ts: nowIso(this.opts.timezone), text: `服务端公告 #${notice.id}${notice.title ? ` · ${notice.title}` : ''}（${notice.createdAt}）\n${notice.text}` }, { trigger: 'debounce' });
+  }
+
   private async checkAnnouncements(force = false): Promise<void> {
     if (!this.opts.cfg.leaderboardUrl || (!force && this.now() - this.lastAnnouncementCheck < this.opts.cfg.tickIntervalMs)) return;
     this.lastAnnouncementCheck = this.now();
@@ -406,11 +413,7 @@ export class TerrariumWorld implements World {
       const id = client.id ?? 'public';
       try {
         const page = await client.announcements(this.inbox.cursor(id));
-        await this.inbox.receive(id, page, async notice => {
-          const host = this.host;
-          if (!host) throw new Error('Terrarium is not running');
-          await host.pushEvent({ type: 'terrarium.announcement', source: this.id, senderKey: 'terrarium.announcements', origin: 'external', ts: nowIso(this.opts.timezone), text: `服务端公告 #${notice.id}${notice.title ? ` · ${notice.title}` : ''}（${notice.createdAt}）\n${notice.text}` }, { trigger: 'debounce' });
-        });
+        await this.inbox.receive(id, page, notice => this.pushAnnouncement(notice));
       } catch (error) { this.host?.log.warn('terrarium.announcements.failed', { error: String(error) }); }
     }
   }
@@ -423,7 +426,7 @@ export class TerrariumWorld implements World {
       const host = this.host;
       if (!host) return;
       for (const change of changes) await host.pushEvent({
-        type: change.kind === 'egg' ? 'terrarium.egg' : change.kind === 'nest' ? 'terrarium.nest' : change.kind === 'phase' ? 'terrarium.phase' : change.kind === 'stage' || change.kind === 'dry' || change.kind === 'health' ? 'terrarium.plant' : change.kind === 'hunt' ? 'terrarium.hunt' : change.kind === 'birth' ? 'terrarium.birth' : change.kind === 'hungry' ? 'terrarium.hungry' : 'terrarium.ecosystem',
+        type: change.kind === 'egg' ? 'terrarium.egg' : change.kind === 'nest' ? 'terrarium.nest' : change.kind === 'phase' ? 'terrarium.phase' : change.kind === 'web' || change.kind === 'stage' || change.kind === 'dry' || change.kind === 'health' ? 'terrarium.plant' : change.kind === 'hunt' ? 'terrarium.hunt' : change.kind === 'birth' ? 'terrarium.birth' : change.kind === 'hungry' ? 'terrarium.hungry' : 'terrarium.ecosystem',
         source: this.id, senderKey: this.id, origin: 'internal', ts: nowIso(this.opts.timezone), text: `生态箱·地：${change.text}`,
       }, { trigger: change.kind === 'phase' ? 'piggyback' : 'debounce' });
     }

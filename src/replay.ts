@@ -12,6 +12,7 @@ export interface ReplayFrame {
   eggs?: TerrariumState['eggs'];
   nests?: TerrariumState['nests'];
   food?: TerrariumState['food'];
+  webs?: TerrariumState['webs'];
 }
 /** A hunt's movement, contact and result, copied from the simulation at the recorded time. */
 export interface HuntReplay {
@@ -23,5 +24,5 @@ export interface HuntReplay {
 }
 
 export function captureFrame(state: TerrariumState, phase: ReplayFrame['phase']): ReplayFrame {
-  return structuredClone({ phase, soil: state.soil, plants: state.plants, seeds: state.seeds, bugs: state.bugs, items: state.items, eggs: state.eggs, nests: state.nests, food: state.food });
+  return structuredClone({ phase, soil: state.soil, plants: state.plants, seeds: state.seeds, bugs: state.bugs, items: state.items, eggs: state.eggs, nests: state.nests, food: state.food, webs: state.webs });
 }

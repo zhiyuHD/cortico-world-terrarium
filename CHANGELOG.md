@@ -2,6 +2,12 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.7.14
+
+- Deliver policy-derived upgrade notices outside the operator announcement list and public feed. Advertise client version and notice support at WebSocket connection time; keep legacy authenticated polling, pagination and restart deduplication compatible.
+- Add spider webs and fruit flies, mosquitoes and moths. Flying bugs act every ten seconds with a 75% movement probability, feed on flowers and are captured on webs with recorded hunt replays.
+- Render flying bugs and webs in panels, public scenes and replays; preserve older saves without webs.
+
 ## 0.7.13
 
 - Add a cloud-controlled minimum client version with immediate or scheduled changes in the private console and CLI. Ignore rejected HTTP/WS reports without updating saved data, and deliver deduplicated private upgrade notices. Keep disabled HTTP submission endpoints available with explicit failure responses.

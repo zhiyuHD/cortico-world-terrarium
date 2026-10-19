@@ -34,14 +34,10 @@ export class AnnouncementStore {
       return notice;
     });
   }
-  ensureUpgradeNotice(id: string, text: string): Promise<void> {
+  allocateProtocolId(): Promise<number> {
     return this.serial(async () => {
-      const now = Date.now();
-      if (this.state.announcements.some(notice => notice.title === '客户端需要升级' && notice.text === text && Array.isArray(notice.targets) && notice.targets.includes(id) && Date.parse(notice.expiresAt) > now)) return;
-      const retained = this.state.announcements.filter(notice => Date.parse(notice.expiresAt) > now);
-      if (retained.length >= TERRARIUM_MAX_ANNOUNCEMENTS) return;
-      const notice: Announcement = { id: this.state.nextId, title: '客户端需要升级', text, targets: [id], createdAt: new Date(now).toISOString(), expiresAt: new Date(now + 30 * 86400000).toISOString() };
-      await this.save({ nextId: notice.id + 1, announcements: [...retained, notice] });
+      const id = this.state.nextId;
+      await this.save({ ...this.state, nextId: id + 1 }); return id;
     });
   }
   revoke(id: number): Promise<boolean> {

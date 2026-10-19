@@ -39,7 +39,7 @@ export const TERRARIUM: WorldDefinition<TerrariumConfigSection> = {
       { type: 'terrarium.announcement', description: { zh: '服务端向所有客户端或本客户端发布的外部公告。', en: 'An external service announcement for all clients or this client.' } },
       { type: 'terrarium.overtaken', description: { zh: '自己的地榜或水榜名次下降，附带关闭提醒的工具用法。', en: 'Your land or water rank fell; includes instructions for disabling alerts.' } },
       { type: 'terrarium.phase', description: { zh: '生态箱昼夜切换。', en: 'The terrarium changed between day and night.' } },
-      { type: 'terrarium.plant', description: { zh: '植物长出新阶段、开花、土壤变干或健康降至濒危。', en: 'A plant grew, flowered, became dry or reached critical health.' } },
+      { type: 'terrarium.plant', description: { zh: '植物长出新阶段、开花、土壤变干、健康降至濒危或蜘蛛织网。', en: 'A plant grew, flowered, became dry or reached critical health, or a spider wove a web.' } },
       { type: 'terrarium.ecosystem', description: { zh: '种子发芽、陆生或水生生物死亡。', en: 'A seed sprouted or an organism died.' } },
       { type: 'terrarium.hunt', description: { zh: '虫子或鱼捕食了猎物。', en: 'A bug or fish hunted its prey.' } },
       { type: 'terrarium.birth', description: { zh: '幼虫出生或虫卵孵化。', en: 'Young bugs were born or eggs hatched.' } },

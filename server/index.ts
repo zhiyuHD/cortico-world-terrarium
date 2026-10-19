@@ -1,4 +1,5 @@
 import { FeedbackStore, FeedbackError } from './feedback.ts';
+import { ProtocolNotices } from './protocol-notices.ts';
 import { AnnouncementStore } from './announcements.ts';
 import { ControlStore, ControlError, meetsMinimumVersion } from './controls.ts';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -43,6 +44,8 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
   const credentialsFile = options.credentialsFile ?? process.env.TERRARIUM_CREDENTIALS_FILE ?? './data/credentials.json';
   const announcements = new AnnouncementStore(options.announcementsFile ?? process.env.CORTICO_TERRARIUM_ANNOUNCEMENTS_FILE ?? `${dirname(file)}/announcements.json`);
   await announcements.restore();
+  const protocols = new ProtocolNotices(`${dirname(file)}/protocol-notices.json`, () => announcements.allocateProtocolId());
+  await protocols.restore();
   const adminTokenFile = options.adminTokenFile ?? process.env.CORTICO_TERRARIUM_ADMIN_TOKEN_FILE ?? `${dirname(file)}/admin-token`;
   let adminToken = options.adminToken ?? process.env.CORTICO_TERRARIUM_ADMIN_TOKEN;
   if (!adminToken) {
@@ -78,14 +81,18 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     return readFile(new URL('../dist/scene.js', import.meta.url));
   });
+  const upgradeNotice = async (id: string, client: { version?: string; transport: 'http' | 'websocket' } | undefined = protocols.client(id)) => {
+    if (!client) return;
+    const control = controls.get(), minimum = control.minimumClientVersion.version;
+    const obsolete = !meetsMinimumVersion(client.version, minimum);
+    if (!(client.transport === 'http' && !control.httpPush.enabled) && !obsolete) return;
+    const text = `当前客户端不满足上报要求，提交将被忽略，无法更新服务端存档和排行榜。${client.transport === 'http' && !control.httpPush.enabled ? 'HTTP Push 已停止接收内容，请改用 WebSocket Push。' : ''}${obsolete ? `客户端版本 ${client.version ?? '未上报或无效'} 低于最低要求 ${minimum}。` : ''}必须升级 cortico-world-terrarium 到最新版本才能继续提交内容。只需在主人下次与你交谈时顺带说明升级要求，不要主动发送消息。`;
+    return protocols.notice(id, text);
+  };
   const rejectReport = async (id: string, clientVersion: unknown, transport: 'http' | 'websocket'): Promise<void> => {
-    const control = controls.get();
-    const minimum = control.minimumClientVersion.version;
-    const obsolete = !meetsMinimumVersion(clientVersion, minimum);
-    if (!(transport === 'http' && !control.httpPush.enabled) && !obsolete) return;
-    const text = `本次提交未成功，提交内容已被忽略，服务端存档和排行榜未更新。${transport === 'http' && !control.httpPush.enabled ? 'HTTP Push 已停止接收内容，请改用 WebSocket Push。' : ''}${obsolete ? `客户端版本 ${validClientVersion(clientVersion) ? clientVersion : '未上报或无效'} 低于最低要求 ${minimum}。` : ''}必须升级 cortico-world-terrarium 到最新版本才能继续提交内容。只需在主人下次与你交谈时顺带说明升级要求，不要主动发送消息。`;
-    await announcements.ensureUpgradeNotice(id, text);
-    throw new ReportError(obsolete ? 426 : 410, text, false, true);
+    await protocols.observe(id, clientVersion, transport);
+    const notice = await upgradeNotice(id, { version: validClientVersion(clientVersion) ? clientVersion : undefined, transport });
+    if (notice) throw new ReportError(!meetsMinimumVersion(clientVersion, controls.get().minimumClientVersion.version) ? 426 : 410, `本次提交未成功，提交内容已被忽略。${notice.text}`, false, true);
   };
   const commitReport = (id: string, input: { phase?: unknown; clientVersion?: unknown; coopanionVersion?: unknown; state?: unknown; baseRevision?: string; baseHash?: string; stateHash?: string; changes?: unknown }, transport: 'http' | 'websocket') => {
     const report = reportQueue.then(async () => {
@@ -226,7 +233,11 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
         if (!expected || !equal(token, expected)) { reply(401, { error: 'Unauthorized' }); return; }
         const after = Number(query.get('after') ?? 0);
         if (!Number.isSafeInteger(after) || after < 0) { reply(400, { error: 'Invalid announcement cursor' }); return; }
-        reply(200, announcements.page(id, after)); return;
+        if (!protocols.client(id)) await protocols.observe(id, registry[id]?.clientVersion, registry[id]?.reportTransport === 'http' ? 'http' : 'websocket');
+        const notice = await upgradeNotice(id), page = announcements.page(id, after);
+        const visible = [...page.announcements, ...(notice && notice.id > after ? [notice] : [])].sort((a, b) => a.id - b.id);
+        const batch = visible.slice(0, 20);
+        reply(200, { announcements: batch, nextCursor: visible.length > 20 ? batch.at(-1)!.id : page.nextCursor }); return;
       }
       if (req.method === 'GET' && path === '/api/leaderboard') {
         const query = new URL(req.url ?? '/', 'http://localhost').searchParams;
@@ -302,13 +313,21 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
       : !idPattern.test(id) || !credentials[id] || !equal(req.headers.authorization?.replace(/^Bearer /, '') ?? '', credentials[id]) ? 401 : 0;
     if (status) { socket.end(`HTTP/1.1 ${status} ${status === 404 ? 'Not Found' : 'Unauthorized'}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); return; }
     sockets.handleUpgrade(req, socket, head, ws => {
+      const versionHeader = req.headers['x-cortico-client-version'];
+      const connectionNotice = async () => {
+        await protocols.observe(id, versionHeader ?? registry[id]?.clientVersion, 'websocket');
+        const notice = await upgradeNotice(id);
+        if (notice && req.headers['x-cortico-protocol-notices'] === '1' && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ kind: 'notice', notice }));
+      };
+      const connected = connectionNotice();
+      void connected.catch(() => ws.terminate());
       const group = connections.get(id) ?? new Set<WebSocket>();
       group.add(ws); connections.set(id, group);
       alive.add(ws);
       ws.on('pong', () => alive.add(ws));
       ws.on('close', () => { alive.delete(ws); group.delete(ws); if (!group.size) connections.delete(id); });
       ws.on('error', () => ws.terminate());
-      let queue: Promise<unknown> = Promise.resolve(), requireFull = true, requireHashes = false, lastSeq = 0, queued = 0;
+      let queue: Promise<unknown> = connected, requireFull = true, requireHashes = false, lastSeq = 0, queued = 0;
       ws.on('message', (raw, binary) => {
         if (ws.readyState !== WebSocket.OPEN) return;
         if (++queued > 8) { ws.close(1008, 'Too many pending reports'); return; }

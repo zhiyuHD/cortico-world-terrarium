@@ -1,3 +1,4 @@
+import { ReportSocket } from '../src/report-socket.ts';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -211,4 +212,54 @@ it('migrates old control files and rejects malformed minimum-version controls wi
     expect(response.status).toBe(400); expect(await admin('controls')).toEqual(before);
   }
   expect((await fetch(url() + '/api/admin/controls/minimum-client-version', { method: 'PUT', body: '{"version":"0.7.4"}' })).status).toBe(401);
+});
+
+it('delivers a protocol notice at capable WS connection, keeps operator lists empty and preserves legacy polling across restarts', async () => {
+  const { url, admin, credentials, restart } = await fixture();
+  await admin('minimum-version', '99.0.0');
+  const connect = async (capable: boolean) => {
+    const ws = new WebSocket(url().replace('http:', 'ws:') + '/api/reports/ws?id=' + credentials.id, { headers: { authorization: `Bearer ${credentials.token}`, 'x-cortico-client-version': '0.7.3', ...(capable ? { 'x-cortico-protocol-notices': '1' } : {}) } });
+    return ws;
+  };
+  const first = await connect(true), incoming = once(first, 'message');
+  const frame = JSON.parse(String((await incoming)[0])); first.terminate(); await once(first, 'close');
+  expect(frame).toMatchObject({ kind: 'notice', notice: { targets: [credentials.id], title: '客户端需要升级', text: expect.stringContaining('99.0.0') } });
+  expect(await admin('list')).toMatchObject({ announcements: [] });
+  expect(await (await fetch(url() + '/api/announcements/public')).json()).toMatchObject({ announcements: [] });
+  const poll = async (after = 0) => (await fetch(url() + '/api/announcements?id=' + credentials.id + '&after=' + after, { headers: { authorization: `Bearer ${credentials.token}` } })).json() as Promise<{ announcements: Array<{ id: number }>; nextCursor: number }>;
+  const page = await poll(); expect(page.announcements).toEqual([frame.notice]); expect(page.nextCursor).toBe(frame.notice.id);
+  await restart(); expect(await poll()).toEqual(page); expect((await poll(page.nextCursor)).announcements).toEqual([]);
+  const legacy = await connect(false), messages: unknown[] = []; legacy.on('message', data => messages.push(JSON.parse(String(data)))); await once(legacy, 'open');
+  const reply = once(legacy, 'message'); legacy.send(JSON.stringify({ protocol: 1, seq: 1, kind: 'full', clientVersion: '0.7.3', state: newState(Date.now()) }));
+  expect(JSON.parse(String((await reply)[0]))).toMatchObject({ kind: 'error', ignored: true, upgradeRequired: true });
+  expect(messages).toHaveLength(1); legacy.terminate(); await once(legacy, 'close');
+  await admin('minimum-version', 'off'); expect((await poll()).announcements).toEqual([]);
+});
+
+it('paginates protocol and operator notices together without hiding any ordinary notices', async () => {
+  const { url, admin, credentials } = await fixture();
+  await admin('minimum-version', '99.0.0');
+  for (let i = 0; i < 24; i++) await admin('publish', '--text', `ordinary-${i}`, '--to', credentials.id);
+  const read = async (after: number) => (await fetch(url() + '/api/announcements?id=' + credentials.id + '&after=' + after, { headers: { authorization: `Bearer ${credentials.token}` } })).json() as Promise<{ announcements: Array<{ id: number; text: string }>; nextCursor: number }>;
+  const a = await read(0), b = await read(a.nextCursor), c = await read(b.nextCursor);
+  expect(a.announcements).toHaveLength(20); expect(b.announcements).toHaveLength(5); expect(c.announcements).toEqual([]);
+  const all = [...a.announcements, ...b.announcements]; expect(new Set(all.map(value => value.id)).size).toBe(25);
+  expect(all.filter(value => value.text.startsWith('ordinary-'))).toHaveLength(24);
+  expect((await admin('list') as { announcements: unknown[] }).announcements).toHaveLength(24);
+});
+
+
+it('handles a socket notice independently from the rejected report acknowledgement and resumes after reopening', async () => {
+  const { url, admin, credentials, state } = await fixture();
+  await admin('minimum-version', '99.0.0');
+  const received: number[] = [];
+  const client = new ReportSocket({ url: new URL(url()), ...credentials, incremental: true, onNotice: async notice => { received.push(notice.id); } });
+  try {
+    await expect(client.report(state, 'day')).rejects.toThrow('提交内容已被忽略');
+    expect(received).toHaveLength(1);
+    await admin('minimum-version', 'off');
+    await client.report(state, 'day');
+    expect(await (await fetch(url() + '/api/boxes/' + credentials.id)).json()).toMatchObject({ state });
+    expect(received).toHaveLength(1);
+  } finally { client.close(); }
 });

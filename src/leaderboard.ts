@@ -1,3 +1,4 @@
+import type { Announcement } from './announcements.ts';
 import { parseFeedback, type TerrariumFeedbackReceipt } from './feedback.ts';
 import { validAnnouncement, type AnnouncementPage } from './announcements.ts';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
@@ -25,6 +26,7 @@ export interface LeaderboardClientOptions {
   url: string; id: string; token?: string; credentialsFile: string; kind?: 'land' | 'water'; incrementalReports?: boolean;
   /** New registrations omit id; existing id/token options only select credentials to migrate. */
   automaticIds?: boolean;
+  onNotice?: (notice: Announcement) => Promise<void>;
 }
 
 export class LeaderboardClient {
@@ -156,7 +158,7 @@ export class LeaderboardClient {
     requireHttps(url);
     const credentials = await this.authorize(url);
     if (Date.now() >= this.httpFallbackUntilMs) {
-      this.reportSocket ??= new ReportSocket({ url, ...credentials, incremental: this.options.incrementalReports === true });
+      this.reportSocket ??= new ReportSocket({ url, ...credentials, incremental: this.options.incrementalReports === true, onNotice: this.options.onNotice });
       try { await this.reportSocket.report(state, phase); return 'ws'; }
       catch (error) {
         if (!(error instanceof ReportSocketError) || ![404, 405, 426, 501].includes(error.status ?? 0)) throw error;

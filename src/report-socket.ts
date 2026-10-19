@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import { validAnnouncement, type Announcement } from './announcements.ts';
 import { reportChanges, reportStateHash, TERRARIUM_REPORT_MAX_BYTES, TERRARIUM_REPORT_MAX_CHANGES, type ReportMessage, type ReportReply } from './report-protocol.ts';
 import { reportClientMetadata } from './version.ts';
 
@@ -14,7 +15,7 @@ export class ReportSocket {
   private seq = 0;
   private pending: { seq: number; resolve: (reply: ReportReply) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> } | undefined;
 
-  constructor(private readonly options: { url: URL; id: string; token: string; incremental: boolean }) {}
+  constructor(private readonly options: { url: URL; id: string; token: string; incremental: boolean; onNotice?: (notice: Announcement) => Promise<void> }) {}
 
   close(): void { this.disconnect(new Error('Report connection closed')); }
 
@@ -52,13 +53,19 @@ export class ReportSocket {
     const url = new URL('/api/reports/ws', this.options.url);
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     url.searchParams.set('id', this.options.id);
-    const socket = new WebSocket(url, { headers: { authorization: `Bearer ${this.options.token}` }, family: 4, handshakeTimeout: 5_000, maxPayload: 16_384, perMessageDeflate: false });
+    const socket = new WebSocket(url, { headers: { authorization: `Bearer ${this.options.token}`, 'x-cortico-client-version': reportClientMetadata().clientVersion, 'x-cortico-protocol-notices': '1' }, family: 4, handshakeTimeout: 5_000, maxPayload: 16_384, perMessageDeflate: false });
     this.socket = socket;
     this.baseline = undefined; this.revision = undefined; this.baselineHash = undefined;
     socket.on('message', raw => {
       if (this.socket !== socket) return;
       try {
-        const reply = JSON.parse(raw.toString()) as ReportReply;
+        const frame = JSON.parse(raw.toString());
+        if (frame?.kind === 'notice') {
+          if (!validAnnouncement(frame.notice) || !Array.isArray(frame.notice.targets) || !frame.notice.targets.includes(this.options.id)) throw new Error('Invalid protocol notice');
+          void this.options.onNotice?.(frame.notice).catch(() => {});
+          return;
+        }
+        const reply = frame as ReportReply;
         if (!reply || !this.pending || reply.seq !== this.pending.seq) throw new Error('Invalid report acknowledgement');
         const pending = this.pending; this.pending = undefined; clearTimeout(pending.timer); pending.resolve(reply);
       } catch { this.disconnect(new Error('Invalid report acknowledgement')); }
