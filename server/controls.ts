@@ -1,17 +1,30 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { validClientVersion } from '../src/report-protocol.ts';
 
 interface ScheduledChange { at: string; enabled: boolean }
 interface HttpPushControl { enabled: boolean; scheduledChange: ScheduledChange | null }
-interface Controls { httpPush: HttpPushControl }
+interface VersionControl { version: string | null; scheduledChange: { at: string; version: string | null } | null }
+export interface Controls { httpPush: HttpPushControl; minimumClientVersion: VersionControl }
 const timestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
 const timestamp = (value: unknown): value is string => typeof value === 'string' && timestampPattern.test(value) && Number.isFinite(Date.parse(value));
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
+const version = (value: unknown): value is string | null => value === null || (typeof value === 'string' && value.length <= 100 && /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value));
+
+/** Minimum versions are stable releases; build metadata does not affect precedence. */
+export function meetsMinimumVersion(client: unknown, minimum: string | null): boolean {
+  if (minimum === null) return true;
+  if (!validClientVersion(client)) return false;
+  const parts = client.split('+')[0].split('-');
+  const actual = parts[0].split('.').map(BigInt), required = minimum.split('.').map(BigInt);
+  for (let i = 0; i < 3; i++) if (actual[i] !== required[i]) return actual[i] > required[i];
+  return parts.length === 1;
+}
 
 export class ControlError extends Error {}
 
 export class ControlStore {
-  private state: Controls = { httpPush: { enabled: true, scheduledChange: null } };
+  private state: Controls = { httpPush: { enabled: true, scheduledChange: null }, minimumClientVersion: { version: null, scheduledChange: null } };
   private queue: Promise<unknown> = Promise.resolve();
   constructor(private readonly file: string) {}
 
@@ -22,32 +35,22 @@ export class ControlStore {
     if (!object(value) || !object(value.httpPush) || typeof value.httpPush.enabled !== 'boolean') throw new Error('Invalid controls file');
     const rule = value.httpPush.scheduledChange;
     if (rule !== null && (!object(rule) || typeof rule.enabled !== 'boolean' || !timestamp(rule.at))) throw new Error('Invalid controls file');
-    this.state = value as unknown as Controls;
+    const floor = value.minimumClientVersion;
+    if (floor !== undefined && (!object(floor) || !version(floor.version) || (floor.scheduledChange !== null && (!object(floor.scheduledChange) || !version(floor.scheduledChange.version) || !timestamp(floor.scheduledChange.at))))) throw new Error('Invalid controls file');
+    this.state = { httpPush: value.httpPush as unknown as HttpPushControl, minimumClientVersion: floor === undefined ? { version: null, scheduledChange: null } : floor as unknown as VersionControl };
   }
 
-  // Evaluate the persisted deadline on every read, including after a restart or an idle period.
+  // Evaluate persisted deadlines on every read, including after a restart or idle period.
   get(): Controls {
-    const control = this.state.httpPush;
-    if (control.scheduledChange && Date.parse(control.scheduledChange.at) <= Date.now()) {
-      return { httpPush: { enabled: control.scheduledChange.enabled, scheduledChange: null } };
-    }
-    return structuredClone(this.state);
+    const state = structuredClone(this.state);
+    if (state.httpPush.scheduledChange && Date.parse(state.httpPush.scheduledChange.at) <= Date.now()) state.httpPush = { enabled: state.httpPush.scheduledChange.enabled, scheduledChange: null };
+    if (state.minimumClientVersion.scheduledChange && Date.parse(state.minimumClientVersion.scheduledChange.at) <= Date.now()) state.minimumClientVersion = { version: state.minimumClientVersion.scheduledChange.version, scheduledChange: null };
+    return state;
   }
 
-  updateHttpPush(input: unknown): Promise<Controls> {
+  private update(work: (state: Controls) => void): Promise<Controls> {
     const result = this.queue.then(async () => {
-      if (!object(input)) throw new ControlError('Invalid HTTP Push control');
-      const current = this.get().httpPush;
-      let next: HttpPushControl;
-      if (input.cancel === true && Object.keys(input).length === 1) next = { ...current, scheduledChange: null };
-      else {
-        if (typeof input.enabled !== 'boolean' || Object.keys(input).some(key => key !== 'enabled' && key !== 'at')) throw new ControlError('Supply enabled and an optional timestamp with timezone');
-        if (input.at !== undefined) {
-          if (!timestamp(input.at) || Date.parse(input.at) <= Date.now()) throw new ControlError('Scheduled time must be in the future and include a timezone');
-          next = { ...current, scheduledChange: { enabled: input.enabled, at: new Date(input.at).toISOString() } };
-        } else next = { enabled: input.enabled, scheduledChange: null };
-      }
-      const state = { httpPush: next };
+      const state = this.get(); work(state);
       await mkdir(dirname(this.file), { recursive: true });
       await writeFile(`${this.file}.tmp`, JSON.stringify(state), { mode: 0o600 });
       await rename(`${this.file}.tmp`, this.file);
@@ -56,5 +59,30 @@ export class ControlStore {
     });
     this.queue = result.catch(() => {});
     return result;
+  }
+
+  updateHttpPush(input: unknown): Promise<Controls> {
+    return this.update(state => {
+      if (!object(input)) throw new ControlError('Invalid HTTP Push control');
+      if (input.cancel === true && Object.keys(input).length === 1) { state.httpPush.scheduledChange = null; return; }
+      if (typeof input.enabled !== 'boolean' || Object.keys(input).some(key => key !== 'enabled' && key !== 'at')) throw new ControlError('Supply enabled and an optional timestamp with timezone');
+      if (input.at !== undefined) state.httpPush.scheduledChange = { enabled: input.enabled, at: this.future(input.at) };
+      else state.httpPush = { enabled: input.enabled, scheduledChange: null };
+    });
+  }
+
+  updateMinimumClientVersion(input: unknown): Promise<Controls> {
+    return this.update(state => {
+      if (!object(input)) throw new ControlError('Invalid minimum client version control');
+      if (input.cancel === true && Object.keys(input).length === 1) { state.minimumClientVersion.scheduledChange = null; return; }
+      if (!Object.hasOwn(input, 'version') || !version(input.version) || Object.keys(input).some(key => key !== 'version' && key !== 'at')) throw new ControlError('Supply a stable version (major.minor.patch) or null and an optional timestamp with timezone');
+      if (input.at !== undefined) state.minimumClientVersion.scheduledChange = { version: input.version, at: this.future(input.at) };
+      else state.minimumClientVersion = { version: input.version, scheduledChange: null };
+    });
+  }
+
+  private future(at: unknown): string {
+    if (!timestamp(at) || Date.parse(at) <= Date.now()) throw new ControlError('Scheduled time must be in the future and include a timezone');
+    return new Date(at).toISOString();
   }
 }

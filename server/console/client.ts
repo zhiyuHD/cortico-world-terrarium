@@ -4,7 +4,7 @@ mountIcons();
 interface Box { id: string; registered: boolean; name: string; kind: 'land' | 'water' | null; score: number | null; reportedAt: string | null; clientVersion: string | null; coopanionVersion: string | null; reportTransport: 'http' | 'websocket' | null; wsConnections: number }
 interface Feedback { id: number; text: string; contact?: string; boxId?: string; source: string; createdAt: string; resolvedAt?: string }
 interface Notice { id: number; title: string; text: string; targets: 'all' | string[]; createdAt: string; expiresAt: string }
-interface Controls { httpPush: { enabled: boolean; scheduledChange: { at: string; enabled: boolean } | null } }
+interface Controls { httpPush: { enabled: boolean; scheduledChange: { at: string; enabled: boolean } | null }; minimumClientVersion?: { version: string | null; scheduledChange: { at: string; version: string | null } | null } }
 interface Snapshot { boxes: Box[]; serverAt: string; uptimeSec: number; memoryBytes: number }
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const input = (id: string) => el<HTMLInputElement>(id);
@@ -105,6 +105,10 @@ function renderControls() {
   serverOffset = Date.parse(snapshot.serverAt) - Date.now();
   iconLabel(el('http-status'), controls.httpPush.enabled ? 'power' : 'power-off', controls.httpPush.enabled ? '已开启' : '已关闭');
   el<HTMLButtonElement>('http-cancel').disabled = !controls.httpPush.scheduledChange;
+  const floor = controls.minimumClientVersion;
+  el('minimum-status').textContent = floor?.version ? `至少 ${floor.version}` : '未限制';
+  el('minimum-schedule').textContent = floor?.scheduledChange ? `${date(floor.scheduledChange.at)} · ${floor.scheduledChange.version ? `至少 ${floor.scheduledChange.version}` : '取消版本限制'}` : '暂无定时变更';
+  el<HTMLButtonElement>('minimum-cancel').disabled = !floor?.scheduledChange;
   renderCountdown();
 }
 function renderCountdown() {
@@ -139,7 +143,7 @@ el('scope-selected').onclick = () => { allTargets = false; audience(); };
 el('scope-all').onclick = () => { allTargets = true; audience(); };
 el('feedback-filter').onclick = () => { pendingOnly = !pendingOnly; el('feedback-filter').setAttribute('aria-pressed', String(pendingOnly)); renderFeedback(); };
 for (const item of Array.from(document.querySelectorAll<HTMLButtonElement>('[data-enable]'))) item.onclick = () => { scheduleEnabled = item.dataset.enable === 'true'; for (const other of Array.from(document.querySelectorAll<HTMLButtonElement>('[data-enable]'))) other.setAttribute('aria-pressed', String(other === item)); };
-for (const enabled of [true, false]) el(enabled ? 'http-on' : 'http-off').onclick = () => confirmAction(`立即${enabled ? '开启' : '关闭'} HTTP Push`, `${enabled ? '旧版客户端可以通过 HTTP 提交。' : '旧版客户端的 HTTP 提交将返回 410，需要升级并使用 WS。'}\n这会清除现有定时任务。`, async () => { await api('controls/http-push', 'PUT', { enabled }); });
+for (const enabled of [true, false]) el(enabled ? 'http-on' : 'http-off').onclick = () => confirmAction(`立即${enabled ? '开启' : '关闭'} HTTP Push`, `${enabled ? '旧版客户端可以通过 HTTP 提交。' : '保留 HTTP 接口，忽略提交并返回未提交成功提示，同时发送升级公告。'}\n这会清除现有定时任务。`, async () => { await api('controls/http-push', 'PUT', { enabled }); });
 el('http-cancel').onclick = () => confirmAction('取消定时任务', '保留当前生效的 HTTP Push 开关。', async () => { await api('controls/http-push', 'PUT', { cancel: true }); });
 el('schedule-form').onsubmit = event => {
   event.preventDefault(); const value = input('schedule-at').value, at = new Date(`${value.replace(' ', 'T')}:00+08:00`);
@@ -160,3 +164,12 @@ el('theme').onclick = () => { document.body.classList.toggle('light'); localStor
 setInterval(() => { if (!document.hidden) { void refresh(); renderCountdown(); } }, 15000);
 setInterval(() => { if (!document.hidden && token) renderCountdown(); }, 1000);
 if (token) void refresh();
+
+el('minimum-form').onsubmit = event => {
+  event.preventDefault();
+  const version = input('minimum-version').value.trim(), at = input('minimum-at').value.trim();
+  if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version) || (at && !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(at))) { status('请输入版本号及有效的北京时间'); return; }
+  confirmAction('确认最低客户端版本', `最低版本 ${version}，${at ? `${at}（北京时间）生效` : '立即生效'}。低版本和未上报版本的提交将被忽略。`, async () => { await api('controls/minimum-client-version', 'PUT', { version, ...(at ? { at: at.replace(' ', 'T') + ':00+08:00' } : {}) }); });
+};
+el('minimum-off').onclick = () => confirmAction('取消版本限制', '允许所有客户端版本提交。HTTP Push 开关仍单独生效。', async () => { await api('controls/minimum-client-version', 'PUT', { version: null }); });
+el('minimum-cancel').onclick = () => confirmAction('取消版本定时变更', '保留当前最低客户端版本。', async () => { await api('controls/minimum-client-version', 'PUT', { cancel: true }); });

@@ -3548,7 +3548,7 @@ var require_websocket_server = __commonJS({
         socket.on("error", socketOnError);
         const key = req.headers["sec-websocket-key"];
         const upgrade = req.headers.upgrade;
-        const version = +req.headers["sec-websocket-version"];
+        const version2 = +req.headers["sec-websocket-version"];
         if (req.method !== "GET") {
           const message = "Invalid HTTP method";
           abortHandshakeOrEmitwsClientError(this, req, socket, 405, message);
@@ -3564,7 +3564,7 @@ var require_websocket_server = __commonJS({
           abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
           return;
         }
-        if (version !== 13 && version !== 8) {
+        if (version2 !== 13 && version2 !== 8) {
           const message = "Missing or invalid Sec-WebSocket-Version header";
           abortHandshakeOrEmitwsClientError(this, req, socket, 400, message, {
             "Sec-WebSocket-Version": "13, 8"
@@ -3608,7 +3608,7 @@ var require_websocket_server = __commonJS({
         }
         if (this.options.verifyClient) {
           const info = {
-            origin: req.headers[`${version === 8 ? "sec-websocket-origin" : "origin"}`],
+            origin: req.headers[`${version2 === 8 ? "sec-websocket-origin" : "origin"}`],
             secure: !!(req.socket.authorized || req.socket.encrypted),
             req
           };
@@ -3947,6 +3947,16 @@ var AnnouncementStore = class {
       return notice;
     });
   }
+  ensureUpgradeNotice(id, text) {
+    return this.serial(async () => {
+      const now = Date.now();
+      if (this.state.announcements.some((notice2) => notice2.title === "\u5BA2\u6237\u7AEF\u9700\u8981\u5347\u7EA7" && notice2.text === text && Array.isArray(notice2.targets) && notice2.targets.includes(id) && Date.parse(notice2.expiresAt) > now)) return;
+      const retained = this.state.announcements.filter((notice2) => Date.parse(notice2.expiresAt) > now);
+      if (retained.length >= TERRARIUM_MAX_ANNOUNCEMENTS) return;
+      const notice = { id: this.state.nextId, title: "\u5BA2\u6237\u7AEF\u9700\u8981\u5347\u7EA7", text, targets: [id], createdAt: new Date(now).toISOString(), expiresAt: new Date(now + 30 * 864e5).toISOString() };
+      await this.save({ nextId: notice.id + 1, announcements: [...retained, notice] });
+    });
+  }
   revoke(id) {
     return this.serial(async () => {
       if (!this.state.announcements.some((notice) => notice.id === id)) return false;
@@ -3974,6 +3984,15 @@ import { dirname as dirname3 } from "node:path";
 var timestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
 var timestamp = (value) => typeof value === "string" && timestampPattern.test(value) && Number.isFinite(Date.parse(value));
 var object2 = (value) => !!value && typeof value === "object" && !Array.isArray(value);
+var version = (value) => value === null || typeof value === "string" && value.length <= 100 && /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value);
+function meetsMinimumVersion(client, minimum) {
+  if (minimum === null) return true;
+  if (!validClientVersion(client)) return false;
+  const parts = client.split("+")[0].split("-");
+  const actual = parts[0].split(".").map(BigInt), required = minimum.split(".").map(BigInt);
+  for (let i = 0; i < 3; i++) if (actual[i] !== required[i]) return actual[i] > required[i];
+  return parts.length === 1;
+}
 var ControlError = class extends Error {
 };
 var ControlStore = class {
@@ -3981,7 +4000,7 @@ var ControlStore = class {
     this.file = file;
   }
   file;
-  state = { httpPush: { enabled: true, scheduledChange: null } };
+  state = { httpPush: { enabled: true, scheduledChange: null }, minimumClientVersion: { version: null, scheduledChange: null } };
   queue = Promise.resolve();
   async restore() {
     let value;
@@ -3994,30 +4013,21 @@ var ControlStore = class {
     if (!object2(value) || !object2(value.httpPush) || typeof value.httpPush.enabled !== "boolean") throw new Error("Invalid controls file");
     const rule = value.httpPush.scheduledChange;
     if (rule !== null && (!object2(rule) || typeof rule.enabled !== "boolean" || !timestamp(rule.at))) throw new Error("Invalid controls file");
-    this.state = value;
+    const floor = value.minimumClientVersion;
+    if (floor !== void 0 && (!object2(floor) || !version(floor.version) || floor.scheduledChange !== null && (!object2(floor.scheduledChange) || !version(floor.scheduledChange.version) || !timestamp(floor.scheduledChange.at)))) throw new Error("Invalid controls file");
+    this.state = { httpPush: value.httpPush, minimumClientVersion: floor === void 0 ? { version: null, scheduledChange: null } : floor };
   }
-  // Evaluate the persisted deadline on every read, including after a restart or an idle period.
+  // Evaluate persisted deadlines on every read, including after a restart or idle period.
   get() {
-    const control = this.state.httpPush;
-    if (control.scheduledChange && Date.parse(control.scheduledChange.at) <= Date.now()) {
-      return { httpPush: { enabled: control.scheduledChange.enabled, scheduledChange: null } };
-    }
-    return structuredClone(this.state);
+    const state = structuredClone(this.state);
+    if (state.httpPush.scheduledChange && Date.parse(state.httpPush.scheduledChange.at) <= Date.now()) state.httpPush = { enabled: state.httpPush.scheduledChange.enabled, scheduledChange: null };
+    if (state.minimumClientVersion.scheduledChange && Date.parse(state.minimumClientVersion.scheduledChange.at) <= Date.now()) state.minimumClientVersion = { version: state.minimumClientVersion.scheduledChange.version, scheduledChange: null };
+    return state;
   }
-  updateHttpPush(input) {
+  update(work) {
     const result = this.queue.then(async () => {
-      if (!object2(input)) throw new ControlError("Invalid HTTP Push control");
-      const current = this.get().httpPush;
-      let next;
-      if (input.cancel === true && Object.keys(input).length === 1) next = { ...current, scheduledChange: null };
-      else {
-        if (typeof input.enabled !== "boolean" || Object.keys(input).some((key) => key !== "enabled" && key !== "at")) throw new ControlError("Supply enabled and an optional timestamp with timezone");
-        if (input.at !== void 0) {
-          if (!timestamp(input.at) || Date.parse(input.at) <= Date.now()) throw new ControlError("Scheduled time must be in the future and include a timezone");
-          next = { ...current, scheduledChange: { enabled: input.enabled, at: new Date(input.at).toISOString() } };
-        } else next = { enabled: input.enabled, scheduledChange: null };
-      }
-      const state = { httpPush: next };
+      const state = this.get();
+      work(state);
       await mkdir3(dirname3(this.file), { recursive: true });
       await writeFile3(`${this.file}.tmp`, JSON.stringify(state), { mode: 384 });
       await rename3(`${this.file}.tmp`, this.file);
@@ -4027,6 +4037,34 @@ var ControlStore = class {
     this.queue = result.catch(() => {
     });
     return result;
+  }
+  updateHttpPush(input) {
+    return this.update((state) => {
+      if (!object2(input)) throw new ControlError("Invalid HTTP Push control");
+      if (input.cancel === true && Object.keys(input).length === 1) {
+        state.httpPush.scheduledChange = null;
+        return;
+      }
+      if (typeof input.enabled !== "boolean" || Object.keys(input).some((key) => key !== "enabled" && key !== "at")) throw new ControlError("Supply enabled and an optional timestamp with timezone");
+      if (input.at !== void 0) state.httpPush.scheduledChange = { enabled: input.enabled, at: this.future(input.at) };
+      else state.httpPush = { enabled: input.enabled, scheduledChange: null };
+    });
+  }
+  updateMinimumClientVersion(input) {
+    return this.update((state) => {
+      if (!object2(input)) throw new ControlError("Invalid minimum client version control");
+      if (input.cancel === true && Object.keys(input).length === 1) {
+        state.minimumClientVersion.scheduledChange = null;
+        return;
+      }
+      if (!Object.hasOwn(input, "version") || !version(input.version) || Object.keys(input).some((key) => key !== "version" && key !== "at")) throw new ControlError("Supply a stable version (major.minor.patch) or null and an optional timestamp with timezone");
+      if (input.at !== void 0) state.minimumClientVersion.scheduledChange = { version: input.version, at: this.future(input.at) };
+      else state.minimumClientVersion = { version: input.version, scheduledChange: null };
+    });
+  }
+  future(at) {
+    if (!timestamp(at) || Date.parse(at) <= Date.now()) throw new ControlError("Scheduled time must be in the future and include a timezone");
+    return new Date(at).toISOString();
   }
 };
 
@@ -4233,7 +4271,7 @@ function validReplays(state) {
 function validState(value) {
   if (!value || typeof value !== "object") return false;
   const state = value;
-  return state.version === 3 && (state.name === void 0 || validName(state.name)) && validHabitat(state) && validReplays(state) && Number.isFinite(state.updatedAtMs) && Number.isSafeInteger(state.nextId) && state.nextId >= 1 && Array.isArray(state.plants) && state.plants.length <= 12 && state.plants.every((p) => p && typeof p.id === "string" && p.id.length <= 32 && ["fern", "clover", "moss", "basil", "bean"].includes(p.species) && inGrid(p.x, p.y) && Number.isFinite(p.moisture) && p.moisture >= 0 && p.moisture <= 100 && Number.isFinite(p.growthHours) && p.growthHours >= 0 && Number.isInteger(p.stage) && p.stage >= 0 && p.stage <= 3 && typeof p.dry === "boolean" && Number.isFinite(p.health) && p.health >= 0 && p.health <= 100 && (p.healthWarning === void 0 || typeof p.healthWarning === "boolean")) && Array.isArray(state.seeds) && state.seeds.length <= 12 && state.plants.length + state.seeds.length <= 12 && state.seeds.every((s) => s && typeof s.id === "string" && ["moss", "basil", "bean"].includes(s.species) && inGrid(s.x, s.y) && Number.isFinite(s.ageHours) && s.ageHours >= 0) && Array.isArray(state.bugs) && state.bugs.length <= 12 && state.bugs.every((b) => b && typeof b.id === "string" && ["aphid", "beetle", "spider", "ant"].includes(b.species) && inGrid(b.x, b.y) && Number.isFinite(b.energy) && b.energy >= 0 && b.energy <= 100 && (b.carrying === void 0 || b.species === "ant" && Number.isInteger(b.carrying) && b.carrying >= 0 && b.carrying <= 5) && Number.isFinite(b.ageHours) && b.ageHours >= 0) && (state.eggs === void 0 || Array.isArray(state.eggs) && state.eggs.length <= 12 && state.eggs.every((egg) => egg && typeof egg.id === "string" && egg.id.length <= 32 && ["beetle", "spider", "ant"].includes(egg.species) && inGrid(egg.x, egg.y) && Number.isFinite(egg.laidAtMs) && egg.laidAtMs <= state.updatedAtMs && Number.isFinite(egg.hatchesAtMs) && egg.hatchesAtMs > egg.laidAtMs && egg.hatchesAtMs <= egg.laidAtMs + 6 * HOUR_MS)) && state.bugs.length + (state.eggs?.length ?? 0) <= 12 && (state.nests === void 0 || Array.isArray(state.nests) && state.nests.length <= 5 && state.nests.every((nest) => nest && typeof nest.id === "string" && nest.id.length <= 32 && inGrid(nest.x, nest.y) && Number.isInteger(nest.depth) && nest.depth >= 1 && nest.depth <= 5 && Number.isInteger(nest.food) && nest.food >= 0 && nest.food <= nest.depth * 20) && new Set(state.nests.map((nest) => `${nest.x},${nest.y}`)).size === state.nests.length) && (state.food === void 0 || Array.isArray(state.food) && state.food.length <= 20 && state.food.every((food) => food && typeof food.id === "string" && food.id.length <= 32 && inGrid(food.x, food.y) && Number.isInteger(food.portions) && food.portions >= 1 && food.portions <= 10 && Number.isFinite(food.droppedAtMs) && food.droppedAtMs <= state.updatedAtMs)) && Array.isArray(state.items) && state.items.length === 2 && ["coin", "pebble"].every((id) => state.items.filter((item) => item.id === id && inGrid(item.x, item.y)).length === 1) && !(state.items[0].x === state.items[1].x && state.items[0].y === state.items[1].y) && new Set([...state.plants, ...state.seeds, ...state.bugs, ...state.eggs ?? [], ...state.nests ?? [], ...state.food ?? []].map((v) => v.id)).size === state.plants.length + state.seeds.length + state.bugs.length + (state.eggs?.length ?? 0) + (state.nests?.length ?? 0) + (state.food?.length ?? 0) && new Set([...state.plants, ...state.seeds].map((v) => `${v.x},${v.y}`)).size === state.plants.length + state.seeds.length && validColony(state);
+  return state.version === 3 && (state.name === void 0 || validName(state.name)) && validHabitat(state) && validReplays(state) && Number.isFinite(state.updatedAtMs) && Number.isSafeInteger(state.nextId) && state.nextId >= 1 && Array.isArray(state.plants) && state.plants.length <= 12 && state.plants.every((p) => p && typeof p.id === "string" && p.id.length <= 32 && ["fern", "clover", "moss", "basil", "bean"].includes(p.species) && inGrid(p.x, p.y) && Number.isFinite(p.moisture) && p.moisture >= 0 && p.moisture <= 100 && Number.isFinite(p.growthHours) && p.growthHours >= 0 && Number.isInteger(p.stage) && p.stage >= 0 && p.stage <= 3 && typeof p.dry === "boolean" && Number.isFinite(p.health) && p.health >= 0 && p.health <= 100 && (p.healthWarning === void 0 || typeof p.healthWarning === "boolean")) && Array.isArray(state.seeds) && state.seeds.length <= 12 && state.plants.length + state.seeds.length <= 12 && state.seeds.every((s) => s && typeof s.id === "string" && ["moss", "basil", "bean"].includes(s.species) && inGrid(s.x, s.y) && Number.isFinite(s.ageHours) && s.ageHours >= 0) && Array.isArray(state.bugs) && state.bugs.length <= 12 && state.bugs.every((b) => b && typeof b.id === "string" && ["aphid", "beetle", "spider", "ant"].includes(b.species) && inGrid(b.x, b.y) && Number.isFinite(b.energy) && b.energy >= 0 && b.energy <= 100 && (b.hunger === void 0 || Number.isFinite(b.hunger) && b.hunger >= 0 && b.hunger <= 100) && (b.carrying === void 0 || b.species === "ant" && Number.isInteger(b.carrying) && b.carrying >= 0 && b.carrying <= 5) && Number.isFinite(b.ageHours) && b.ageHours >= 0) && (state.eggs === void 0 || Array.isArray(state.eggs) && state.eggs.length <= 12 && state.eggs.every((egg) => egg && typeof egg.id === "string" && egg.id.length <= 32 && ["beetle", "spider", "ant"].includes(egg.species) && inGrid(egg.x, egg.y) && Number.isFinite(egg.laidAtMs) && egg.laidAtMs <= state.updatedAtMs && Number.isFinite(egg.hatchesAtMs) && egg.hatchesAtMs > egg.laidAtMs && egg.hatchesAtMs <= egg.laidAtMs + 6 * HOUR_MS)) && state.bugs.length + (state.eggs?.length ?? 0) <= 12 && (state.nests === void 0 || Array.isArray(state.nests) && state.nests.length <= 5 && state.nests.every((nest) => nest && typeof nest.id === "string" && nest.id.length <= 32 && inGrid(nest.x, nest.y) && Number.isInteger(nest.depth) && nest.depth >= 1 && nest.depth <= 5 && Number.isInteger(nest.food) && nest.food >= 0 && nest.food <= nest.depth * 20) && new Set(state.nests.map((nest) => `${nest.x},${nest.y}`)).size === state.nests.length) && (state.food === void 0 || Array.isArray(state.food) && state.food.length <= 20 && state.food.every((food) => food && typeof food.id === "string" && food.id.length <= 32 && inGrid(food.x, food.y) && Number.isInteger(food.portions) && food.portions >= 1 && food.portions <= 10 && Number.isFinite(food.droppedAtMs) && food.droppedAtMs <= state.updatedAtMs)) && Array.isArray(state.items) && state.items.length === 2 && ["coin", "pebble"].every((id) => state.items.filter((item) => item.id === id && inGrid(item.x, item.y)).length === 1) && !(state.items[0].x === state.items[1].x && state.items[0].y === state.items[1].y) && new Set([...state.plants, ...state.seeds, ...state.bugs, ...state.eggs ?? [], ...state.nests ?? [], ...state.food ?? []].map((v) => v.id)).size === state.plants.length + state.seeds.length + state.bugs.length + (state.eggs?.length ?? 0) + (state.nests?.length ?? 0) + (state.food?.length ?? 0) && new Set([...state.plants, ...state.seeds].map((v) => `${v.x},${v.y}`)).size === state.plants.length + state.seeds.length && validColony(state);
 }
 
 // src/aquarium.ts
@@ -4277,13 +4315,15 @@ function score(state) {
 // server/index.ts
 var idPattern2 = /^[a-z0-9][a-z0-9_-]{1,39}$/;
 var ReportError = class extends Error {
-  constructor(status, message, resync = false) {
+  constructor(status, message, resync = false, ignored = false) {
     super(message);
     this.status = status;
     this.resync = resync;
+    this.ignored = ignored;
   }
   status;
   resync;
+  ignored;
 };
 function equal(a, b) {
   const left = Buffer.from(a), right = Buffer.from(b);
@@ -4346,10 +4386,18 @@ async function start(options = {}) {
     if (error.code !== "ENOENT") throw error;
     return readFile5(new URL("../dist/scene.js", import.meta.url));
   });
-  const httpPushDisabled = "HTTP Push is disabled. Update cortico-world-terrarium and use WebSocket Push at /api/reports/ws";
+  const rejectReport = async (id, clientVersion, transport) => {
+    const control = controls.get();
+    const minimum = control.minimumClientVersion.version;
+    const obsolete = !meetsMinimumVersion(clientVersion, minimum);
+    if (!(transport === "http" && !control.httpPush.enabled) && !obsolete) return;
+    const text = `\u672C\u6B21\u63D0\u4EA4\u672A\u6210\u529F\uFF0C\u63D0\u4EA4\u5185\u5BB9\u5DF2\u88AB\u5FFD\u7565\uFF0C\u670D\u52A1\u7AEF\u5B58\u6863\u548C\u6392\u884C\u699C\u672A\u66F4\u65B0\u3002${transport === "http" && !control.httpPush.enabled ? "HTTP Push \u5DF2\u505C\u6B62\u63A5\u6536\u5185\u5BB9\uFF0C\u8BF7\u6539\u7528 WebSocket Push\u3002" : ""}${obsolete ? `\u5BA2\u6237\u7AEF\u7248\u672C ${validClientVersion(clientVersion) ? clientVersion : "\u672A\u4E0A\u62A5\u6216\u65E0\u6548"} \u4F4E\u4E8E\u6700\u4F4E\u8981\u6C42 ${minimum}\u3002` : ""}\u5FC5\u987B\u5347\u7EA7 cortico-world-terrarium \u5230\u6700\u65B0\u7248\u672C\u624D\u80FD\u7EE7\u7EED\u63D0\u4EA4\u5185\u5BB9\u3002\u53EA\u9700\u5728\u4E3B\u4EBA\u4E0B\u6B21\u4E0E\u4F60\u4EA4\u8C08\u65F6\u987A\u5E26\u8BF4\u660E\u5347\u7EA7\u8981\u6C42\uFF0C\u4E0D\u8981\u4E3B\u52A8\u53D1\u9001\u6D88\u606F\u3002`;
+    await announcements.ensureUpgradeNotice(id, text);
+    throw new ReportError(obsolete ? 426 : 410, text, false, true);
+  };
   const commitReport = (id, input, transport) => {
     const report = reportQueue.then(async () => {
-      if (transport === "http" && !controls.get().httpPush.enabled) throw new ReportError(410, httpPushDisabled);
+      await rejectReport(id, input.clientVersion, transport);
       if (input.phase !== void 0 && input.phase !== "day" && input.phase !== "night" || input.clientVersion !== void 0 && !validClientVersion(input.clientVersion) || input.coopanionVersion !== void 0 && !validClientVersion(input.coopanionVersion)) throw new ReportError(400, "Invalid report metadata");
       let raw = input.state;
       if (input.baseRevision !== void 0) {
@@ -4452,7 +4500,7 @@ async function start(options = {}) {
         reply(200, { ok: true, ...process.env.CORTICO_TERRARIUM_RELEASE_ID ? { releaseId: process.env.CORTICO_TERRARIUM_RELEASE_ID } : {} });
         return;
       }
-      if (path === "/api/admin/controls" || path === "/api/admin/controls/http-push") {
+      if (path === "/api/admin/controls" || path === "/api/admin/controls/http-push" || path === "/api/admin/controls/minimum-client-version") {
         if (!equal(req.headers.authorization?.replace(/^Bearer /, "") ?? "", adminToken)) {
           reply(401, { error: "Unauthorized" });
           return;
@@ -4461,7 +4509,7 @@ async function start(options = {}) {
           reply(200, controls.get());
           return;
         }
-        if (path === "/api/admin/controls/http-push" && req.method === "PUT") {
+        if (path !== "/api/admin/controls" && req.method === "PUT") {
           let raw = "";
           for await (const chunk of req) {
             raw += String(chunk);
@@ -4470,7 +4518,7 @@ async function start(options = {}) {
               return;
             }
           }
-          reply(200, await controls.updateHttpPush(JSON.parse(raw)));
+          reply(200, await (path.endsWith("/http-push") ? controls.updateHttpPush(JSON.parse(raw)) : controls.updateMinimumClientVersion(JSON.parse(raw))));
           return;
         }
         reply(405, { error: "Method not allowed" });
@@ -4667,10 +4715,6 @@ async function start(options = {}) {
       }
       if (req.method === "PUT" && path === "/api/reports") {
         const control = controls.get().httpPush;
-        if (!control.enabled) {
-          reply(410, { error: httpPushDisabled });
-          return;
-        }
         if (control.scheduledChange?.enabled === false) res.setHeader("Sunset", new Date(control.scheduledChange.at).toUTCString());
         let raw = "";
         for await (const chunk of req) {
@@ -4697,7 +4741,7 @@ async function start(options = {}) {
       }
       reply(404, { error: "Not found" });
     } catch (error) {
-      reply(error instanceof ReportError || error instanceof FeedbackError ? error.status : error instanceof SyntaxError || error instanceof ControlError ? 400 : 500, { error: error instanceof ReportError || error instanceof FeedbackError || error instanceof ControlError ? error.message : error instanceof SyntaxError ? "Invalid JSON" : "Request failed" });
+      reply(error instanceof ReportError || error instanceof FeedbackError ? error.status : error instanceof SyntaxError || error instanceof ControlError ? 400 : 500, { error: error instanceof ReportError || error instanceof FeedbackError || error instanceof ControlError ? error.message : error instanceof SyntaxError ? "Invalid JSON" : "Request failed", ...error instanceof ReportError && error.ignored ? { accepted: false, ignored: true, upgradeRequired: true } : {} });
     }
   };
   const server = createServer2((req, res) => {
@@ -4748,6 +4792,7 @@ Content-Length: 0\r
             if (!input || !Number.isSafeInteger(input.seq) || input.seq <= lastSeq) throw new ReportError(400, "Invalid report sequence");
             seq = input.seq;
             lastSeq = seq;
+            await rejectReport(id, input.clientVersion, "websocket");
             if (input.protocol !== 1 || !validClientVersion(input.clientVersion) || !["day", "night"].includes(input.phase) || !["full", "delta"].includes(input.kind)) throw new ReportError(400, "Client version and report protocol are required");
             requireHashes ||= input.stateHash !== void 0 || input.kind === "delta" && input.baseHash !== void 0;
             if (requireHashes && (!validReportHash(input.stateHash) || input.kind === "delta" && !validReportHash(input.baseHash))) throw new ReportError(409, "Report checksums required", true);
@@ -4759,7 +4804,7 @@ Content-Length: 0\r
             if (error instanceof ReportError && error.resync) {
               requireFull = true;
               reply = { kind: "resync", seq };
-            } else reply = { kind: "error", seq, status: error instanceof ReportError || error instanceof FeedbackError ? error.status : error instanceof SyntaxError ? 400 : 500, error: error instanceof ReportError || error instanceof FeedbackError ? error.message : error instanceof SyntaxError ? "Invalid JSON" : "Report failed" };
+            } else reply = { kind: "error", seq, status: error instanceof ReportError || error instanceof FeedbackError ? error.status : error instanceof SyntaxError ? 400 : 500, error: error instanceof ReportError || error instanceof FeedbackError ? error.message : error instanceof SyntaxError ? "Invalid JSON" : "Report failed", ...error instanceof ReportError && error.ignored ? { accepted: false, ignored: true, upgradeRequired: true } : {} };
           }
           if (ws.readyState === import_websocket.default.OPEN) ws.send(JSON.stringify(reply));
         });

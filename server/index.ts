@@ -1,6 +1,6 @@
 import { FeedbackStore, FeedbackError } from './feedback.ts';
 import { AnnouncementStore } from './announcements.ts';
-import { ControlStore, ControlError } from './controls.ts';
+import { ControlStore, ControlError, meetsMinimumVersion } from './controls.ts';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { CONSOLE_ASSETS, historicalAsset, pinConsoleHtml } from './release-assets.ts';
 import { validReleaseId } from './releases.ts';
@@ -21,7 +21,7 @@ const idPattern = /^[a-z0-9][a-z0-9_-]{1,39}$/;
 export interface ServerOptions { dataFile?: string; credentialsFile?: string; port?: number; announcementsFile?: string; controlsFile?: string; adminToken?: string; adminTokenFile?: string; adminHost?: string; adminPort?: number; adminAllowedCidr?: string }
 
 class ReportError extends Error {
-  constructor(readonly status: number, message: string, readonly resync = false) { super(message); }
+  constructor(readonly status: number, message: string, readonly resync = false, readonly ignored = false) { super(message); }
 }
 
 function equal(a: string, b: string): boolean {
@@ -78,10 +78,18 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     return readFile(new URL('../dist/scene.js', import.meta.url));
   });
-  const httpPushDisabled = 'HTTP Push is disabled. Update cortico-world-terrarium and use WebSocket Push at /api/reports/ws';
+  const rejectReport = async (id: string, clientVersion: unknown, transport: 'http' | 'websocket'): Promise<void> => {
+    const control = controls.get();
+    const minimum = control.minimumClientVersion.version;
+    const obsolete = !meetsMinimumVersion(clientVersion, minimum);
+    if (!(transport === 'http' && !control.httpPush.enabled) && !obsolete) return;
+    const text = `本次提交未成功，提交内容已被忽略，服务端存档和排行榜未更新。${transport === 'http' && !control.httpPush.enabled ? 'HTTP Push 已停止接收内容，请改用 WebSocket Push。' : ''}${obsolete ? `客户端版本 ${validClientVersion(clientVersion) ? clientVersion : '未上报或无效'} 低于最低要求 ${minimum}。` : ''}必须升级 cortico-world-terrarium 到最新版本才能继续提交内容。只需在主人下次与你交谈时顺带说明升级要求，不要主动发送消息。`;
+    await announcements.ensureUpgradeNotice(id, text);
+    throw new ReportError(obsolete ? 426 : 410, text, false, true);
+  };
   const commitReport = (id: string, input: { phase?: unknown; clientVersion?: unknown; coopanionVersion?: unknown; state?: unknown; baseRevision?: string; baseHash?: string; stateHash?: string; changes?: unknown }, transport: 'http' | 'websocket') => {
     const report = reportQueue.then(async () => {
-      if (transport === 'http' && !controls.get().httpPush.enabled) throw new ReportError(410, httpPushDisabled);
+      await rejectReport(id, input.clientVersion, transport);
       if ((input.phase !== undefined && input.phase !== 'day' && input.phase !== 'night') || (input.clientVersion !== undefined && !validClientVersion(input.clientVersion)) || (input.coopanionVersion !== undefined && !validClientVersion(input.coopanionVersion))) throw new ReportError(400, 'Invalid report metadata');
       let raw = input.state;
       if (input.baseRevision !== undefined) {
@@ -150,13 +158,13 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
         res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); res.end(sceneScript); return;
       }
       if (req.method === 'GET' && path === '/health') { reply(200, { ok: true, ...(process.env.CORTICO_TERRARIUM_RELEASE_ID ? { releaseId: process.env.CORTICO_TERRARIUM_RELEASE_ID } : {}) }); return; }
-      if (path === '/api/admin/controls' || path === '/api/admin/controls/http-push') {
+      if (path === '/api/admin/controls' || path === '/api/admin/controls/http-push' || path === '/api/admin/controls/minimum-client-version') {
         if (!equal(req.headers.authorization?.replace(/^Bearer /, '') ?? '', adminToken)) { reply(401, { error: 'Unauthorized' }); return; }
         if (path === '/api/admin/controls' && req.method === 'GET') { reply(200, controls.get()); return; }
-        if (path === '/api/admin/controls/http-push' && req.method === 'PUT') {
+        if (path !== '/api/admin/controls' && req.method === 'PUT') {
           let raw = '';
           for await (const chunk of req) { raw += String(chunk); if (Buffer.byteLength(raw) > 1024) { reply(413, { error: 'Control too large' }); return; } }
-          reply(200, await controls.updateHttpPush(JSON.parse(raw))); return;
+          reply(200, await (path.endsWith('/http-push') ? controls.updateHttpPush(JSON.parse(raw)) : controls.updateMinimumClientVersion(JSON.parse(raw)))); return;
         }
         reply(405, { error: 'Method not allowed' }); return;
       }
@@ -265,7 +273,6 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
       }
       if (req.method === 'PUT' && path === '/api/reports') {
         const control = controls.get().httpPush;
-        if (!control.enabled) { reply(410, { error: httpPushDisabled }); return; }
         if (control.scheduledChange?.enabled === false) res.setHeader('Sunset', new Date(control.scheduledChange.at).toUTCString());
         let raw = '';
         for await (const chunk of req) {
@@ -282,7 +289,7 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
         return;
       }
       reply(404, { error: 'Not found' });
-    } catch (error) { reply(error instanceof ReportError || error instanceof FeedbackError ? error.status : error instanceof SyntaxError || error instanceof ControlError ? 400 : 500, { error: error instanceof ReportError || error instanceof FeedbackError || error instanceof ControlError ? error.message : error instanceof SyntaxError ? 'Invalid JSON' : 'Request failed' }); }
+    } catch (error) { reply(error instanceof ReportError || error instanceof FeedbackError ? error.status : error instanceof SyntaxError || error instanceof ControlError ? 400 : 500, { error: error instanceof ReportError || error instanceof FeedbackError || error instanceof ControlError ? error.message : error instanceof SyntaxError ? 'Invalid JSON' : 'Request failed', ...(error instanceof ReportError && error.ignored ? { accepted: false, ignored: true, upgradeRequired: true } : {}) }); }
   };
   const server = createServer((req, res) => { void handleRequest(req, res); });
   const adminServer = adminHost ? createAdminServer(adminHost, adminCidr, (req, res) => { void handleRequest(req, res, true); }) : undefined;
@@ -313,6 +320,7 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
             const input = JSON.parse(raw.toString()) as ReportMessage;
             if (!input || !Number.isSafeInteger(input.seq) || input.seq <= lastSeq) throw new ReportError(400, 'Invalid report sequence');
             seq = input.seq; lastSeq = seq;
+            await rejectReport(id, input.clientVersion, 'websocket');
             if (input.protocol !== 1 || !validClientVersion(input.clientVersion) || !['day', 'night'].includes(input.phase) || !['full', 'delta'].includes(input.kind)) throw new ReportError(400, 'Client version and report protocol are required');
             requireHashes ||= input.stateHash !== undefined || (input.kind === 'delta' && input.baseHash !== undefined);
             if (requireHashes && (!validReportHash(input.stateHash) || (input.kind === 'delta' && !validReportHash(input.baseHash)))) throw new ReportError(409, 'Report checksums required', true);
@@ -322,7 +330,7 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
             reply = { kind: 'ack', seq, revision: entry.reportRevision!, score: entry.score, stateHash: reportStateHash(entry.state) };
           } catch (error) {
             if (error instanceof ReportError && error.resync) { requireFull = true; reply = { kind: 'resync', seq }; }
-            else reply = { kind: 'error', seq, status: error instanceof ReportError || error instanceof FeedbackError ? error.status : error instanceof SyntaxError ? 400 : 500, error: error instanceof ReportError || error instanceof FeedbackError ? error.message : error instanceof SyntaxError ? 'Invalid JSON' : 'Report failed' };
+            else reply = { kind: 'error', seq, status: error instanceof ReportError || error instanceof FeedbackError ? error.status : error instanceof SyntaxError ? 400 : 500, error: error instanceof ReportError || error instanceof FeedbackError ? error.message : error instanceof SyntaxError ? 'Invalid JSON' : 'Report failed', ...(error instanceof ReportError && error.ignored ? { accepted: false, ignored: true, upgradeRequired: true } : {}) };
           }
           if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(reply));
         });

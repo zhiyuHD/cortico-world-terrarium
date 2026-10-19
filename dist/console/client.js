@@ -250,6 +250,10 @@ function renderControls() {
   serverOffset = Date.parse(snapshot.serverAt) - Date.now();
   iconLabel(el("http-status"), controls.httpPush.enabled ? "power" : "power-off", controls.httpPush.enabled ? "\u5DF2\u5F00\u542F" : "\u5DF2\u5173\u95ED");
   el("http-cancel").disabled = !controls.httpPush.scheduledChange;
+  const floor = controls.minimumClientVersion;
+  el("minimum-status").textContent = floor?.version ? `\u81F3\u5C11 ${floor.version}` : "\u672A\u9650\u5236";
+  el("minimum-schedule").textContent = floor?.scheduledChange ? `${date(floor.scheduledChange.at)} \xB7 ${floor.scheduledChange.version ? `\u81F3\u5C11 ${floor.scheduledChange.version}` : "\u53D6\u6D88\u7248\u672C\u9650\u5236"}` : "\u6682\u65E0\u5B9A\u65F6\u53D8\u66F4";
+  el("minimum-cancel").disabled = !floor?.scheduledChange;
   renderCountdown();
 }
 function renderCountdown() {
@@ -356,7 +360,7 @@ for (const item of Array.from(document.querySelectorAll("[data-enable]"))) item.
   scheduleEnabled = item.dataset.enable === "true";
   for (const other of Array.from(document.querySelectorAll("[data-enable]"))) other.setAttribute("aria-pressed", String(other === item));
 };
-for (const enabled of [true, false]) el(enabled ? "http-on" : "http-off").onclick = () => confirmAction(`\u7ACB\u5373${enabled ? "\u5F00\u542F" : "\u5173\u95ED"} HTTP Push`, `${enabled ? "\u65E7\u7248\u5BA2\u6237\u7AEF\u53EF\u4EE5\u901A\u8FC7 HTTP \u63D0\u4EA4\u3002" : "\u65E7\u7248\u5BA2\u6237\u7AEF\u7684 HTTP \u63D0\u4EA4\u5C06\u8FD4\u56DE 410\uFF0C\u9700\u8981\u5347\u7EA7\u5E76\u4F7F\u7528 WS\u3002"}
+for (const enabled of [true, false]) el(enabled ? "http-on" : "http-off").onclick = () => confirmAction(`\u7ACB\u5373${enabled ? "\u5F00\u542F" : "\u5173\u95ED"} HTTP Push`, `${enabled ? "\u65E7\u7248\u5BA2\u6237\u7AEF\u53EF\u4EE5\u901A\u8FC7 HTTP \u63D0\u4EA4\u3002" : "\u4FDD\u7559 HTTP \u63A5\u53E3\uFF0C\u5FFD\u7565\u63D0\u4EA4\u5E76\u8FD4\u56DE\u672A\u63D0\u4EA4\u6210\u529F\u63D0\u793A\uFF0C\u540C\u65F6\u53D1\u9001\u5347\u7EA7\u516C\u544A\u3002"}
 \u8FD9\u4F1A\u6E05\u9664\u73B0\u6709\u5B9A\u65F6\u4EFB\u52A1\u3002`, async () => {
   await api("controls/http-push", "PUT", { enabled });
 });
@@ -413,3 +417,20 @@ setInterval(() => {
   if (!document.hidden && token) renderCountdown();
 }, 1e3);
 if (token) void refresh();
+el("minimum-form").onsubmit = (event) => {
+  event.preventDefault();
+  const version2 = input("minimum-version").value.trim(), at = input("minimum-at").value.trim();
+  if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version2) || at && !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(at)) {
+    status("\u8BF7\u8F93\u5165\u7248\u672C\u53F7\u53CA\u6709\u6548\u7684\u5317\u4EAC\u65F6\u95F4");
+    return;
+  }
+  confirmAction("\u786E\u8BA4\u6700\u4F4E\u5BA2\u6237\u7AEF\u7248\u672C", `\u6700\u4F4E\u7248\u672C ${version2}\uFF0C${at ? `${at}\uFF08\u5317\u4EAC\u65F6\u95F4\uFF09\u751F\u6548` : "\u7ACB\u5373\u751F\u6548"}\u3002\u4F4E\u7248\u672C\u548C\u672A\u4E0A\u62A5\u7248\u672C\u7684\u63D0\u4EA4\u5C06\u88AB\u5FFD\u7565\u3002`, async () => {
+    await api("controls/minimum-client-version", "PUT", { version: version2, ...at ? { at: at.replace(" ", "T") + ":00+08:00" } : {} });
+  });
+};
+el("minimum-off").onclick = () => confirmAction("\u53D6\u6D88\u7248\u672C\u9650\u5236", "\u5141\u8BB8\u6240\u6709\u5BA2\u6237\u7AEF\u7248\u672C\u63D0\u4EA4\u3002HTTP Push \u5F00\u5173\u4ECD\u5355\u72EC\u751F\u6548\u3002", async () => {
+  await api("controls/minimum-client-version", "PUT", { version: null });
+});
+el("minimum-cancel").onclick = () => confirmAction("\u53D6\u6D88\u7248\u672C\u5B9A\u65F6\u53D8\u66F4", "\u4FDD\u7559\u5F53\u524D\u6700\u4F4E\u5BA2\u6237\u7AEF\u7248\u672C\u3002", async () => {
+  await api("controls/minimum-client-version", "PUT", { cancel: true });
+});

@@ -1,3 +1,107 @@
+// src/habitat.ts
+var TERRARIUM_PLANT_RECOVERED_HEALTH = 35;
+var TERRARIUM_PLANT_REQUIREMENTS = {
+  fern: { minMoisture: 30, maxMoisture: 85, minLight: 0.15, maxLight: 0.7 },
+  clover: { minMoisture: 20, maxMoisture: 80, minLight: 0.45, maxLight: 1 },
+  moss: { minMoisture: 45, maxMoisture: 90, minLight: 0.15, maxLight: 0.4 },
+  basil: { minMoisture: 30, maxMoisture: 75, minLight: 0.65, maxLight: 1 },
+  bean: { minMoisture: 25, maxMoisture: 70, minLight: 0.7, maxLight: 1 }
+};
+function daylight(habitat, x, y) {
+  const shaded = habitat.items.some((item) => item.id === "pebble" && Math.abs(item.x - x) + Math.abs(item.y - y) <= 1);
+  return (0.6 + x * 0.1) * (shaded ? 0.35 : 1);
+}
+var TERRARIUM_FLOWER_BUD_HOURS = 12;
+var TERRARIUM_FLOWER_BLOOM_HOURS = 18;
+function flowerStage(plant) {
+  if (plant.species !== "clover" && plant.species !== "basil" && plant.species !== "bean") return;
+  const needs = TERRARIUM_PLANT_REQUIREMENTS[plant.species];
+  if (plant.health < TERRARIUM_PLANT_RECOVERED_HEALTH || plant.dry || plant.moisture < needs.minMoisture || plant.moisture > needs.maxMoisture) return;
+  if ((plant.growthHours ?? 0) >= TERRARIUM_FLOWER_BLOOM_HOURS) return "bloom";
+  if ((plant.growthHours ?? 0) >= TERRARIUM_FLOWER_BUD_HOURS) return "bud";
+}
+
+// webui/flowers.ts
+function drawPlantFlowers(g, plant, x, y, night) {
+  const stage = flowerStage(plant);
+  if (!stage) return;
+  g.save();
+  g.translate(x, y);
+  g.lineCap = "round";
+  const stem = (tx, ty) => {
+    g.strokeStyle = "#568451";
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(0, 8);
+    g.quadraticCurveTo(tx * 0.35, ty * 0.6, tx, ty);
+    g.stroke();
+  };
+  const petal = (px, py, rx, ry, angle, color) => {
+    g.fillStyle = color;
+    g.beginPath();
+    g.ellipse(px, py, rx, ry, angle, 0, Math.PI * 2);
+    g.fill();
+  };
+  const bud = (px, py, color) => {
+    petal(px, py, 4, 7, -0.15, color);
+    g.fillStyle = "#5f965a";
+    g.beginPath();
+    g.moveTo(px - 5, py + 3);
+    g.lineTo(px, py + 7);
+    g.lineTo(px + 5, py + 2);
+    g.lineTo(px, py + 4);
+    g.fill();
+  };
+  if (plant.species === "clover") {
+    for (const [tx, ty, scale] of [[-16, -19, 0.8], [11, -34, 1], [29, -9, 0.7]]) {
+      stem(tx, ty + 8);
+      g.save();
+      g.translate(tx, ty);
+      g.scale(scale, scale);
+      if (stage === "bud" || night) bud(0, 0, "#d49cb4");
+      else {
+        petal(0, 2, 13, 11, 0, "#c47b9a");
+        for (let ring = 0; ring < 3; ring++) {
+          const count = 12 - ring * 3, radius = 9 - ring * 3;
+          for (let i = 0; i < count; i++) {
+            const angle = i * Math.PI * 2 / count + ring * 0.4;
+            petal(Math.cos(angle) * radius, Math.sin(angle) * radius * 0.8, 2.6, 5, angle + Math.PI / 2, ["#edb4c8", "#f7cfda", "#fff0e9"][ring]);
+          }
+        }
+      }
+      g.restore();
+    }
+  } else if (plant.species === "basil") {
+    stem(0, -49);
+    for (let level = 0; level < 5; level++) for (const side of [-1, 1]) {
+      const px = side * (8 - level), py = -7 - level * 9;
+      stem(px, py + 2);
+      if (stage === "bud" || night) bud(px, py, "#b7a8ce");
+      else {
+        petal(px, py, 5, 4, side * 0.6, "#c8b5de");
+        petal(px + side * 2, py + 2, 5, 3, -side * 0.25, "#f8efff");
+        petal(px - side, py - 2, 3, 4, side * 0.3, "#eee4f7");
+        petal(px + side * 3, py + 1, 1.5, 1.5, 0, "#d3a56b");
+      }
+    }
+    bud(0, -51, "#c3b7d4");
+  } else {
+    for (const [tx, ty] of [[-15, -18], [20, -32], [31, -5]]) {
+      stem(tx, ty + 6);
+      if (stage === "bud" || night) bud(tx, ty, "#d69ab1");
+      else {
+        petal(tx, ty - 4, 12, 10, -0.15, "#d88fac");
+        petal(tx, ty - 7, 9, 7, -0.15, "#f7cbd9");
+        petal(tx - 7, ty + 3, 9, 5, 0.6, "#e9a6c0");
+        petal(tx + 7, ty + 3, 9, 5, -0.6, "#f0b7ce");
+        petal(tx + 1, ty + 5, 5, 6, -0.2, "#fff0e9");
+        petal(tx + 1, ty + 2, 2, 2, 0, "#d6ab65");
+      }
+    }
+  }
+  g.restore();
+}
+
 // webui/playback.ts
 function createPlaybackControls(container, createRenderer, language = "zh") {
   const copy = language === "zh" ? { title: "\u6355\u98DF\u56DE\u653E", empty: "\u6682\u65E0\u6355\u98DF\u8BB0\u5F55", play: "\u64AD\u653E", pause: "\u6682\u505C", frames: ["\u79FB\u52A8\u524D", "\u63A5\u89E6\u730E\u7269", "\u6355\u98DF\u540E"], select: "\u9009\u62E9\u6355\u98DF\u8BB0\u5F55", frame: "\u56DE\u653E\u5E27" } : { title: "Hunt replays", empty: "No recorded hunts", play: "Play", pause: "Pause", frames: ["Before movement", "Contact", "After capture"], select: "Choose a hunt", frame: "Replay frame" };
@@ -253,7 +357,7 @@ function createNestViewer(canvas, language = "zh") {
         detail.replaceChildren(el("h3", "", `${roomName(x, y)} (${x},${y})`));
         if (!ants.length && !eggs.length) detail.append(el("p", "", text.empty));
         if (x === 3 && y === 0) detail.append(el("p", "", `${text.food}: ${nest.food}`));
-        for (const ant of ants) detail.append(el("p", "", `${ant.id} \xB7 ${ant.role === "queen" ? text.queen : text.worker}${ant.energy === void 0 ? "" : ` \xB7 ${zh ? "\u4F53\u529B" : "Energy"} ${ant.energy.toFixed(0)}`}`));
+        for (const ant of ants) detail.append(el("p", "", `${ant.id} \xB7 ${ant.role === "queen" ? text.queen : text.worker}${ant.energy === void 0 ? "" : ` \xB7 ${zh ? "\u4F53\u529B" : "Energy"} ${ant.energy.toFixed(0)}`}${ant.hunger === void 0 ? "" : ` \xB7 ${zh ? "\u9965\u997F" : "Hunger"} ${ant.hunger.toFixed(0)}/100`}`));
         for (const egg of eggs) {
           const row = el("p", "", `${egg.id} \xB7 ${remainingTime(egg.hatchesAtMs)} \xB7 `);
           const time = el("time", "tn-time", new Date(egg.hatchesAtMs).toLocaleString(zh ? "zh-CN" : "en"));
@@ -491,12 +595,6 @@ function createWaterScene(canvas) {
 }
 function createWaterReplayControls(container, language = "zh") {
   return createPlaybackControls(container, createWaterScene, language);
-}
-
-// src/habitat.ts
-function daylight(habitat, x, y) {
-  const shaded = habitat.items.some((item) => item.id === "pebble" && Math.abs(item.x - x) + Math.abs(item.y - y) <= 1);
-  return (0.6 + x * 0.1) * (shaded ? 0.35 : 1);
 }
 
 // webui/public-controls.ts
@@ -892,10 +990,10 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
       const y = base - height * (0.35 + 0.6 * i / Math.max(1, leaves - 1));
       g.fillStyle = plant.dry ? "#a4ad77" : i % 2 ? "#64aa6d" : "#7abb77";
       g.beginPath();
-      g.ellipse(x + side * (9 + plant.stage * 3), y - 7, 11 + plant.stage * 3, plant.id === "fern" ? 7 : 11, -side * 0.45, 0, Math.PI * 2);
+      g.ellipse(x + side * (9 + plant.stage * 3), y - 7, 11 + plant.stage * 3, plant.species === "fern" ? 7 : 11, -side * 0.45, 0, Math.PI * 2);
       g.fill();
     }
-    if (plant.id === "clover" && plant.stage > 1) {
+    if (plant.species === "clover" && plant.stage > 1) {
       g.fillStyle = plant.dry ? "#a4ad77" : "#74b878";
       for (const dx of [-8, 0, 8]) {
         g.beginPath();
@@ -903,6 +1001,7 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
         g.fill();
       }
     }
+    drawPlantFlowers(g, plant, x, base - height, night);
   }
   for (const item of state.items) {
     const { x, y } = plotPosition(item.x, item.y);

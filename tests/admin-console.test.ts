@@ -46,7 +46,7 @@ it('isolates console assets and admin operations from the public listener and re
   expect(wrongHost).toBe(403);
   const denied = await new Promise<number>((resolve, reject) => { const req = request(adminUrl, { localAddress: '127.0.0.2', headers: { 'x-forwarded-for': '127.0.0.1' } }, res => { res.resume(); res.on('end', () => resolve(res.statusCode!)); }); req.on('error', reject); req.end(); });
   expect(denied).toBe(403);
-  expect(await runAdmin(['controls', '--server', adminUrl, '--token-file', join(dir, 'admin-token')])).toEqual({ httpPush: { enabled: true, scheduledChange: null } });
+  expect(await runAdmin(['controls', '--server', adminUrl, '--token-file', join(dir, 'admin-token')])).toMatchObject({ httpPush: { enabled: true, scheduledChange: null } });
 });
 it('tracks HTTP and WS reporting independently from live connections and omits box tokens and state', async () => {
   const { publicUrl, admin } = await fixture();
@@ -79,7 +79,7 @@ it('supports targeted feedback replies, resolution and persisted cloud controls 
   expect((await admin(`/api/admin/feedback/${receipt.id}/resolve`, 'POST')).status).toBe(200);
   expect((await (await admin('/api/admin/feedback')).json()).feedback[0].resolvedAt).toBeTruthy();
   const at = new Date(Date.now() + 60000).toISOString();
-  expect(await (await admin('/api/admin/controls/http-push', 'PUT', { enabled: false, at })).json()).toEqual({ httpPush: { enabled: true, scheduledChange: { enabled: false, at } } });
+  expect(await (await admin('/api/admin/controls/http-push', 'PUT', { enabled: false, at })).json()).toMatchObject({ httpPush: { enabled: true, scheduledChange: { enabled: false, at } } });
 });
 it('rejects public bind addresses and enforces LAN source ranges', () => {
   for (const host of ['0.0.0.0', '8.8.8.8', 'localhost', '::']) expect(() => adminNetwork(host, '192.168.22.0/24')).toThrow();

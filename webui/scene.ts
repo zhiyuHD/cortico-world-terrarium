@@ -1,5 +1,6 @@
 import type { EggState, NestState, LandFood } from '../src/state.ts';
 import type { ReplayFrame } from '../src/replay.ts';
+import { drawPlantFlowers } from './flowers.ts';
 import { createPlaybackControls } from './playback.ts';
 import { createNestViewer } from './nest-viewer.ts';
 import { drawAntNest } from './nest-scene.ts';
@@ -12,9 +13,9 @@ export interface SceneState {
   eggs?: EggState[];
   nests?: NestState[];
   food?: LandFood[];
-  plants: Array<{ id: string; species: string; x: number; y: number; moisture: number; stage: number; dry: boolean; health: number }>;
+  plants: Array<{ id: string; species: string; x: number; y: number; moisture: number; growthHours?: number; stage: number; dry: boolean; health: number }>;
   seeds: Array<{ id: string; species: string; x: number; y: number }>;
-  bugs: Array<{ id: string; species: string; x: number; y: number; carrying?: number; role?: 'queen' | 'worker'; inside?: import('../src/colony.ts').NestPosition; energy?: number }>;
+  bugs: Array<{ id: string; species: string; x: number; y: number; carrying?: number; role?: 'queen' | 'worker'; inside?: import('../src/colony.ts').NestPosition; energy?: number; hunger?: number }>;
   items: Array<{ id: 'coin' | 'pebble'; x: number; y: number }>;
 }
 
@@ -104,13 +105,14 @@ export function drawScene(canvas: HTMLCanvasElement, state: SceneState, position
       const y = base - height * (.35 + .6 * i / Math.max(1, leaves - 1));
       g.fillStyle = plant.dry ? '#a4ad77' : i % 2 ? '#64aa6d' : '#7abb77';
       g.beginPath();
-      g.ellipse(x + side * (9 + plant.stage * 3), y - 7, 11 + plant.stage * 3, plant.id === 'fern' ? 7 : 11, -side * .45, 0, Math.PI * 2);
+      g.ellipse(x + side * (9 + plant.stage * 3), y - 7, 11 + plant.stage * 3, plant.species === 'fern' ? 7 : 11, -side * .45, 0, Math.PI * 2);
       g.fill();
     }
-    if (plant.id === 'clover' && plant.stage > 1) {
+    if (plant.species === 'clover' && plant.stage > 1) {
       g.fillStyle = plant.dry ? '#a4ad77' : '#74b878';
       for (const dx of [-8, 0, 8]) { g.beginPath(); g.arc(x + dx, base - height, 9, 0, Math.PI * 2); g.fill(); }
     }
+    drawPlantFlowers(g, plant, x, base - height, night);
   }
   for (const item of state.items) {
     const { x, y } = plotPosition(item.x, item.y);

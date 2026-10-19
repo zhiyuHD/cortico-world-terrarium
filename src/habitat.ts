@@ -40,3 +40,15 @@ export interface HistorySample {
   plants: Array<{ id: string; species: PlantSpecies; moisture: number; health: number; stage: number; growthHours: number }>;
 }
 export const TERRARIUM_MAX_HISTORY = 168;
+
+export const TERRARIUM_FLOWER_BUD_HOURS = 12;
+export const TERRARIUM_FLOWER_BLOOM_HOURS = 18;
+
+/** Flowers follow accumulated suitable daylight growth; fern and moss do not flower. */
+export function flowerStage(plant: { species: string; growthHours?: number; health: number; moisture: number; dry: boolean }): 'bud' | 'bloom' | undefined {
+  if (plant.species !== 'clover' && plant.species !== 'basil' && plant.species !== 'bean') return;
+  const needs = TERRARIUM_PLANT_REQUIREMENTS[plant.species];
+  if (plant.health < TERRARIUM_PLANT_RECOVERED_HEALTH || plant.dry || plant.moisture < needs.minMoisture || plant.moisture > needs.maxMoisture) return;
+  if ((plant.growthHours ?? 0) >= TERRARIUM_FLOWER_BLOOM_HOURS) return 'bloom';
+  if ((plant.growthHours ?? 0) >= TERRARIUM_FLOWER_BUD_HOURS) return 'bud';
+}

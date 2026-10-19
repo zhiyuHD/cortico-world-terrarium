@@ -30,11 +30,11 @@ async function runAdmin(args) {
     at: { type: "string" },
     help: { type: "boolean" }
   } });
-  if (values.help) return 'publish --text "\u516C\u544A\u5185\u5BB9" [--title "\u6807\u9898"] [--to box-id] [--expires-hours 168] | list | revoke <id> | feedback-list [--after <id>] | feedback-resolve <id> | controls | http-push on|off [--at <ISO timestamp with timezone>] | http-push cancel\nOptional: --text-file <file>, --server <url>, --token-file <file>. Default token file: ./data/admin-token.';
+  if (values.help) return 'publish --text "\u516C\u544A\u5185\u5BB9" [--title "\u6807\u9898"] [--to box-id] [--expires-hours 168] | list | revoke <id> | feedback-list [--after <id>] | feedback-resolve <id> | controls | http-push on|off [--at <ISO timestamp with timezone>] | http-push cancel | minimum-version <version>|off [--at <ISO timestamp>] | minimum-version cancel\nOptional: --text-file <file>, --server <url>, --token-file <file>. Default token file: ./data/admin-token.';
   const [command, id] = positionals;
-  if (!["publish", "list", "revoke", "feedback-list", "feedback-resolve", "controls", "http-push"].includes(command) || (command === "http-push" ? !["on", "off", "cancel"].includes(id) || positionals.length !== 2 : ["revoke", "feedback-resolve"].includes(command) ? !/^[1-9][0-9]*$/.test(id ?? "") || positionals.length !== 2 : positionals.length !== 1)) throw new Error("Unknown admin command or invalid ID; see --help");
-  if (values.at !== void 0 && (command !== "http-push" || id === "cancel")) throw new Error("--at requires http-push on or off");
-  const url = new URL(command === "controls" ? "/api/admin/controls" : command === "http-push" ? "/api/admin/controls/http-push" : command.startsWith("feedback-") ? `/api/admin/feedback${command === "feedback-resolve" ? `/${id}/resolve` : ""}` : `/api/admin/announcements${command === "revoke" ? `/${id}` : ""}`, values.server);
+  if (!["publish", "list", "revoke", "feedback-list", "feedback-resolve", "controls", "http-push", "minimum-version"].includes(command) || (command === "minimum-version" ? positionals.length !== 2 || !/^(?:off|cancel|(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$/.test(id ?? "") : command === "http-push" ? !["on", "off", "cancel"].includes(id) || positionals.length !== 2 : ["revoke", "feedback-resolve"].includes(command) ? !/^[1-9][0-9]*$/.test(id ?? "") || positionals.length !== 2 : positionals.length !== 1)) throw new Error("Unknown admin command or invalid ID; see --help");
+  if (values.at !== void 0 && (!["http-push", "minimum-version"].includes(command) || id === "cancel")) throw new Error("--at requires a switch or minimum version value");
+  const url = new URL(command === "controls" ? "/api/admin/controls" : command === "http-push" ? "/api/admin/controls/http-push" : command === "minimum-version" ? "/api/admin/controls/minimum-client-version" : command.startsWith("feedback-") ? `/api/admin/feedback${command === "feedback-resolve" ? `/${id}/resolve` : ""}` : `/api/admin/announcements${command === "revoke" ? `/${id}` : ""}`, values.server);
   if (command === "feedback-list") {
     const after = Number(values.after);
     if (!Number.isSafeInteger(after) || after < 0) throw new Error("Feedback cursor must be a nonnegative integer");
@@ -45,6 +45,7 @@ async function runAdmin(args) {
   if (!token) throw new Error("Admin token is empty");
   let body;
   if (command === "http-push") body = JSON.stringify(id === "cancel" ? { cancel: true } : { enabled: id === "on", ...values.at === void 0 ? {} : { at: values.at } });
+  if (command === "minimum-version") body = JSON.stringify(id === "cancel" ? { cancel: true } : { version: id === "off" ? null : id, ...values.at === void 0 ? {} : { at: values.at } });
   if (command === "publish") {
     if (values.text !== void 0 && values["text-file"] !== void 0) throw new Error("Supply --text or --text-file");
     const hours = Number(values["expires-hours"]);
@@ -53,7 +54,7 @@ async function runAdmin(args) {
     const targets = values.to?.flatMap((value) => value.split(",").map((id2) => id2.trim()).filter(Boolean));
     body = JSON.stringify({ text, title: values.title, targets: targets ? [...new Set(targets)] : "all", expiresAt: new Date(Date.now() + hours * 36e5).toISOString() });
   }
-  const response = await fetch(url, { method: command === "http-push" ? "PUT" : command === "publish" || command === "feedback-resolve" ? "POST" : command === "revoke" ? "DELETE" : "GET", headers: { authorization: `Bearer ${token}`, ...body ? { "content-type": "application/json" } : {} }, body, redirect: "error", signal: AbortSignal.timeout(1e4) });
+  const response = await fetch(url, { method: ["http-push", "minimum-version"].includes(command) ? "PUT" : command === "publish" || command === "feedback-resolve" ? "POST" : command === "revoke" ? "DELETE" : "GET", headers: { authorization: `Bearer ${token}`, ...body ? { "content-type": "application/json" } : {} }, body, redirect: "error", signal: AbortSignal.timeout(1e4) });
   const result = await response.json();
   if (!response.ok) throw new Error(`Admin HTTP ${response.status}: ${JSON.stringify(result)}`);
   return result;

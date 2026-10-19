@@ -18,7 +18,7 @@ it('registers each claimed habitat once across repeated tool calls and World res
   let registrations = 0;
   server.on('request', req => { if (req.method === 'POST' && req.url === '/api/registrations') registrations++; });
   let now = Date.now() - 1200000;
-  const options = { cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: url }, stateFile: join(dir, 'local', 'land', 'state.json'), waterStateFile: join(dir, 'local', 'water', 'state.json'), timezone: 'Asia/Shanghai', now: () => now };
+  const options = { cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: url, tickIntervalMs: 24 * 60 * 60_000 }, stateFile: join(dir, 'local', 'land', 'state.json'), waterStateFile: join(dir, 'local', 'water', 'state.json'), timezone: 'Asia/Shanghai', now: () => now };
   const events: unknown[] = [], warnings: unknown[] = [];
   const host = { log: { warn: (...args: unknown[]) => warnings.push(args) }, async pushEvent(event: unknown) { events.push(event); return event; } } as unknown as WorldHost;
   const context = {} as ToolCallContext;

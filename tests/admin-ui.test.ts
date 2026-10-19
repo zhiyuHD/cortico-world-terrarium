@@ -54,5 +54,12 @@ it('previews an immutable audience, sends a private reply, renders untrusted tex
   expect(notice.announcements).toMatchObject([{ targets: ['first'], text: '<script>alert("untrusted")</script>' }]);
   expect((await (await nativeFetch(publicUrl + '/api/announcements/public')).json()).announcements).toHaveLength(0);
   await expect.poll(() => element('notice-list').textContent).toContain('untrusted'); expect(element('notice-list').querySelector('script')).toBeNull();
+  element<HTMLInputElement>('minimum-version').value = '0.7.4';
+  element('minimum-form').dispatchEvent(new Event('submit', { cancelable: true }));
+  expect(element('modal-body').textContent).toContain('0.7.4');
+  expect((await (await nativeFetch(adminUrl + '/api/admin/controls', { headers: { authorization: 'Bearer admin-token' } })).json()).minimumClientVersion.version).toBeNull();
+  element('modal-confirm').click();
+  await expect.poll(() => element('modal').hidden).toBe(true);
+  expect((await (await nativeFetch(adminUrl + '/api/admin/controls', { headers: { authorization: 'Bearer admin-token' } })).json()).minimumClientVersion.version).toBe('0.7.4');
   element('logout').click(); expect(sessionStorage.getItem('terrarium-admin-token')).toBeNull(); expect(element('app').hidden).toBe(true); expect(element('box-rows').children).toHaveLength(0);
 });

@@ -1,4 +1,4 @@
-<!-- Owner: src/state.ts, src/world.ts, src/config.ts, src/leaderboard.ts, server/index.ts, server/controls.ts, server/admin.ts, server/admin-network.ts, server/console/client.ts, webui/client.ts -->
+<!-- Owner: src/state.ts, src/world.ts, src/config.ts, src/leaderboard.ts, server/index.ts, server/controls.ts, server/admin.ts, server/admin-network.ts, server/console/client.ts, webui/client.ts, webui/flowers.ts, src/habitat.ts -->
 
 # cortico-world-terrarium
 
@@ -88,6 +88,8 @@ These are simulation rules, not measurements of real species. Plants grow only d
 | Basil | 30–75 | 0.65–1 |
 | Bean | 25–70 | 0.7–1 |
 
+Clover, basil and bean develop buds at 12 suitable daylight growth hours and flowers at 18. Flowers require at least 35 health and suitable soil moisture; restoring those conditions restores flowers. Fern and moss do not flower. The World panel, gallery and replays share the Canvas flower renderer. Flowers close at night and do not change scores.
+
 `terrarium_inspect` returns species requirements, each cell's moisture, daylight and current light (zero at night), and history availability. `terrarium_history` accepts either a plant ID or x/y coordinates and a sample limit (default 24, maximum 168). Plant samples include moisture, health, growth hours and stage; missing plants return null. Dead and removed plants remain queryable while their samples are retained.
 
 History starts when a state is created or migrated and records at hourly boundaries. At most 168 samples from the last seven days are retained. The World panel includes a clickable moisture grid and history charts for cells and plants, including plants present only in history. Plant stage uses a 0–3 scale; moisture and health use 0–100.
@@ -96,19 +98,21 @@ State version 3 stores the 25 soil cells and history. Versions 1 and 2 migrate a
 
 Version 3 saves with history timestamps named `atMs` load with timestamps renamed to `recordedAtMs`; the next save persists the canonical field.
 
-## Eggs and ants
+## Bugs, eggs and ants
 
 Land saves keep version 3. Optional `eggs`, `nests`, `food` and ant `carrying` fields preserve existing saves without a reset. The server continues accepting versions 1–3 and the original registration, report and ranking formats. Older clients can keep reporting their existing boxes. A client must upgrade to simulate ants and eggs; an older client cannot load a save containing the new ant species.
 
-Bugs mature at age 24 hours. At an hourly boundary where one parent's age is a multiple of 24 hours, two same-species bugs sharing a cell with at least 70 energy each reproduce, costing each parent 25 energy. Aphids produce one live juvenile. Beetles, spiders and ants lay up to two eggs, reserving slots within the combined limit of 12 bugs and eggs. Beetle and spider eggs hatch after four hours; ant eggs after six. Juveniles start at age zero with 45 energy. `terrarium.egg` announces laying and `terrarium.birth` announces live birth or hatching. Eggs persist through restarts and can be removed by ID.
+Land bugs have independent `energy` and `hunger` (0–100). Hunger rises by 100 every 24 real hours and reaching 100 kills the bug, even after manual energy boosts. Zero energy does not itself kill a bug; the 120-hour lifespan remains. New bugs start at zero hunger; missing hunger in older saves starts at zero after the first catch-up, without retroactive starvation. `terrarium_feed_bug` adds 35 energy only. Eating plants lowers aphid hunger by 15, prey lowers predator hunger by 60, and one stored ant food lowers hunger by 40 while restoring 20 energy. Predators seek prey at hunger 25 even with high energy; ants seek stored food at hunger 25 or energy below 70. A hunger warning fires on crossing 80.
 
-Beetles and spiders sense prey within Manhattan distance two. At 80 energy or above they rest; hunting resumes below 80, and a capture restores 30 energy. Nest entrance cells shelter surface organisms: predators neither enter nor hunt there. A predator already on an entrance attempts to leave on its next action before resting or hunting. Workers away from the entrance remain vulnerable.
+Bugs mature at age 24 hours. At an hourly boundary where one parent's age is a multiple of 24 hours, two same-species bugs sharing a cell with at least 70 energy each reproduce, costing each parent 25 energy. Aphids produce one live juvenile. Beetles and spiders lay up to two eggs, reserving slots within the combined limit of 12 bugs and eggs. Beetle and spider eggs hatch after four hours; ant eggs after six. Juveniles start at age zero with 45 energy. `terrarium.egg` announces laying and `terrarium.birth` announces live birth or hatching. Eggs persist through restarts and can be removed by ID.
+
+Beetles and spiders sense prey within Manhattan distance two. At 80 energy or above and hunger below 25 they rest; hunting resumes below 80 energy or at hunger 25. A capture restores 30 energy and reduces hunger by 60. Nest entrance cells shelter surface organisms: predators neither enter nor hunt there. A predator already on an entrance attempts to leave on its next action before resting or hunting. Workers away from the entrance remain vulnerable.
 
 Ants (`ant`) use wall-clock ten-second action boundaries; aphids, beetles and spiders act every minute. Age, energy drain, reproduction and hatching remain measured in real elapsed time; fish retain their ten-minute action interval.
 
 The World advances land state in memory at ten-second boundaries. Scheduled saves and reports follow `worlds.terrarium.tickIntervalMs`, which defaults to 60,000 milliseconds, along with water checks, rank checks and announcement polls. Panels and read tools can advance the in-memory simulation but do not save or report ecosystem state. Tools that change an ecosystem save and report the affected habitat immediately. Normal shutdown saves claimed habitats without reporting them. The World panel reads the in-memory state; the public gallery displays the last uploaded state.
 
-Ants create a shared nest and deepen it while at its entrance, up to five levels and 20 stored portions per level. They carry food home before taking other actions. Below 70 energy, they return to stored food and consume one portion for 20 energy. `terrarium_drop_food` places 1–10 portions at x/y; at most 20 piles remain outside nests and expire after 48 hours. Without dropped food, ants harvest plants above 10 health, costing one health per portion. Inspection exposes eggs, nests, food piles and carrying amounts; removal accepts all their IDs. The World panel, public scene and hunt replays display these objects. Nest creation and reaching five levels emit `terrarium.nest`.
+Ants create a shared nest and deepen it while at its entrance, up to five levels and 20 stored portions per level. They carry food home before taking other actions. Below 70 energy or at hunger 25, they return to stored food and consume one portion for 20 energy and 40 hunger reduction. `terrarium_drop_food` places 1–10 portions at x/y; at most 20 piles remain outside nests and expire after 48 hours. Without dropped food, ants harvest plants above 10 health, costing one health per portion. Inspection exposes eggs, nests, food piles and carrying amounts; removal accepts all their IDs. The World panel, public scene and hunt replays display these objects. Nest creation and reaching five levels emit `terrarium.nest`.
 
 ## Server announcements
 
@@ -157,13 +161,17 @@ The admin bearer token also authorizes `GET /api/admin/controls` and `PUT /api/a
 node admin.mjs controls
 node admin.mjs http-push off
 node admin.mjs http-push on
-node admin.mjs http-push off --at '2026-10-25T00:00:00+08:00'
+node admin.mjs http-push off --at '2026-10-20T00:00:00+08:00'
 node admin.mjs http-push cancel
 ```
 
 `on` or `off` without `--at` takes effect immediately and clears the pending change. With `--at`, it replaces the single pending change without changing the current switch. The timestamp must be in the future and include a timezone. `cancel` removes the pending change and retains the current effective switch. The API accepts `{enabled: boolean, at?: string}` or `{cancel: true}` and returns `{httpPush: {enabled, scheduledChange: {enabled, at} | null}}`, including the effective switch and any remaining scheduled change. Remote commands use `--server https://<host>` and `--token-file <file>`.
 
-Scheduled changes are evaluated against wall-clock time on every request, including after downtime or a restart; they do not depend on an in-memory timer. When HTTP Push is disabled, `PUT /api/reports` returns HTTP 410 with an upgrade message, before reading the body and again before a queued report is committed. Reopening the switch restores that endpoint. A pending shutdown adds a `Sunset` response header to accepted HTTP reports. WebSocket full and incremental reports, registration, reads, feedback and announcements remain available. The cloud control does not change local ecosystem simulation or client configuration.
+Scheduled changes are evaluated against wall-clock time on every request, including after downtime or a restart; they do not depend on an in-memory timer. When HTTP Push is disabled, `PUT /api/reports` returns HTTP 410 with an upgrade message, after authenticating the box and before a queued report is committed. The response includes `accepted:false`, `ignored:true` and `upgradeRequired:true`; no state, score, revision or report counter is updated. A private upgrade announcement is persisted and deduplicated for that box. Reopening the switch restores that endpoint. A pending shutdown adds a `Sunset` response header to accepted HTTP reports. WebSocket full and incremental reports, registration, reads, feedback and announcements remain available. The cloud control does not change local ecosystem simulation or client configuration.
+
+`PUT /api/admin/controls/minimum-client-version` accepts `{version:"0.7.4"}` or `{version:null}` to remove the floor. An optional timezone-bearing `at` schedules the change; `{cancel:true}` cancels its schedule. Stable version numbers are compared numerically; a matching prerelease is below its stable release. Missing versions are below any enabled floor. Both HTTP and WebSocket reports below the floor receive HTTP/status 426 with the same ignored flags and private announcement. Reads, registration and announcement polling remain available. Existing WebSocket sessions are checked on every message, including deltas; controls are checked again inside the commit queue.
+
+CLI equivalents: `minimum-version 0.7.4 [--at <timestamp>]`, `minimum-version off`, and `minimum-version cancel`. Control files without a minimum version load with no floor; subsequent updates preserve both controls.
 
 ## Hunt replays
 
@@ -201,7 +209,7 @@ Run `pnpm install`, `pnpm typecheck`, `pnpm typecheck:webui`, `pnpm test`, and `
 
 ## Ant colonies
 
-Version 0.7.0 elects one existing ant at random as queen and saves its role. Workers carry food into the nest, walk to storage, eat from stored food and leave through the entrance. The queen stays in the nursery. From age 24 hours, the queen can lay up to two eggs at each six-hour age boundary with at least 70 energy, spending 25 energy; no mate is required. Eggs hatch after six hours into workers inside the nest. Bugs and eggs share the existing limit of 12. A lone queen needs workers or feeding through `terrarium_feed_bug`.
+Version 0.7.0 elects one existing ant at random as queen and saves its role. Workers carry food into the nest, walk to storage, eat from stored food and leave through the entrance. The queen stays in the nursery. From age 24 hours, the queen can lay up to two eggs at each six-hour age boundary with at least 70 energy, spending 25 energy; no mate is required. Eggs hatch after six hours into workers inside the nest. Bugs and eggs share the existing limit of 12. A lone queen needs workers to supply stored food; `terrarium_feed_bug` restores energy only and cannot satisfy hunger.
 
 `inside: { nestId, x, y }` stores a resident's position in the 4×4 interior; the outer coordinates still identify the entrance. The entrance is (0,0), storage is (3,0), and the nursery is (2,2). Surface predators cannot attack residents. Relocation puts a bug on the surface; removing a nest releases its ants and eggs at the entrance. `terrarium_inspect` includes `colonies` with per-cell IDs and food counts.
 

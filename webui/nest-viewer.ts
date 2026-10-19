@@ -105,7 +105,7 @@ export function createNestViewer(canvas: HTMLCanvasElement, language: 'zh' | 'en
         detail.replaceChildren(el('h3', '', `${roomName(x, y)} (${x},${y})`));
         if (!ants.length && !eggs.length) detail.append(el('p', '', text.empty));
         if (x === 3 && y === 0) detail.append(el('p', '', `${text.food}: ${nest.food}`));
-        for (const ant of ants) detail.append(el('p', '', `${ant.id} · ${ant.role === 'queen' ? text.queen : text.worker}${ant.energy === undefined ? '' : ` · ${zh ? '体力' : 'Energy'} ${ant.energy.toFixed(0)}`}`));
+        for (const ant of ants) detail.append(el('p', '', `${ant.id} · ${ant.role === 'queen' ? text.queen : text.worker}${ant.energy === undefined ? '' : ` · ${zh ? '体力' : 'Energy'} ${ant.energy.toFixed(0)}`}${ant.hunger === undefined ? '' : ` · ${zh ? '饥饿' : 'Hunger'} ${ant.hunger.toFixed(0)}/100`}`));
         for (const egg of eggs) {
           const row = el('p', '', `${egg.id} · ${remainingTime(egg.hatchesAtMs)} · `);
           const time = el('time', 'tn-time', new Date(egg.hatchesAtMs).toLocaleString(zh ? 'zh-CN' : 'en'));

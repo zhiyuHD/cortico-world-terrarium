@@ -1,9 +1,10 @@
-import { TERRARIUM_PLANT_LOW_HEALTH, TERRARIUM_PLANT_RECOVERED_HEALTH } from '../src/habitat.ts';
+import { reportChanges, applyReportChanges, reportStateHash } from '../src/report-protocol.ts';
+import { flowerStage, TERRARIUM_FLOWER_BLOOM_HOURS, TERRARIUM_FLOWER_BUD_HOURS, TERRARIUM_PLANT_LOW_HEALTH, TERRARIUM_PLANT_RECOVERED_HEALTH } from '../src/habitat.ts';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { advance, feedBug, loadState, move, newState, phase, releaseBug, relocateBug, removeOrganism, saveState, sow, water, waterSoil, waterArea, renameBox, validState, TERRARIUM_PREDATOR_SENSE_RADIUS, TERRARIUM_PREDATOR_SATIATED_ENERGY, TERRARIUM_MAX_NAME_LENGTH, TERRARIUM_ANT_ACTION_INTERVAL_MS, TERRARIUM_BUG_ACTION_INTERVAL_MS } from '../src/state.ts';
+import { migrateState, TERRARIUM_BUG_STARVATION_HOURS, TERRARIUM_BUG_HUNGER_WARNING, advance, feedBug, loadState, move, newState, phase, releaseBug, relocateBug, removeOrganism, saveState, sow, water, waterSoil, waterArea, renameBox, validState, TERRARIUM_PREDATOR_SENSE_RADIUS, TERRARIUM_PREDATOR_SATIATED_ENERGY, TERRARIUM_MAX_NAME_LENGTH, TERRARIUM_ANT_ACTION_INTERVAL_MS, TERRARIUM_BUG_ACTION_INTERVAL_MS } from '../src/state.ts';
 
 const dirs: string[] = [];
 afterEach(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
@@ -368,11 +369,12 @@ it('keeps mixed bug actions, aging and energy equal during catch-up and ten-seco
   polledChanges.push(...advance(polled, end, 'UTC'));
   expect(polledChanges).toEqual(changes);
   expect(polled.nests).toEqual(state.nests);
-  expect(polled.bugs.map(({ energy: _energy, ageHours: _age, ...bug }) => bug)).toEqual(state.bugs.map(({ energy: _energy, ageHours: _age, ...bug }) => bug));
+  expect(polled.bugs.map(({ energy: _energy, ageHours: _age, hunger: _hunger, ...bug }) => bug)).toEqual(state.bugs.map(({ energy: _energy, ageHours: _age, hunger: _hunger, ...bug }) => bug));
   for (const bug of state.bugs) {
     const other = polled.bugs.find(other => other.id === bug.id)!;
     expect(other.ageHours).toBeCloseTo(bug.ageHours, 9);
     expect(other.energy).toBeCloseTo(bug.energy, 9);
+    expect(other.hunger).toBeCloseTo(bug.hunger!, 9);
     expect(bug.ageHours).toBeCloseTo(2, 9);
     expect(bug.energy).toBeCloseTo(56, 9);
   }
@@ -580,4 +582,138 @@ it.each(['beetle', 'spider'] as const)('prevents a %s from stepping into a nest 
   advance(state, TERRARIUM_BUG_ACTION_INTERVAL_MS, 'UTC');
   expect(hunter).toMatchObject({ x: 0, y: 1 });
   expect(state.replays ?? []).toHaveLength(0);
+});
+
+const hour = 3_600_000;
+
+it('manual boosts cannot postpone starvation at 24 hours', () => {
+  const state = newState(0); state.plants = [];
+  const bug = releaseBug(state, 'beetle', 4, 4);
+  for (let h = 1; h < TERRARIUM_BUG_STARVATION_HOURS; h++) {
+    feedBug(state, bug.id);
+    advance(state, h * hour, 'UTC');
+  }
+  expect(state.bugs).toContain(bug);
+  expect(bug.energy).toBeGreaterThan(90);
+  const hunger = bug.hunger;
+  feedBug(state, bug.id);
+  expect(bug.hunger).toBe(hunger);
+  expect(advance(state, TERRARIUM_BUG_STARVATION_HOURS * hour, 'UTC')).toContainEqual(expect.objectContaining({ kind: 'death', text: expect.stringContaining('饥饿死亡') }));
+  expect(state.bugs).toEqual([]);
+});
+
+it('zero energy alone does not kill a bug and hunger warnings are emitted on crossing', () => {
+  const state = newState(0); state.plants = [];
+  const bug = releaseBug(state, 'beetle', 4, 4); bug.energy = 0; bug.hunger = TERRARIUM_BUG_HUNGER_WARNING - .01;
+  expect(advance(state, 60_000, 'UTC').filter(c => c.kind === 'hungry')).toHaveLength(1);
+  expect(state.bugs).toContain(bug);
+  expect(advance(state, 120_000, 'UTC').filter(c => c.kind === 'hungry')).toEqual([]);
+});
+
+it('hungry predators hunt at high energy and actual prey satisfies hunger', () => {
+  const state = newState(0); state.plants = [];
+  const predator = releaseBug(state, 'beetle', 1, 1); predator.energy = 100; predator.hunger = 85;
+  const prey = releaseBug(state, 'aphid', 1, 1);
+  expect(advance(state, 60_000, 'UTC').some(c => c.kind === 'hunt')).toBe(true);
+  expect(state.bugs).not.toContain(prey);
+  expect(predator.hunger).toBeCloseTo(25 + 100 / TERRARIUM_BUG_STARVATION_HOURS / 60);
+  expect(validState(state)).toBe(true);
+});
+
+it('aphids satisfy hunger by eating plants', () => {
+  const state = newState(0);
+  const aphid = releaseBug(state, 'aphid', 0, 0); aphid.hunger = 60;
+  advance(state, 60_000, 'UTC');
+  expect(aphid.hunger).toBeLessThan(60);
+  expect(state.plants[0].health).toBe(97);
+});
+
+it('high-energy queens and workers eat stored food when hungry', () => {
+  const state = newState(0); state.plants = [];
+  state.nests = [{ id: 'nest-a', x: 0, y: 0, depth: 5, food: 5 }];
+  for (const role of ['queen', 'worker'] as const) {
+    const ant = releaseBug(state, 'ant', 0, 0);
+    ant.role = role; ant.energy = 100; ant.hunger = 85; ant.inside = { nestId: 'nest-a', x: 3, y: 0 };
+  }
+  advance(state, 10_000, 'UTC');
+  expect(state.nests[0].food).toBe(3);
+  for (const ant of state.bugs) expect(ant.hunger).toBeLessThan(46);
+});
+
+it('old reports retain their checksum and incremental hunger changes survive validation', () => {
+  const old = newState(0); const bug = releaseBug(old, 'beetle', 4, 4); delete bug.hunger;
+  const hash = reportStateHash(old);
+  expect(reportStateHash(migrateState(structuredClone(old)))).toBe(hash);
+  const next = structuredClone(old); advance(next, hour, 'UTC');
+  const received = migrateState(applyReportChanges(old, reportChanges(old, next)));
+  expect(received).toEqual(next);
+  expect(reportStateHash(received)).toBe(reportStateHash(next));
+  for (const hunger of [-1, 101, NaN, Infinity]) {
+    const invalid = structuredClone(next); invalid.bugs[0].hunger = hunger;
+    expect(() => migrateState(invalid)).toThrow('Invalid terrarium state file');
+  }
+});
+
+it('hunger survives save and reload', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-hunger-'));
+  try {
+    const state = newState(0); releaseBug(state, 'beetle', 4, 4); advance(state, hour, 'UTC');
+    await saveState(join(dir, 'state.json'), state);
+    expect(await loadState(join(dir, 'state.json'), hour)).toEqual(state);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+it('flowering species form buds then bloom under suitable growth conditions', () => {
+  for (const species of ['clover', 'basil', 'bean'] as const) {
+    const state = newState(6 * hour); state.plants = [{ id: 'flower', species, x: 4, y: 0, moisture: 50, growthHours: TERRARIUM_FLOWER_BUD_HOURS, stage: 3, health: 100, dry: false }];
+    expect(flowerStage(state.plants[0])).toBe('bud');
+    state.plants[0].growthHours = TERRARIUM_FLOWER_BLOOM_HOURS - .001;
+    const changes = advance(state, state.updatedAtMs + 60_000, 'UTC');
+    expect(flowerStage(state.plants[0])).toBe('bloom');
+    expect(changes.filter(c => c.text.includes('开花'))).toHaveLength(1);
+    expect(advance(state, state.updatedAtMs + 60_000, 'UTC').filter(c => c.text.includes('开花'))).toEqual([]);
+    const restored = migrateState(structuredClone(state));
+    expect(flowerStage(restored.plants[0])).toBe('bloom');
+  }
+});
+
+it('ferns and moss never flower; flowers require suitable moisture and health', () => {
+  const plant = { species: 'bean', growthHours: TERRARIUM_FLOWER_BLOOM_HOURS, health: 100, moisture: 50, dry: false };
+  for (const species of ['fern', 'moss']) expect(flowerStage({ ...plant, species })).toBeUndefined();
+  expect(flowerStage({ ...plant, health: 34 })).toBeUndefined();
+  expect(flowerStage({ ...plant, moisture: 0, dry: true })).toBeUndefined();
+  expect(flowerStage({ ...plant, moisture: 100 })).toBeUndefined();
+  expect(flowerStage({ ...plant, growthHours: 0 })).toBeUndefined();
+});
+
+it('night and unsuitable daylight do not advance flower development', () => {
+  const state = newState(0); const clover = state.plants[1]; clover.growthHours = TERRARIUM_FLOWER_BLOOM_HOURS - .01; clover.stage = 3;
+  advance(state, hour, 'UTC');
+  expect(flowerStage(clover)).toBe('bud');
+  const shaded = newState(6 * hour); shaded.plants = [{ ...clover, x: 2, y: 0 }];
+  advance(shaded, 7 * hour, 'UTC');
+  expect(flowerStage(shaded.plants[0])).toBe('bud');
+});
+
+it('old saves begin hunger after catch-up without retroactive starvation', () => {
+  const state = newState(0); state.plants = [];
+  const bug = releaseBug(state, 'beetle', 4, 4); delete bug.hunger;
+  const events = advance(state, TERRARIUM_BUG_STARVATION_HOURS * hour, 'UTC');
+  expect(state.bugs).toContain(bug);
+  expect(bug.hunger).toBe(0);
+  expect(events.some(c => c.kind === 'death')).toBe(false);
+  advance(state, (TERRARIUM_BUG_STARVATION_HOURS + 1) * hour, 'UTC');
+  expect(bug.hunger).toBeCloseTo(100 / TERRARIUM_BUG_STARVATION_HOURS);
+});
+
+it('eating rearms hunger warnings after hunger drops below the warning threshold', () => {
+  const state = newState(0); state.plants = [];
+  const bug = releaseBug(state, 'beetle', 2, 2); bug.hunger = TERRARIUM_BUG_HUNGER_WARNING - .01;
+  expect(advance(state, 60_000, 'UTC').filter(c => c.kind === 'hungry')).toHaveLength(1);
+  releaseBug(state, 'aphid', bug.x, bug.y);
+  advance(state, 120_000, 'UTC');
+  expect(bug.hunger).toBeLessThan(TERRARIUM_BUG_HUNGER_WARNING);
+  const waitHours = (TERRARIUM_BUG_HUNGER_WARNING - bug.hunger!) * TERRARIUM_BUG_STARVATION_HOURS / 100;
+  const events = advance(state, state.updatedAtMs + waitHours * hour + 60_000, 'UTC');
+  expect(events.filter(c => c.kind === 'hungry' && c.text.includes('饥饿值'))).toHaveLength(1);
 });

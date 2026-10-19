@@ -2,6 +2,15 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.7.13
+
+- Add a cloud-controlled minimum client version with immediate or scheduled changes in the private console and CLI. Ignore rejected HTTP/WS reports without updating saved data, and deliver deduplicated private upgrade notices. Keep disabled HTTP submission endpoints available with explicit failure responses.
+
+- Separate land bug hunger from energy. A full hunger meter after 24 hours without food causes starvation; manual feeding restores energy only. Actual feeding reduces hunger, and hungry predators and ants seek food even with high energy.
+- Keep zero-energy bugs alive until starvation or the existing lifespan limit, and report hunger warnings separately from low energy.
+- Add clover, basil and bean buds and flowers, drawn in Canvas in panels, the gallery and replays. Display bug energy and hunger in panels and ant nest details.
+- Preserve earlier saves and report checksums when hunger is absent.
+
 ## 0.7.12
 
 - Remove the configurable land box ID. New land and water claims always request server-assigned identities; old ID settings cannot affect new registrations.
