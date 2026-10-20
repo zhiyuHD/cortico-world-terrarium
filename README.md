@@ -42,6 +42,8 @@ On server startup, stored ranking totals are recalculated with the current formu
 
 `GET /api/leaderboard?view=summary&kind=land&limit=20&ownId=<id>` returns that compact ranking; `kind` is required, and `ownId` is optional. The original response without `view=summary` still includes box states for the public gallery.
 
+The public service displays the 0.8.6「闲看生机」SVG wordmark with visible theme lettering, leaves, a fish and warm sunlight. The inline logo adapts to dark mode and narrow screens and respects reduced-motion preferences; it requires no image download.
+
 The public gallery shows habitat totals, searchable names and IDs, and sorting by score or report time. Each box includes its scene, organism counts and hunt replay controls. Water boxes also show oxygen and cleanliness. Connection failures retain the last received state and offer a retry. New cards enter in sequence; unchanged polling results do not replay their entrance. Decorative motion, hover transitions and number changes respect the browser's reduced-motion preference.
 
 Public sorting and replay menus use custom controls with animated menus, disclosure panels and frame sliders. Menus support arrow keys, Home/End and Escape; sliders support pointer dragging, arrow keys and Home/End. Collapsed replay controls leave the keyboard focus order. Polling preserves the selected hunt, playback frame and open menu.
