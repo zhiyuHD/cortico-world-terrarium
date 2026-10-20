@@ -10,12 +10,16 @@ import { chmod, copyFile, lstat, mkdir, open, readFile, readdir, rename, rm, sym
 import { dirname, join, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 var idPattern = /^[a-z0-9][a-z0-9._-]{0,79}$/;
-var required = ["server.mjs", "admin.mjs", "release.mjs", "runner.mjs", "index.html", "scene.js", "console/index.html", "console/client.js", "console/client.css", "console/assets/icons.svg", "console/assets/MiSans-Regular.woff2", "console/assets/MiSans-Semibold.woff2", "console/assets/MiSans-LICENSE.pdf", "console/assets/Lucide-LICENSE.txt"];
+var commonRequired = ["admin.mjs", "release.mjs", "runner.mjs", "index.html", "scene.js", "console/index.html", "console/client.js", "console/client.css", "console/assets/icons.svg", "console/assets/MiSans-Regular.woff2", "console/assets/MiSans-Semibold.woff2", "console/assets/MiSans-LICENSE.pdf", "console/assets/Lucide-LICENSE.txt"];
+var nativeExecutable = "server";
+function requiredFiles(runtime) {
+  return [runtime ? nativeExecutable : "server.mjs", ...commonRequired];
+}
 function validReleaseId(id) {
   return typeof id === "string" && idPattern.test(id) && id !== "." && id !== "..";
 }
 function validPath(path) {
-  return typeof path === "string" && (required.includes(path) || /^console\/assets\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(path));
+  return typeof path === "string" && ([nativeExecutable, "server.mjs", ...commonRequired].includes(path) || /^console\/assets\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(path));
 }
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -56,7 +60,7 @@ async function filesIn(dir, prefix = "") {
 }
 async function fileBytes(dir, path) {
   const info = await lstat(join(dir, path));
-  if (!info.isFile() || info.size > 32 * 1024 * 1024) throw new Error(`Invalid release file: ${path}`);
+  if (!info.isFile() || info.size > (path === nativeExecutable ? 128 : 32) * 1024 * 1024) throw new Error(`Invalid release file: ${path}`);
   return readFile(join(dir, path));
 }
 async function verifyRelease(dir) {
@@ -64,9 +68,9 @@ async function verifyRelease(dir) {
   const raw = await fileBytes(dir, "release.json");
   if (raw.length > 65536) throw new Error("Release manifest is too large");
   const manifest = JSON.parse(raw.toString());
-  if (manifest.schema !== 1 || !validReleaseId(manifest.id) || typeof manifest.version !== "string" || manifest.version.length > 80 || typeof manifest.revision !== "string" || manifest.revision.length > 80 || !Number.isFinite(Date.parse(manifest.createdAt)) || !Number.isSafeInteger(manifest.dataEpoch) || manifest.dataEpoch < 1 || ![0, 1].includes(manifest.healthProtocol) || !Array.isArray(manifest.files) || manifest.files.length > 128 || !manifest.files.every((file) => file && validPath(file.path) && Number.isSafeInteger(file.size) && file.size >= 0 && /^[a-f0-9]{64}$/.test(file.sha256))) throw new Error("Invalid release manifest");
+  if (![1, 2].includes(manifest.schema) || (manifest.schema === 1 ? manifest.runtime !== void 0 : !manifest.runtime || manifest.runtime.kind !== "native" || manifest.runtime.platform !== "linux" || !["x64", "arm64"].includes(manifest.runtime.arch)) || !validReleaseId(manifest.id) || typeof manifest.version !== "string" || manifest.version.length > 80 || typeof manifest.revision !== "string" || manifest.revision.length > 80 || !Number.isFinite(Date.parse(manifest.createdAt)) || !Number.isSafeInteger(manifest.dataEpoch) || manifest.dataEpoch < 1 || ![0, 1].includes(manifest.healthProtocol) || !Array.isArray(manifest.files) || manifest.files.length > 128 || !manifest.files.every((file) => file && validPath(file.path) && Number.isSafeInteger(file.size) && file.size >= 0 && /^[a-f0-9]{64}$/.test(file.sha256))) throw new Error("Invalid release manifest");
   const names = manifest.files.map((file) => file.path);
-  if (new Set(names).size !== names.length || required.some((path) => !names.includes(path)) || manifest.files.reduce((total, file) => total + file.size, 0) > 64 * 1024 * 1024) throw new Error("Incomplete or oversized release");
+  if (new Set(names).size !== names.length || requiredFiles(manifest.runtime).some((path) => !names.includes(path)) || (manifest.runtime ? names.includes("server.mjs") : names.includes(nativeExecutable)) || manifest.files.reduce((total, file) => total + file.size, 0) > 192 * 1024 * 1024) throw new Error("Incomplete or oversized release");
   const actual = await filesIn(dir);
   if (JSON.stringify(actual) !== JSON.stringify(["release.json", ...names].sort())) throw new Error("Release file inventory mismatch");
   for (const file of manifest.files) {
@@ -82,12 +86,12 @@ async function copyPayload(source, target, paths) {
     await copyFile(join(source, path), join(target, path));
   }
 }
-async function seal(dir) {
+async function seal(dir, runtime) {
   for (const item of await readdir(dir)) {
     const path = join(dir, item);
     if ((await lstat(path)).isDirectory()) await seal(path);
     else {
-      await chmod(path, 292);
+      await chmod(path, runtime && item === nativeExecutable ? 365 : 292);
       const file = await open(path, "r");
       try {
         await file.sync();
@@ -152,7 +156,7 @@ var ReleaseStore = class {
     try {
       await copyPayload(source, temp, ["release.json", ...manifest.files.map((file) => file.path)]);
       if (JSON.stringify(await verifyRelease(temp)) !== JSON.stringify(manifest)) throw new Error("Release changed during installation");
-      await seal(temp);
+      await seal(temp, manifest.runtime);
       await rename(temp, destination);
       await syncDirectory(join(this.root, "versions"));
     } finally {
@@ -189,6 +193,20 @@ var ReleaseStore = class {
     } finally {
       await rm(temp, { force: true });
     }
+  }
+  async upgradeController(id) {
+    const state = await this.state();
+    if (state.pending) throw new Error("A deployment transaction is pending");
+    await this.manifest(id);
+    const temp = join(this.root, `.manager-${randomUUID()}`);
+    try {
+      await symlink(`versions/${id}`, temp);
+      await rename(temp, join(this.root, "manager"));
+      await syncDirectory(this.root);
+    } finally {
+      await rm(temp, { force: true });
+    }
+    await this.save({ ...state, controller: id });
   }
   async queue(target, action) {
     const state = await this.state();
@@ -254,7 +272,11 @@ async function runDeployment(root) {
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
   const launch = (manifest) => {
-    const child = spawn(process.execPath, [join2(store.directory(manifest.id), "server.mjs")], { cwd: store.root, stdio: "inherit", env: { ...process.env, TERRARIUM_SERVER_MAIN: "1", CORTICO_TERRARIUM_RELEASE_ID: manifest.id, CORTICO_TERRARIUM_DEPLOY_ROOT: store.root } });
+    const runtime = manifest.runtime;
+    if (runtime && (runtime.platform !== process.platform || runtime.arch !== process.arch)) throw new Error("Native release target does not match this host");
+    const executable = runtime ? join2(store.directory(manifest.id), "server") : process.execPath;
+    const args = runtime ? [] : [join2(store.directory(manifest.id), "server.mjs")];
+    const child = spawn(executable, args, { cwd: store.root, stdio: "inherit", env: { ...process.env, TERRARIUM_SERVER_MAIN: "1", CORTICO_TERRARIUM_RELEASE_ID: manifest.id, CORTICO_TERRARIUM_DEPLOY_ROOT: store.root } });
     const server = { child, done: Promise.resolve(), ended: false };
     server.done = new Promise((resolve2) => {
       child.once("error", (error) => {

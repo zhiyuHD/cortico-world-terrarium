@@ -47,3 +47,21 @@ cd /path/to/deployment
 `rollback` selects the previous successfully active version; `rollback --id <id>` selects another installed compatible version. `--service <name>.service` overrides the default user service name. The CLI reports a failed health check even when the old server was restored successfully. If restarting the service or waiting for activation fails, inspect `status` and the user service journal, correct the cause, then run `./box-release recover`. A queued transaction is attempted; an interrupted starting transaction is rolled back.
 
 The private authenticated `GET /api/admin/boxes` response includes process-local `acceptedReports.http` and `acceptedReports.websocket` counters. These count committed reports, reset at server restart and can be sampled alongside host and process metrics. Its box rows distinguish registrations, saved reports and current WebSocket connections.
+
+## Native payloads
+
+Node releases retain schema 1 and launch `server.mjs` with the controller's Node executable. Native releases use schema 2 with `runtime: { kind: "native", platform: "linux", arch: "x64" | "arm64" }`. Their executable is named `server`; installation seals it to mode 0555 and starts it directly without a shell. Other files remain read-only. Both formats include the existing public and private assets and Node-based release controller. Native executables may be at most 128 MiB; the whole payload may be at most 192 MiB. A target mismatch fails activation and restores the previous release.
+
+```sh
+node dist/release.mjs pack --source native-dist --output new-package --id native-example --version 0.1.0 --revision <commit> --native-target linux-x64 --data-epoch 2
+```
+
+The executable inherits the deployment working directory, environment, standard streams, release ID and deployment root. It must serve the existing health and asset checks at the configured addresses. The controller sends SIGTERM and, after three seconds, SIGKILL if it has not stopped. Data compatibility is independent of runtime: switching between JSON and SQLite requires a migration and a suitable data epoch. A matching epoch must mean both releases can read and write the same persisted data.
+
+Existing deployments pin their original controller. Before installing schema 2 packages, pack and install a schema 1 Node release containing the updated controller using the old CLI. Invoke the updated CLI from that installed version:
+
+```sh
+node versions/<new-node-release>/release.mjs upgrade-controller --root /path/to/deployment --id <new-node-release>
+```
+
+This command requires no pending activation. It atomically replaces `manager`, then records the controller ID in the deployment journal. Repeating it completes an interruption between those two writes. It leaves `current`, `previous` and application data unchanged. Restart the user service to load the new runner. Keep the former controller version available for recovery.

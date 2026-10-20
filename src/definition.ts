@@ -7,6 +7,7 @@ export const TERRARIUM: WorldDefinition<TerrariumConfigSection> = {
   create: ctx => new TerrariumWorld({ cfg: ctx.cfg, timezone: ctx.timezone, stateFile: `${ctx.dataDir}/terrarium/land/state.json`, waterStateFile: `${ctx.dataDir}/terrarium/water/state.json`, reportToken: ctx.secret('CORTICO_TERRARIUM_REPORT_TOKEN') }),
   describe: {
     tools: describeTools([...TERRARIUM_TOOL_DECLS, ...TERRARIUM_AQUATIC_TOOL_DECLS], {
+      terrarium_rules: { zh: '按场景读取完整生态规则；不推进模拟或请求网络。', en: 'Reads bundled ecosystem rules by topic without advancing simulation or network requests.' },
       terrarium_deaths: { zh: '查看持久保存的死亡原因、最终状态和环境记录。', en: 'Reads persisted death causes, final states and environment.' },
       terrarium_progress: { zh: '查看观察站来信、积分扩建和设施解锁；扩建或建造设施。', en: 'Reads the optional guide, expands habitats and builds unlocked facilities.' },
       terrarium_score_history: { zh: '读取自己生态箱最近 24 小时的本地分数曲线。', en: 'Reads your local score samples for the last 24 hours.' },

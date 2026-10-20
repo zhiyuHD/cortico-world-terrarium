@@ -6,6 +6,7 @@ import { careAlerts } from './care-alerts.ts';
 import { collect, restoreCollected } from './collection.ts';
 import { captureConditions, createReturnReport, recentScores, type ReturnReport } from './return-report.ts';
 import { landCare, waterCare } from './care.ts';
+import { readRules, TERRARIUM_RULE_TOPICS } from './rules.ts';
 import type { Announcement } from './announcements.ts';
 import { colonySnapshot } from './colony.ts';
 import { AnnouncementInbox } from './announcement-inbox.ts';
@@ -45,6 +46,7 @@ export const TERRARIUM_TOOL_DECLS: ReadonlyArray<Omit<ToolDef, 'handler'>> = [
   { name: 'terrarium_set_rank_alerts', description: 'Enable or disable rank-drop events for your land or water box, default land. Alerts default to enabled with a 3-place cumulative drop and 120-minute cooldown; tied-score ID ordering is ignored when supported by the server. Preferences persist across restarts and include instructions for disabling them. Re-enabling starts a fresh baseline without alerts for changes while disabled. This tool never claims a box or changes reporting.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { habitat: { type: 'string', enum: ['land', 'water'] }, enabled: { type: 'boolean' } }, required: ['enabled'] } },
   { name: 'terrarium_drop_food', description: 'Drop 1..10 portions of land food at x,y for ants to collect and carry to their nest. At most 20 piles; food outside the nest expires after 48 hours. Ants can also gather from plants, costing one plant health per portion. Nest storage holds 20 portions per depth level, up to five levels.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { x: { type: 'integer', minimum: 0, maximum: 7 }, y: { type: 'integer', minimum: 0, maximum: 7 }, portions: { type: 'integer', minimum: 1, maximum: 10 } }, required: ['x', 'y', 'portions'] } },
   { name: 'terrarium_water_area', description: 'Water an inclusive rectangle of land cells from top-left (x1,y1) to bottom-right (x2,y2), coordinates 0..size-1. Defaults to +35 moisture per cell. Optional amount OR targetMoisture controls the dose; onlyDry skips sufficiently moist cells. Each actually watered plant gains 5 health once. Includes seed and empty plots; saves and reports once. Use (0,0)-(size-1,size-1) for the whole habitat. Returns each watered plant, its moisture range and overwatering warnings. Excess moisture costs 0.5 health per hour; watering restores 5 health immediately.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { ...wateringProperties, x1: { type: 'integer', minimum: 0, maximum: 7 }, y1: { type: 'integer', minimum: 0, maximum: 7 }, x2: { type: 'integer', minimum: 0, maximum: 7 }, y2: { type: 'integer', minimum: 0, maximum: 7 } }, required: ['x1', 'y1', 'x2', 'y2'] } },
+  { name: 'terrarium_rules', description: 'Read bundled rules by topic without claiming, advancing simulation, saving or making network requests. Topics: overview (ownership and guide), land (plants, insects and nests), water (fish and aquatic plants), care (diagnostics and irrigation), records (history, collections, replays and deaths), ranking (score formula and alerts), reporting (sync, announcements and feedback), expansion (levels and facilities).', tags: ['read'], parameters: { type: 'object', additionalProperties: false, properties: { topic: { type: 'string', enum: [...TERRARIUM_RULE_TOPICS] } }, required: ['topic'] } },
 ];
 
 const SYNC_TOOL: Omit<ToolDef, 'handler'> = { name: 'terrarium_sync', description: 'Immediately upload a full snapshot of your claimed land or water box, default land. Returns sync status, last server acknowledgement time and any upload error. Does not claim a box, change credentials, or enable reporting when disabled. Sync status is local transport metadata; server error text is external data.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { habitat: { type: 'string', enum: ['land', 'water'] } } } };
@@ -147,6 +149,7 @@ export class TerrariumWorld implements World {
 
   tools(): ToolDef[] {
     const tools: ToolDef[] = [
+      { ...TERRARIUM_TOOL_DECLS[15], handler: async args => readRules(args.topic) },
       { ...TERRARIUM_TOOL_DECLS[14], handler: async args => this.serial(async () => JSON.stringify(compactNumbers(await this.waterRectangle(args)))) },
       { ...TERRARIUM_TOOL_DECLS[13], handler: async args => this.serial(async () => {
         await this.update();

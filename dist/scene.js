@@ -48,12 +48,12 @@ function isFlying(species) {
   return TERRARIUM_FLY_SPECIES.includes(species);
 }
 
-// ../../../packages/terrarium-renderer/dist/types.js
+// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/terrarium-renderer@0.1.0/node_modules/terrarium-renderer/dist/types.js
 function sceneSize(scene) {
   return scene.gridSize ?? 5;
 }
 
-// ../../../packages/terrarium-renderer/dist/geometry.js
+// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/terrarium-renderer@0.1.0/node_modules/terrarium-renderer/dist/geometry.js
 var LAND_SURFACE = { x: 84, y: 204, width: 632, height: 216 };
 var WATER_SURFACE = { x: 90, y: 128, width: 620, height: 286 };
 function cellPosition(surface, x, y, size) {
@@ -66,7 +66,7 @@ function residentScale(size) {
   return 5 / size;
 }
 
-// ../../../packages/terrarium-renderer/dist/flowers.js
+// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/terrarium-renderer@0.1.0/node_modules/terrarium-renderer/dist/flowers.js
 function drawPlantFlowers(g, plant, x, y, night) {
   const stage = plant.flower;
   if (!stage)
@@ -152,7 +152,7 @@ function drawPlantFlowers(g, plant, x, y, night) {
   g.restore();
 }
 
-// ../../../packages/terrarium-renderer/dist/nest-viewer.js
+// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/terrarium-renderer@0.1.0/node_modules/terrarium-renderer/dist/nest-viewer.js
 var NEST_SIZE = 4;
 var STYLE = `
 .tn-dialog{box-sizing:border-box;width:min(720px,calc(100vw - 24px));max-height:calc(100dvh - 32px);padding:0;border:1px solid #c0ac85;border-radius:24px;background:#f7f1e4;color:#473c2e;box-shadow:0 30px 120px #17170e55;font:14px/1.5 system-ui,sans-serif;overflow:auto}
@@ -408,7 +408,7 @@ function createNestViewer(canvas, language = "zh") {
   };
 }
 
-// ../../../packages/terrarium-renderer/dist/nest-scene.js
+// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/terrarium-renderer@0.1.0/node_modules/terrarium-renderer/dist/nest-scene.js
 function drawAntNest(g, x, y, night) {
   g.save();
   g.fillStyle = "rgba(35,25,18,.2)";
@@ -444,7 +444,7 @@ function drawAntNest(g, x, y, night) {
   g.restore();
 }
 
-// ../../../packages/terrarium-renderer/dist/scene.js
+// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/terrarium-renderer@0.1.0/node_modules/terrarium-renderer/dist/scene.js
 function bugPositions(bugs, positions = /* @__PURE__ */ new Map(), size = 5) {
   const groups = /* @__PURE__ */ new Map();
   for (const bug of bugs) {
@@ -919,7 +919,7 @@ function createScene(canvas, language = "zh") {
   };
 }
 
-// ../../../packages/terrarium-renderer/dist/water-scene.js
+// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/terrarium-renderer@0.1.0/node_modules/terrarium-renderer/dist/water-scene.js
 function createWaterScene(canvas) {
   let state;
   let old = /* @__PURE__ */ new Map();
@@ -1377,7 +1377,8 @@ function createPublicReplayControls(container, createRenderer, language = "zh") 
   panel.append(inner);
   root.append(toggle, panel);
   container.append(root);
-  const scene = createRenderer(canvas);
+  let scene;
+  let active = true;
   let replays = [], index = 0, timer, disposed = false, expanded = false;
   const stop = () => {
     clearTimeout(timer);
@@ -1413,12 +1414,19 @@ function createPublicReplayControls(container, createRenderer, language = "zh") 
     slider.style.setProperty("--fraction", String(index / 2));
     slider.style.setProperty("--progress", `${index * 50}%`);
     stepButtons.forEach((button, i) => button.setAttribute("aria-pressed", String(index === i)));
+    if (!replay || !expanded || !active) {
+      scene?.dispose();
+      scene = void 0;
+    }
     if (!replay) {
       label.textContent = copy.empty;
       return;
     }
     label.textContent = `${new Date(replay.recordedAtMs).toLocaleString(language)} \xB7 ${replay.hunterId} \u2192 ${replay.preyId} \xB7 ${copy.frames[index]}`;
-    if (expanded) scene.setState(replay.frames[index], replay.recordedAtMs);
+    if (expanded && active) {
+      scene ??= createRenderer(canvas);
+      scene.setState(replay.frames[index], replay.recordedAtMs);
+    }
   };
   toggle.addEventListener("click", () => {
     expanded = !expanded;
@@ -1490,11 +1498,16 @@ function createPublicReplayControls(container, createRenderer, language = "zh") 
       }
       render();
     },
+    setActive(value) {
+      active = value;
+      if (!active) stop();
+      render();
+    },
     dispose() {
       disposed = true;
       stop();
       select.dispose();
-      scene.dispose();
+      scene?.dispose();
       root.remove();
     }
   };

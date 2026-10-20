@@ -22,7 +22,11 @@ export async function runDeployment(root: string): Promise<void> {
   const shutdown = () => { stopping = true; void stop(active); };
   process.on('SIGTERM', shutdown); process.on('SIGINT', shutdown);
   const launch = (manifest: ReleaseManifest) => {
-    const child = spawn(process.execPath, [join(store.directory(manifest.id), 'server.mjs')], { cwd: store.root, stdio: 'inherit', env: { ...process.env, TERRARIUM_SERVER_MAIN: '1', CORTICO_TERRARIUM_RELEASE_ID: manifest.id, CORTICO_TERRARIUM_DEPLOY_ROOT: store.root } });
+    const runtime = manifest.runtime;
+    if (runtime && (runtime.platform !== process.platform || runtime.arch !== process.arch)) throw new Error('Native release target does not match this host');
+    const executable = runtime ? join(store.directory(manifest.id), 'server') : process.execPath;
+    const args = runtime ? [] : [join(store.directory(manifest.id), 'server.mjs')];
+    const child = spawn(executable, args, { cwd: store.root, stdio: 'inherit', env: { ...process.env, TERRARIUM_SERVER_MAIN: '1', CORTICO_TERRARIUM_RELEASE_ID: manifest.id, CORTICO_TERRARIUM_DEPLOY_ROOT: store.root } });
     const server: RunningServer = { child, done: Promise.resolve(), ended: false };
     server.done = new Promise<void>(resolve => {
       child.once('error', error => { server.error = error.message; server.ended = true; resolve(); });

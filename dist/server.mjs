@@ -3741,6 +3741,38 @@ var require_websocket_server = __commonJS({
   }
 });
 
+// server/gallery.ts
+function galleryPage(ranked, query) {
+  const requestedPage = Number(query.get("page") ?? 1), pageSize = Number(query.get("pageSize") ?? 4);
+  const sort = query.get("sort") ?? "score", search = (query.get("q") ?? "").trim().toLocaleLowerCase();
+  if (!Number.isSafeInteger(requestedPage) || requestedPage < 1 || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 12 || !["score", "recent"].includes(sort) || search.length > 100) throw new Error("Invalid gallery pagination, sort or search");
+  const ranks = new Map(ranked.map((entry, index) => [entry.id, index + 1]));
+  const filtered = ranked.filter((entry) => `${entry.state.name ?? ""} ${entry.id}`.toLocaleLowerCase().includes(search));
+  if (sort === "recent") filtered.sort((a, b) => Date.parse(b.reportedAt) - Date.parse(a.reportedAt) || a.id.localeCompare(b.id));
+  const total = filtered.length, pages = Math.max(1, Math.ceil(total / pageSize)), page = Math.min(requestedPage, pages);
+  return {
+    page,
+    pageSize,
+    pages,
+    total,
+    counts: { boxes: ranked.length, plants: ranked.reduce((n, entry) => n + entry.state.plants.length, 0), animals: ranked.reduce((n, entry) => n + ("fish" in entry.state ? entry.state.fish.length : entry.state.bugs.length), 0) },
+    entries: filtered.slice((page - 1) * pageSize, page * pageSize).map((entry) => {
+      const state = entry.state;
+      const common = { name: state.name, progression: state.progression, facilities: state.facilities, plants: state.plants };
+      return {
+        id: entry.id,
+        kind: entry.kind ?? "land",
+        rank: ranks.get(entry.id),
+        score: entry.score,
+        reportedAt: entry.reportedAt,
+        phase: entry.phase,
+        replayCount: state.replays?.length ?? 0,
+        state: "fish" in state ? { ...common, kind: "water", oxygen: state.oxygen, cleanliness: state.cleanliness, fish: state.fish, food: state.food } : { ...common, soil: state.soil, seeds: state.seeds, bugs: state.bugs, items: state.items, nests: state.nests, eggs: state.eggs, food: state.food, webs: state.webs }
+      };
+    })
+  };
+}
+
 // server/feedback.ts
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -3895,7 +3927,7 @@ var FeedbackStore = class {
 // package.json
 var package_default = {
   name: "cortico-world-terrarium",
-  version: "0.8.5",
+  version: "0.8.6",
   type: "module",
   description: "Claimable land and water ecosystems with plants, bugs, fish and a public leaderboard",
   license: "MIT",
@@ -3928,8 +3960,8 @@ var package_default = {
       "game"
     ],
     describe: "describe.json",
-    webUiClient: "dist/webui/0.8.5/client.js",
-    webUiStyle: "dist/webui/0.8.5/client.css",
+    webUiClient: "dist/webui/0.8.6/client.js",
+    webUiStyle: "dist/webui/0.8.6/client.css",
     locales: {
       zh: {
         displayName: "\u751F\u6001\u7BB1",
@@ -3963,7 +3995,7 @@ var package_default = {
     test: "vitest run",
     typecheck: "tsc --noEmit",
     "typecheck:webui": "tsc --noEmit -p tsconfig.web.json",
-    "build:webui": "esbuild webui/client.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/webui/0.8.5/client.js",
+    "build:webui": "esbuild webui/client.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/webui/0.8.6/client.js",
     "build:server": "tsx server/build.ts",
     "build:admin": "esbuild server/admin.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/admin.mjs"
   },
@@ -4975,6 +5007,18 @@ async function start(options = {}) {
           return;
         }
         const ranked = Object.values(registry).filter((entry) => kind === null || (entry.kind ?? "land") === kind).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+        if (query.get("view") === "gallery") {
+          if (!kind) {
+            reply(400, { error: "Gallery requires a box kind" });
+            return;
+          }
+          try {
+            reply(200, galleryPage(ranked, query));
+          } catch (error) {
+            reply(400, { error: error.message });
+          }
+          return;
+        }
         if (query.get("view") === "summary") {
           const limit = Number(query.get("limit") ?? 20), ownId = query.get("ownId");
           if (!kind || !Number.isInteger(limit) || limit < 1 || limit > 100 || ownId !== null && !idPattern2.test(ownId)) {
@@ -4991,7 +5035,9 @@ async function start(options = {}) {
       }
       if (req.method === "GET" && path.startsWith("/api/boxes/")) {
         const id = decodeURIComponent(path.slice("/api/boxes/".length));
-        reply(registry[id] ? 200 : 404, registry[id] ?? { error: "Unknown box" });
+        const entry = registry[id];
+        const replayOnly = new URL(req.url ?? "/", "http://localhost").searchParams.get("view") === "replays";
+        reply(entry ? 200 : 404, entry ? replayOnly ? { replays: entry.state.replays ?? [] } : entry : { error: "Unknown box" });
         return;
       }
       if (req.method === "POST" && path === "/api/registrations") {

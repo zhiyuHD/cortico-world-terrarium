@@ -2,6 +2,15 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.8.6 · 闲看生机
+
+- Move detailed rules into an on-demand topic tool; retain daily care, score formulas and contact policy in the startup prompt.
+- Return actionable care advice for moisture, shading, seed germination and aquatic plant water quality, including at night.
+- Support Linux native server payloads, executable sealing, target checks and atomic upgrades of the pinned release controller; preserve Node release compatibility.
+- Paginate the public gallery at four boxes per page with global search, sorting and counts. Keep legacy leaderboard responses compatible.
+- Transfer only current-page scene snapshots; fetch hunt replay frames on demand.
+- Dispose offscreen scenes, suspend hidden-page polling and renderers, release closed replay renderers and refresh the current page every 15 seconds.
+
 ## 0.8.5 · 新叶来信
 
 - Deliver local version improvements once per version across restarts and rollbacks, with the next model round; no proactive owner message requested.

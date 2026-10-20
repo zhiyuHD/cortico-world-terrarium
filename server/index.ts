@@ -1,3 +1,4 @@
+import { galleryPage } from './gallery.ts';
 import { FeedbackStore, FeedbackError } from './feedback.ts';
 import packageMetadata from '../package.json' with { type: 'json' };
 import { ProtocolNotices } from './protocol-notices.ts';
@@ -255,6 +256,12 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
         const kind = query.get('kind');
         if (kind !== null && kind !== 'land' && kind !== 'water') { reply(400, { error: 'Invalid box kind' }); return; }
         const ranked = Object.values(registry).filter(entry => kind === null || (entry.kind ?? 'land') === kind).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+        if (query.get('view') === 'gallery') {
+          if (!kind) { reply(400, { error: 'Gallery requires a box kind' }); return; }
+          try { reply(200, galleryPage(ranked, query)); }
+          catch (error) { reply(400, { error: (error as Error).message }); }
+          return;
+        }
         if (query.get('view') === 'summary') {
           const limit = Number(query.get('limit') ?? 20), ownId = query.get('ownId');
           if (!kind || !Number.isInteger(limit) || limit < 1 || limit > 100 || (ownId !== null && !idPattern.test(ownId))) { reply(400, { error: 'Summary requires kind, limit 1..100 and a valid optional ownId' }); return; }
@@ -266,7 +273,9 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
       }
       if (req.method === 'GET' && path.startsWith('/api/boxes/')) {
         const id = decodeURIComponent(path.slice('/api/boxes/'.length));
-        reply(registry[id] ? 200 : 404, registry[id] ?? { error: 'Unknown box' }); return;
+        const entry = registry[id];
+        const replayOnly = new URL(req.url ?? '/', 'http://localhost').searchParams.get('view') === 'replays';
+        reply(entry ? 200 : 404, entry ? replayOnly ? { replays: entry.state.replays ?? [] } : entry : { error: 'Unknown box' }); return;
       }
       if (req.method === 'POST' && path === '/api/registrations') {
         let raw = '';

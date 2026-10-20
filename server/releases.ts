@@ -4,14 +4,17 @@ import { createHash, randomUUID } from 'node:crypto';
 
 export const RELEASE_DATA_EPOCH = 1;
 const idPattern = /^[a-z0-9][a-z0-9._-]{0,79}$/;
-const required = ['server.mjs', 'admin.mjs', 'release.mjs', 'runner.mjs', 'index.html', 'scene.js', 'console/index.html', 'console/client.js', 'console/client.css', 'console/assets/icons.svg', 'console/assets/MiSans-Regular.woff2', 'console/assets/MiSans-Semibold.woff2', 'console/assets/MiSans-LICENSE.pdf', 'console/assets/Lucide-LICENSE.txt'];
+const commonRequired = ['admin.mjs', 'release.mjs', 'runner.mjs', 'index.html', 'scene.js', 'console/index.html', 'console/client.js', 'console/client.css', 'console/assets/icons.svg', 'console/assets/MiSans-Regular.woff2', 'console/assets/MiSans-Semibold.woff2', 'console/assets/MiSans-LICENSE.pdf', 'console/assets/Lucide-LICENSE.txt'];
+const nativeExecutable = 'server';
+export type ReleaseRuntime = { kind: 'native'; platform: 'linux'; arch: 'x64' | 'arm64' };
+function requiredFiles(runtime?: ReleaseRuntime) { return [runtime ? nativeExecutable : 'server.mjs', ...commonRequired]; }
 interface ReleaseFile { path: string; size: number; sha256: string }
-export interface ReleaseManifest { schema: 1; id: string; version: string; revision: string; createdAt: string; dataEpoch: number; healthProtocol: 0 | 1; files: ReleaseFile[] }
+export interface ReleaseManifest { schema: 1 | 2; runtime?: ReleaseRuntime; id: string; version: string; revision: string; createdAt: string; dataEpoch: number; healthProtocol: 0 | 1; files: ReleaseFile[] }
 export interface ReleaseTransaction { id: string; action: 'activate' | 'rollback'; from: string; to: string; phase: 'queued' | 'starting'; requestedAt: string }
 export interface ReleaseResult { id: string; action: 'activate' | 'rollback'; from: string; to: string; status: 'succeeded' | 'failed'; finishedAt: string; error?: string }
 export interface DeploymentState { schema: 1; controller: string; current: string; previous: string | null; pending: ReleaseTransaction | null; history: ReleaseResult[] }
 export function validReleaseId(id: unknown): id is string { return typeof id === 'string' && idPattern.test(id) && id !== '.' && id !== '..'; }
-function validPath(path: unknown): path is string { return typeof path === 'string' && (required.includes(path) || /^console\/assets\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(path)); }
+function validPath(path: unknown): path is string { return typeof path === 'string' && ([nativeExecutable, 'server.mjs', ...commonRequired].includes(path) || /^console\/assets\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(path)); }
 function sha256(bytes: Uint8Array) { return createHash('sha256').update(bytes).digest('hex'); }
 async function syncDirectory(path: string) { const handle = await open(path, 'r'); try { await handle.sync(); } finally { await handle.close(); } }
 export async function durableJson(path: string, value: unknown): Promise<void> {
@@ -32,7 +35,7 @@ async function filesIn(dir: string, prefix = ''): Promise<string[]> {
 }
 async function fileBytes(dir: string, path: string): Promise<Buffer> {
   const info = await lstat(join(dir, path));
-  if (!info.isFile() || info.size > 32 * 1024 * 1024) throw new Error(`Invalid release file: ${path}`);
+  if (!info.isFile() || info.size > (path === nativeExecutable ? 128 : 32) * 1024 * 1024) throw new Error(`Invalid release file: ${path}`);
   return readFile(join(dir, path));
 }
 export async function verifyRelease(dir: string): Promise<ReleaseManifest> {
@@ -40,9 +43,9 @@ export async function verifyRelease(dir: string): Promise<ReleaseManifest> {
   const raw = await fileBytes(dir, 'release.json');
   if (raw.length > 65536) throw new Error('Release manifest is too large');
   const manifest = JSON.parse(raw.toString()) as ReleaseManifest;
-  if (manifest.schema !== 1 || !validReleaseId(manifest.id) || typeof manifest.version !== 'string' || manifest.version.length > 80 || typeof manifest.revision !== 'string' || manifest.revision.length > 80 || !Number.isFinite(Date.parse(manifest.createdAt)) || !Number.isSafeInteger(manifest.dataEpoch) || manifest.dataEpoch < 1 || ![0, 1].includes(manifest.healthProtocol) || !Array.isArray(manifest.files) || manifest.files.length > 128 || !manifest.files.every(file => file && validPath(file.path) && Number.isSafeInteger(file.size) && file.size >= 0 && /^[a-f0-9]{64}$/.test(file.sha256))) throw new Error('Invalid release manifest');
+  if (![1, 2].includes(manifest.schema) || (manifest.schema === 1 ? manifest.runtime !== undefined : !manifest.runtime || manifest.runtime.kind !== 'native' || manifest.runtime.platform !== 'linux' || !['x64', 'arm64'].includes(manifest.runtime.arch)) || !validReleaseId(manifest.id) || typeof manifest.version !== 'string' || manifest.version.length > 80 || typeof manifest.revision !== 'string' || manifest.revision.length > 80 || !Number.isFinite(Date.parse(manifest.createdAt)) || !Number.isSafeInteger(manifest.dataEpoch) || manifest.dataEpoch < 1 || ![0, 1].includes(manifest.healthProtocol) || !Array.isArray(manifest.files) || manifest.files.length > 128 || !manifest.files.every(file => file && validPath(file.path) && Number.isSafeInteger(file.size) && file.size >= 0 && /^[a-f0-9]{64}$/.test(file.sha256))) throw new Error('Invalid release manifest');
   const names = manifest.files.map(file => file.path);
-  if (new Set(names).size !== names.length || required.some(path => !names.includes(path)) || manifest.files.reduce((total, file) => total + file.size, 0) > 64 * 1024 * 1024) throw new Error('Incomplete or oversized release');
+  if (new Set(names).size !== names.length || requiredFiles(manifest.runtime).some(path => !names.includes(path)) || (manifest.runtime ? names.includes('server.mjs') : names.includes(nativeExecutable)) || manifest.files.reduce((total, file) => total + file.size, 0) > 192 * 1024 * 1024) throw new Error('Incomplete or oversized release');
   const actual = await filesIn(dir);
   if (JSON.stringify(actual) !== JSON.stringify(['release.json', ...names].sort())) throw new Error('Release file inventory mismatch');
   for (const file of manifest.files) { const bytes = await fileBytes(dir, file.path); if (bytes.length !== file.size || sha256(bytes) !== file.sha256) throw new Error(`Release checksum mismatch: ${file.path}`); }
@@ -52,11 +55,11 @@ async function copyPayload(source: string, target: string, paths: string[]) {
   await mkdir(target, { recursive: true });
   for (const path of paths) { await mkdir(dirname(join(target, path)), { recursive: true }); await copyFile(join(source, path), join(target, path)); }
 }
-async function seal(dir: string) {
+async function seal(dir: string, runtime?: ReleaseRuntime) {
   for (const item of await readdir(dir)) {
     const path = join(dir, item);
     if ((await lstat(path)).isDirectory()) await seal(path);
-    else { await chmod(path, 0o444); const file = await open(path, 'r'); try { await file.sync(); } finally { await file.close(); } }
+    else { await chmod(path, runtime && item === nativeExecutable ? 0o555 : 0o444); const file = await open(path, 'r'); try { await file.sync(); } finally { await file.close(); } }
   }
   await chmod(dir, 0o555); await syncDirectory(dir);
 }
@@ -65,9 +68,9 @@ async function removeStaging(dir: string) {
   for (const item of await readdir(dir)) { const path = join(dir, item); if ((await lstat(path)).isDirectory()) await removeStaging(path); }
   await rm(dir, { recursive: true, force: true });
 }
-export async function packRelease(source: string, output: string, metadata: Pick<ReleaseManifest, 'id' | 'version' | 'revision'> & { healthProtocol?: 0 | 1; dataEpoch?: number }): Promise<ReleaseManifest> {
+export async function packRelease(source: string, output: string, metadata: Pick<ReleaseManifest, 'id' | 'version' | 'revision'> & { healthProtocol?: 0 | 1; dataEpoch?: number; runtime?: ReleaseRuntime }): Promise<ReleaseManifest> {
   if (!validReleaseId(metadata.id)) throw new Error('Invalid release ID');
-  const paths = [...new Set([...required, ...(await filesIn(join(source, 'console/assets'))).map(path => 'console/assets/' + path)])];
+  const paths = [...new Set([...requiredFiles(metadata.runtime), ...(await filesIn(join(source, 'console/assets'))).map(path => 'console/assets/' + path)])];
   if (paths.some(path => !validPath(path))) throw new Error('Unsupported release payload path');
   const temp = resolve(dirname(output), `.pack-${randomUUID()}`);
   await mkdir(dirname(output), { recursive: true });
@@ -76,8 +79,8 @@ export async function packRelease(source: string, output: string, metadata: Pick
     for (const path of paths) { if (!(await lstat(join(source, path))).isFile()) throw new Error(`Invalid source file: ${path}`); }
     await copyPayload(source, temp, paths);
     const files = await Promise.all(paths.sort().map(async path => { const bytes = await fileBytes(temp, path); return { path, size: bytes.length, sha256: sha256(bytes) }; }));
-    const manifest: ReleaseManifest = { schema: 1, ...metadata, createdAt: new Date().toISOString(), dataEpoch: metadata.dataEpoch ?? RELEASE_DATA_EPOCH, healthProtocol: metadata.healthProtocol ?? 1, files };
-    await durableJson(join(temp, 'release.json'), manifest); await verifyRelease(temp); await seal(temp);
+    const manifest: ReleaseManifest = { schema: metadata.runtime ? 2 : 1, ...metadata, createdAt: new Date().toISOString(), dataEpoch: metadata.dataEpoch ?? RELEASE_DATA_EPOCH, healthProtocol: metadata.healthProtocol ?? 1, files };
+    await durableJson(join(temp, 'release.json'), manifest); await verifyRelease(temp); await seal(temp, metadata.runtime);
     await rename(temp, output); await syncDirectory(dirname(resolve(output))); return manifest;
   } finally { await removeStaging(temp); }
 }
@@ -105,7 +108,7 @@ export class ReleaseStore {
     const temp = join(this.root, 'versions', `.install-${randomUUID()}`);
     try {
       await copyPayload(source, temp, ['release.json', ...manifest.files.map(file => file.path)]);
-      if (JSON.stringify(await verifyRelease(temp)) !== JSON.stringify(manifest)) throw new Error('Release changed during installation'); await seal(temp); await rename(temp, destination); await syncDirectory(join(this.root, 'versions'));
+      if (JSON.stringify(await verifyRelease(temp)) !== JSON.stringify(manifest)) throw new Error('Release changed during installation'); await seal(temp, manifest.runtime); await rename(temp, destination); await syncDirectory(join(this.root, 'versions'));
     } finally { await removeStaging(temp); }
     return manifest;
   }
@@ -126,6 +129,15 @@ export class ReleaseStore {
     await this.switchCurrent(id);
     const temp = join(this.root, `.manager-${randomUUID()}`);
     try { await symlink(`versions/${id}`, temp); await rename(temp, join(this.root, 'manager')); await syncDirectory(this.root); } finally { await rm(temp, { force: true }); }
+  }
+  async upgradeController(id: string) {
+    const state = await this.state();
+    if (state.pending) throw new Error('A deployment transaction is pending');
+    await this.manifest(id);
+    const temp = join(this.root, `.manager-${randomUUID()}`);
+    try { await symlink(`versions/${id}`, temp); await rename(temp, join(this.root, 'manager')); await syncDirectory(this.root); }
+    finally { await rm(temp, { force: true }); }
+    await this.save({ ...state, controller: id });
   }
   async queue(target: string | undefined, action: 'activate' | 'rollback'): Promise<ReleaseTransaction> {
     const state = await this.state();

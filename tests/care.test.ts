@@ -39,6 +39,22 @@ it('forecasts with the simulation without mutating the aquarium or emitting its 
   expect(care.plants.every(p => p.waitForDaylight)).toBe(true);
 });
 
+it('keeps care advice actionable at night and separates shading, watering and waiting', () => {
+  const night = Date.parse('2026-06-01T15:00:00Z'), state = newState(night);
+  const fern = state.plants[0]; fern.moisture = 90;
+  expect(landCare(state, night, 'Asia/Shanghai').plants[0]).toMatchObject({ needsAction: true, advice: expect.stringContaining('停止浇水') });
+  fern.moisture = 55;
+  expect(landCare(state, night, 'Asia/Shanghai').plants[0]).toMatchObject({ needsAction: false, advice: expect.stringContaining('等待天亮') });
+  fern.x = 4; state.items = [];
+  expect(landCare(state, night, 'Asia/Shanghai').plants[0]).toMatchObject({ needsAction: true, advice: expect.stringContaining('光照过强') });
+  sow(state, 'basil', 2, 2); state.soil[12].moisture = 0;
+  expect(landCare(state, night, 'Asia/Shanghai').seeds[0]).toMatchObject({ needsAction: true, advice: expect.stringContaining('补至目标水分') });
+  const water = newAquarium(night); water.cleanliness = 20;
+  expect(waterCare(water, night, 'Asia/Shanghai').plants[0]).toMatchObject({ needsAction: true, advice: expect.stringContaining('至少 40') });
+  water.cleanliness = 80;
+  expect(waterCare(water, night, 'Asia/Shanghai').plants[0]).toMatchObject({ needsAction: false, advice: expect.stringContaining('等待天亮') });
+});
+
 it('freezes organisms inside the saved state, restores into valid capacity and rejects malformed collections', () => {
   const land = newState(start); sow(land, 'basil', 2, 2);
   const original = structuredClone(land.plants[0]); collect(land, original.id);

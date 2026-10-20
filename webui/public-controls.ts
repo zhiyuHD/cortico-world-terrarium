@@ -80,7 +80,8 @@ export function createPublicReplayControls<Frame>(container: HTMLElement, create
   slider.tabIndex = 0; slider.setAttribute('role', 'slider'); slider.setAttribute('aria-label', copy.frame); slider.setAttribute('aria-valuemin', '0'); slider.setAttribute('aria-valuemax', '2'); track.append(fill); slider.append(track, thumb);
   canvas.width = 800; canvas.height = 500; canvas.setAttribute('role', 'img'); canvas.setAttribute('aria-label', copy.title);
   transport.append(play, slider); body.append(selectHost, transport, steps, label, canvas); inner.append(body); panel.append(inner); root.append(toggle, panel); container.append(root);
-  const scene = createRenderer(canvas);
+  let scene: ReturnType<typeof createRenderer> | undefined;
+  let active = true;
   let replays: readonly RecordedReplay<Frame>[] = [], index = 0, timer: ReturnType<typeof setTimeout> | undefined, disposed = false, expanded = false;
   const stop = (): void => { clearTimeout(timer); timer = undefined; play.setAttribute('aria-label', copy.play); play.setAttribute('aria-pressed', 'false'); };
   const select = createPublicSelect(selectHost, copy.select, () => { stop(); index = 0; render(); });
@@ -91,9 +92,10 @@ export function createPublicReplayControls<Frame>(container: HTMLElement, create
     slider.setAttribute('aria-disabled', String(!replay)); slider.tabIndex = replay ? 0 : -1;
     slider.setAttribute('aria-valuenow', String(index)); slider.setAttribute('aria-valuetext', copy.frames[index]); slider.style.setProperty('--fraction', String(index / 2)); slider.style.setProperty('--progress', `${index * 50}%`);
     stepButtons.forEach((button, i) => button.setAttribute('aria-pressed', String(index === i)));
+    if (!replay || !expanded || !active) { scene?.dispose(); scene = undefined; }
     if (!replay) { label.textContent = copy.empty; return; }
     label.textContent = `${new Date(replay.recordedAtMs).toLocaleString(language)} · ${replay.hunterId} → ${replay.preyId} · ${copy.frames[index]}`;
-    if (expanded) scene.setState(replay.frames[index], replay.recordedAtMs);
+    if (expanded && active) { scene ??= createRenderer(canvas); scene.setState(replay.frames[index], replay.recordedAtMs); }
   };
   toggle.addEventListener('click', () => { expanded = !expanded; toggle.setAttribute('aria-expanded', String(expanded)); panel.dataset.open = String(expanded); panel.inert = !expanded; if (!expanded) stop(); render(); });
   const advance = (): void => { if (disposed) return; index++; render(); if (index < 2) timer = setTimeout(advance, 1500); else stop(); };
@@ -112,6 +114,7 @@ export function createPublicReplayControls<Frame>(container: HTMLElement, create
       select.setOptions([...next].reverse().map(replay => ({ value: replay.id, label: `${new Date(replay.recordedAtMs).toLocaleString(language)} · ${replay.hunterId} → ${replay.preyId}` })));
       if (!retained) { stop(); index = 0; } render();
     },
-    dispose() { disposed = true; stop(); select.dispose(); scene.dispose(); root.remove(); },
+    setActive(value: boolean) { active = value; if (!active) stop(); render(); },
+    dispose() { disposed = true; stop(); select.dispose(); scene?.dispose(); root.remove(); },
   };
 }

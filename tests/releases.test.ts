@@ -42,8 +42,8 @@ async function fixture() {
   };
   await store.install(await pack('first')); await store.initialize('first');
   const runners = new Set<ChildProcess>();
-  const startRunner = () => {
-    const child = spawn(process.execPath, [join(root, 'manager/runner.mjs')], { detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CORTICO_TERRARIUM_DEPLOY_ROOT: root, CORTICO_TERRARIUM_START_TIMEOUT_MS: '2500', CORTICO_TERRARIUM_HEALTH_URL: url + '/health', PORT: String(port), TERRARIUM_DATA_FILE: join(root, 'data/leaderboard.json'), TERRARIUM_CREDENTIALS_FILE: join(root, 'data/credentials.json'), CORTICO_TERRARIUM_ADMIN_TOKEN: 'fixture-admin', CORTICO_TERRARIUM_ADMIN_HOST: '127.0.0.1', CORTICO_TERRARIUM_ADMIN_PORT: String(adminPort), CORTICO_TERRARIUM_ADMIN_ALLOWED_CIDR: '127.0.0.1/32' } });
+  const startRunner = (admin = true) => {
+    const child = spawn(process.execPath, [join(root, 'manager/runner.mjs')], { detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CORTICO_TERRARIUM_DEPLOY_ROOT: root, CORTICO_TERRARIUM_START_TIMEOUT_MS: '2500', CORTICO_TERRARIUM_HEALTH_URL: url + '/health', PORT: String(port), TERRARIUM_DATA_FILE: join(root, 'data/leaderboard.json'), TERRARIUM_CREDENTIALS_FILE: join(root, 'data/credentials.json'), CORTICO_TERRARIUM_ADMIN_TOKEN: 'fixture-admin', CORTICO_TERRARIUM_ADMIN_HOST: admin ? '127.0.0.1' : '', CORTICO_TERRARIUM_ADMIN_PORT: String(adminPort), CORTICO_TERRARIUM_ADMIN_ALLOWED_CIDR: '127.0.0.1/32' } });
     runners.add(child); child.stdout?.resume(); child.stderr?.resume();
     return child;
   };
@@ -131,4 +131,48 @@ it('uses a kernel lock for command-line changes and retains an interrupted insta
   let error = ''; cli.stderr!.on('data', chunk => { error += String(chunk); });
   const [code] = await once(cli, 'exit'); expect(code).toBe(1); expect(error).toContain('deployment lock');
   expect((await store.list()).releases.map(item => item.id)).toEqual(['first']);
+}, 20000);
+
+it('runs a sealed native executable, rolls back to Node and rejects an incompatible target', async () => {
+  const { dir, store, root, url, pack, startRunner, stop, ready } = await fixture();
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const nativeSource = join(dir, 'native-source'); await cp(source, nativeSource, { recursive: true });
+  await rm(join(nativeSource, 'server.mjs'));
+  const cFile = join(dir, 'fixture.c');
+  await writeFile(cFile, `#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+int main(void) {
+ int fd=socket(AF_INET,SOCK_STREAM,0), yes=1;
+ setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes));
+ struct sockaddr_in addr={.sin_family=AF_INET,.sin_port=htons(atoi(getenv("PORT"))),.sin_addr.s_addr=htonl(INADDR_LOOPBACK)};
+ if(bind(fd,(void*)&addr,sizeof(addr)) || listen(fd,16))return 1;
+ for(;;){int client=accept(fd,0,0);if(client<0)continue;char req[2048],body[512],out[1024];
+ read(client,req,sizeof(req));snprintf(body,sizeof(body),"{\\"ok\\":true,\\"releaseId\\":\\"%s\\"}",getenv("CORTICO_TERRARIUM_RELEASE_ID"));
+ int len=snprintf(out,sizeof(out),"HTTP/1.1 200 OK\\r\\nContent-Type: application/json\\r\\nContent-Length: %zu\\r\\nConnection: close\\r\\n\\r\\n%s",strlen(body),body);
+ write(client,out,len);close(client);}
+}`);
+  await promisify(execFile)('cc', [cFile, '-o', join(nativeSource, 'server')]);
+  const nativeRelease = join(dir, 'native');
+  const runtime = { kind: 'native' as const, platform: 'linux' as const, arch: process.arch as 'x64' | 'arm64' };
+  await packRelease(nativeSource, nativeRelease, { id: 'native', version: '0.1.0', revision: 'fixture', runtime });
+  await store.install(nativeRelease);
+  const { stat } = await import('node:fs/promises');
+  expect((await stat(join(store.directory('native'), 'server'))).mode & 0o777).toBe(0o555);
+  expect((await store.manifest('native')).schema).toBe(2);
+  await store.queue('native', 'activate'); let child = startRunner(false); await ready('native');
+  expect((await (await fetch(url + '/health')).json()).releaseId).toBe('native');
+  await store.queue(undefined, 'rollback'); await stop(child); child = startRunner(false); await ready('first'); await stop(child);
+  const wrong = join(dir, 'wrong-target');
+  await packRelease(nativeSource, wrong, { id: 'wrong-target', version: '0.1.0', revision: 'fixture', runtime: { ...runtime, arch: process.arch === 'x64' ? 'arm64' : 'x64' } });
+  await store.install(wrong); await store.queue('wrong-target', 'activate'); child = startRunner(false); await ready('first');
+  expect((await store.state()).history.at(-1)?.error).toContain('target'); await stop(child);
+  await store.install(await pack('controller')); await store.upgradeController('controller');
+  expect(await readlink(join(root, 'manager'))).toBe('versions/controller');
+  expect((await store.state()).controller).toBe('controller');
+  expect((await store.state()).current).toBe('first');
 }, 20000);
