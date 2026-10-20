@@ -1,3 +1,4 @@
+import { cellPosition, residentScale, WATER_SURFACE } from './geometry.ts';
 import { capacity } from '../src/progression.ts';
 import type { AquariumFrame } from '../src/aquarium.ts';
 import { createPlaybackControls } from './playback.ts';
@@ -8,7 +9,7 @@ export function createWaterScene(canvas: HTMLCanvasElement) {
   let movedAt = 0;
   let request = 0;
   let disposed = false;
-  const position = (x: number, y: number) => ({ x: 110 + x * 580 / (capacity(state ?? {}).size - 1), y: 120 + y * 280 / (capacity(state ?? {}).size - 1) });
+  const position = (x: number, y: number) => cellPosition(WATER_SURFACE, x, y, capacity(state ?? {}).size);
   const locations = (now: number) => new Map((state?.fish ?? []).map(fish => {
     const previous = old.get(fish.id) ?? fish;
     const t = Math.min(1, (now - movedAt) / 900);
@@ -19,6 +20,7 @@ export function createWaterScene(canvas: HTMLCanvasElement) {
     const g = canvas.getContext('2d');
     if (g) {
       const night = state.phase === 'night';
+      const size = capacity(state).size, scale = residentScale(size);
       g.fillStyle = night ? '#102e4b' : '#cbe9f1'; g.fillRect(0, 0, 800, 500);
       const water = g.createLinearGradient(0, 70, 0, 470); water.addColorStop(0, night ? '#174762' : '#71c6db'); water.addColorStop(1, night ? '#153540' : '#4193ac');
       g.fillStyle = water; g.beginPath(); g.roundRect(60, 70, 680, 400, 20); g.fill();
@@ -27,16 +29,18 @@ export function createWaterScene(canvas: HTMLCanvasElement) {
       g.font = '16px system-ui'; g.fillStyle = night ? '#def5fa' : '#164257';
       g.fillText(`O₂ ${state.oxygen.toFixed(1)} · ${state.cleanliness.toFixed(1)} / 100`, 72, 42);
       g.lineWidth = 1; g.strokeStyle = '#ffffff25';
-      for (let x = 0; x < capacity(state).size; x++) for (let y = 0; y < capacity(state).size; y++) { const p = position(x, y); g.strokeRect(p.x - 290 / capacity(state).size, p.y - 140 / capacity(state).size, 580 / capacity(state).size, 280 / capacity(state).size); }
+      for (let x = 0; x < capacity(state).size; x++) for (let y = 0; y < capacity(state).size; y++) { const p = position(x, y); g.strokeRect(p.x - WATER_SURFACE.width / size / 2, p.y - WATER_SURFACE.height / size / 2, WATER_SURFACE.width / size, WATER_SURFACE.height / size); }
       for (const plant of state.plants) {
         const p = position(plant.x, plant.y), h = 22 + plant.stage * 9;
+        g.save(); g.translate(p.x, p.y); g.scale(scale, scale); g.translate(-p.x, -p.y);
         g.strokeStyle = plant.species === 'algae' ? '#506f37' : '#236e46'; g.lineWidth = 5;
         for (let strand = -1; strand <= 1; strand++) { g.beginPath(); g.moveTo(p.x + strand * 10, p.y + 22); g.quadraticCurveTo(p.x + strand * 18 + Math.sin(now / 1000) * 2, p.y, p.x + strand * 12, p.y + 22 - h); g.stroke(); }
         if (plant.species === 'waterlily') { g.fillStyle = '#e7b8cf'; g.beginPath(); g.ellipse(p.x, p.y - h + 22, 13, 6, 0, 0, Math.PI * 2); g.fill(); }
+        g.restore();
       }
       for (const food of state.food) { const p = position(food.x, food.y); g.fillStyle = '#f4ca77'; for (let i = 0; i < food.portions; i++) { g.beginPath(); g.arc(p.x + (i % 4) * 5 - 8, p.y + Math.floor(i / 4) * 5, 2, 0, Math.PI * 2); g.fill(); } }
       for (const facility of state.facilities ?? []) {
-        const p = position(facility.x, facility.y); g.save(); g.globalAlpha = facility.enabled ? 1 : .35;
+        const p = position(facility.x, facility.y); g.save(); g.translate(p.x, p.y); g.scale(scale, scale); g.translate(-p.x, -p.y); g.globalAlpha = facility.enabled ? 1 : .35;
         if (facility.kind === 'air_stone') {
           g.fillStyle = '#769cad'; g.beginPath(); g.ellipse(p.x, p.y + 12, 15, 7, 0, 0, Math.PI * 2); g.fill();
           if (facility.enabled) for (let i = 0; i < 5; i++) { const rise = (now / 35 + i * 18) % 90; g.strokeStyle = '#d4f8ff99'; g.lineWidth = 1.5; g.beginPath(); g.arc(p.x + Math.sin(i + now / 1200) * 9, p.y - rise, 2 + i % 3, 0, Math.PI * 2); g.stroke(); }
@@ -53,11 +57,16 @@ export function createWaterScene(canvas: HTMLCanvasElement) {
       for (const fish of state.fish) {
         const p = position(points.get(fish.id)!.x, points.get(fish.id)!.y);
         const companions = state.fish.filter(other => other.x === fish.x && other.y === fish.y).map(other => other.id).sort();
-        p.y += (companions.indexOf(fish.id) - (companions.length - 1) / 2) * 15;
+        const index = companions.indexOf(fish.id), columns = Math.min(3, companions.length);
+        const rows = Math.ceil(companions.length / columns);
+        p.x += (index % columns - (Math.min(columns, companions.length - Math.floor(index / columns) * columns) - 1) / 2) * 24 * scale;
+        p.y += (Math.floor(index / columns) - (rows - 1) / 2) * Math.min(16 * scale, 24 / rows);
+        g.save(); g.translate(p.x, p.y); g.scale(scale, scale); g.translate(-p.x, -p.y);
         g.fillStyle = fish.species === 'goldfish' ? '#f3a545' : fish.species === 'perch' ? '#718f78' : '#b9b3e5';
         g.beginPath(); g.moveTo(p.x - 15, p.y); g.lineTo(p.x - 30, p.y - 12); g.lineTo(p.x - 30, p.y + 12); g.closePath(); g.fill();
         g.beginPath(); g.ellipse(p.x, p.y, fish.species === 'perch' ? 24 : 18, 11, 0, 0, Math.PI * 2); g.fill();
         g.fillStyle = '#172e38'; g.beginPath(); g.arc(p.x + 10, p.y - 3, 2, 0, Math.PI * 2); g.fill();
+        g.restore();
       }
     }
     request = requestAnimationFrame(render);

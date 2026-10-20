@@ -17,8 +17,16 @@ function nearFacility(state, kind, x, y) {
 }
 
 // webui/geometry.ts
+var LAND_SURFACE = { x: 84, y: 204, width: 632, height: 216 };
+var WATER_SURFACE = { x: 90, y: 128, width: 620, height: 286 };
+function cellPosition(surface, x, y, size) {
+  return { x: surface.x + (x + 0.5) * surface.width / size, y: surface.y + (y + 0.5) * surface.height / size };
+}
 function plotPosition(x, y, size = 5) {
-  return size === 5 ? { x: 260 + x * 70, y: 290 + y * 9 } : { x: 160 + x * 480 / (size - 1), y: 280 + y * 60 / (size - 1) };
+  return cellPosition(LAND_SURFACE, x, y, size);
+}
+function residentScale(size) {
+  return 5 / size;
 }
 
 // src/flight.ts
@@ -521,7 +529,7 @@ function createWaterScene(canvas) {
   let movedAt = 0;
   let request = 0;
   let disposed = false;
-  const position = (x, y) => ({ x: 110 + x * 580 / (capacity(state ?? {}).size - 1), y: 120 + y * 280 / (capacity(state ?? {}).size - 1) });
+  const position = (x, y) => cellPosition(WATER_SURFACE, x, y, capacity(state ?? {}).size);
   const locations = (now) => new Map((state?.fish ?? []).map((fish) => {
     const previous = old.get(fish.id) ?? fish;
     const t = Math.min(1, (now - movedAt) / 900);
@@ -532,6 +540,7 @@ function createWaterScene(canvas) {
     const g = canvas.getContext("2d");
     if (g) {
       const night = state.phase === "night";
+      const size = capacity(state).size, scale = residentScale(size);
       g.fillStyle = night ? "#102e4b" : "#cbe9f1";
       g.fillRect(0, 0, 800, 500);
       const water = g.createLinearGradient(0, 70, 0, 470);
@@ -553,10 +562,14 @@ function createWaterScene(canvas) {
       g.strokeStyle = "#ffffff25";
       for (let x = 0; x < capacity(state).size; x++) for (let y = 0; y < capacity(state).size; y++) {
         const p = position(x, y);
-        g.strokeRect(p.x - 290 / capacity(state).size, p.y - 140 / capacity(state).size, 580 / capacity(state).size, 280 / capacity(state).size);
+        g.strokeRect(p.x - WATER_SURFACE.width / size / 2, p.y - WATER_SURFACE.height / size / 2, WATER_SURFACE.width / size, WATER_SURFACE.height / size);
       }
       for (const plant of state.plants) {
         const p = position(plant.x, plant.y), h = 22 + plant.stage * 9;
+        g.save();
+        g.translate(p.x, p.y);
+        g.scale(scale, scale);
+        g.translate(-p.x, -p.y);
         g.strokeStyle = plant.species === "algae" ? "#506f37" : "#236e46";
         g.lineWidth = 5;
         for (let strand = -1; strand <= 1; strand++) {
@@ -571,6 +584,7 @@ function createWaterScene(canvas) {
           g.ellipse(p.x, p.y - h + 22, 13, 6, 0, 0, Math.PI * 2);
           g.fill();
         }
+        g.restore();
       }
       for (const food of state.food) {
         const p = position(food.x, food.y);
@@ -584,6 +598,9 @@ function createWaterScene(canvas) {
       for (const facility of state.facilities ?? []) {
         const p = position(facility.x, facility.y);
         g.save();
+        g.translate(p.x, p.y);
+        g.scale(scale, scale);
+        g.translate(-p.x, -p.y);
         g.globalAlpha = facility.enabled ? 1 : 0.35;
         if (facility.kind === "air_stone") {
           g.fillStyle = "#769cad";
@@ -632,7 +649,14 @@ function createWaterScene(canvas) {
       for (const fish of state.fish) {
         const p = position(points.get(fish.id).x, points.get(fish.id).y);
         const companions = state.fish.filter((other) => other.x === fish.x && other.y === fish.y).map((other) => other.id).sort();
-        p.y += (companions.indexOf(fish.id) - (companions.length - 1) / 2) * 15;
+        const index = companions.indexOf(fish.id), columns = Math.min(3, companions.length);
+        const rows = Math.ceil(companions.length / columns);
+        p.x += (index % columns - (Math.min(columns, companions.length - Math.floor(index / columns) * columns) - 1) / 2) * 24 * scale;
+        p.y += (Math.floor(index / columns) - (rows - 1) / 2) * Math.min(16 * scale, 24 / rows);
+        g.save();
+        g.translate(p.x, p.y);
+        g.scale(scale, scale);
+        g.translate(-p.x, -p.y);
         g.fillStyle = fish.species === "goldfish" ? "#f3a545" : fish.species === "perch" ? "#718f78" : "#b9b3e5";
         g.beginPath();
         g.moveTo(p.x - 15, p.y);
@@ -647,6 +671,7 @@ function createWaterScene(canvas) {
         g.beginPath();
         g.arc(p.x + 10, p.y - 3, 2, 0, Math.PI * 2);
         g.fill();
+        g.restore();
       }
     }
     request = requestAnimationFrame(render);
@@ -973,17 +998,22 @@ function bugPositions(bugs, positions = /* @__PURE__ */ new Map(), size = 5) {
     const position = positions.get(bug.id) ?? bug;
     const group = groups.get(`${bug.x},${bug.y}`);
     const ordinal = group.indexOf(bug.id);
-    const row = Math.floor(ordinal / 3);
-    const rowSize = Math.min(3, group.length - row * 3);
+    const columns = Math.min(3, group.length);
+    const row = Math.floor(ordinal / columns);
+    const rows = Math.ceil(group.length / columns);
+    const rowSize = Math.min(columns, group.length - row * columns);
+    const spacing = residentScale(size);
     const plot = plotPosition(position.x, position.y, size);
-    result.set(bug.id, { x: plot.x + (ordinal % 3 - (rowSize - 1) / 2) * 28, y: plot.y - 6 + row * 19 });
+    result.set(bug.id, { x: plot.x + (ordinal % columns - (rowSize - 1) / 2) * 28 * spacing, y: plot.y - 6 * spacing + (row - (rows - 1) / 2) * Math.min(19 * spacing, 24 / rows) });
   }
   return result;
 }
 function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = []) {
   const g = canvas.getContext("2d");
   if (!g) return;
-  const plot = (x, y) => plotPosition(x, y, capacity(state).size);
+  const size = capacity(state).size;
+  const scale = residentScale(size);
+  const plot = (x, y) => plotPosition(x, y, size);
   const night = state.phase === "night";
   const sky = g.createLinearGradient(0, 0, 0, 500);
   sky.addColorStop(0, night ? "#162c47" : "#9ccbcf");
@@ -1008,28 +1038,32 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
   g.fill();
   g.fillStyle = night ? "rgba(99,136,147,.2)" : "rgba(236,255,241,.25)";
   g.beginPath();
-  g.roundRect(105, 125, 590, 285, 32);
+  g.roundRect(60, 70, 680, 400, 24);
   g.fill();
   g.fillStyle = night ? "#50493e" : "#715438";
   g.beginPath();
-  g.roundRect(122, 306, 556, 93, [8, 8, 25, 25]);
+  g.roundRect(76, 202, 648, 250, [10, 10, 20, 20]);
   g.fill();
   g.fillStyle = night ? "#756b53" : "#a7875b";
   g.beginPath();
-  g.ellipse(400, 310, 278, 29, 0, 0, Math.PI * 2);
+  g.roundRect(76, 194, 648, 236, 12);
   g.fill();
-  for (const cell of state.soil ?? []) {
-    const { x, y } = plot(cell.x, cell.y);
-    g.fillStyle = `rgba(36,91,107,${cell.moisture / 160})`;
-    g.beginPath();
-    g.ellipse(x, y + 1, 30, 5, 0, 0, Math.PI * 2);
-    g.fill();
-    if (daylight(state, cell.x, cell.y) < 0.4) {
-      g.fillStyle = "rgba(20,30,40,.25)";
-      g.beginPath();
-      g.ellipse(x, y, 31, 6, 0, 0, Math.PI * 2);
-      g.fill();
+  const cellWidth = LAND_SURFACE.width / size, cellHeight = LAND_SURFACE.height / size;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const center = plot(x, y);
+    const cell = state.soil?.find((cell2) => cell2.x === x && cell2.y === y);
+    const left = center.x - cellWidth / 2, top = center.y - cellHeight / 2;
+    g.fillStyle = `rgba(36,91,107,${(cell?.moisture ?? 0) / 230})`;
+    g.fillRect(left + 1, top + 1, cellWidth - 2, cellHeight - 2);
+    if (daylight(state, x, y) < 0.4) {
+      g.fillStyle = "rgba(20,30,40,.18)";
+      g.fillRect(left + 1, top + 1, cellWidth - 2, cellHeight - 2);
     }
+    g.strokeStyle = night ? "#dce9c51c" : "#f9efd42e";
+    g.lineWidth = 1;
+    g.beginPath();
+    g.rect(left, top, cellWidth, cellHeight);
+    g.stroke();
   }
   for (const nest of state.nests ?? []) {
     const { x, y } = plot(nest.x, nest.y);
@@ -1076,8 +1110,12 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
     g.ellipse(x - 12 + index % 4 * 7, y - 4, 3, 4, -0.3, 0, Math.PI * 2);
     g.fill();
   }
-  for (const plant of state.plants) {
+  for (const plant of [...state.plants].sort((a, b) => a.y - b.y || a.x - b.x)) {
     const { x, y: base } = plot(plant.x, plant.y);
+    g.save();
+    g.translate(x, base);
+    g.scale(scale, scale);
+    g.translate(-x, -base);
     const height = 13 + plant.stage * 20;
     const leaves = 1 + plant.stage * 2;
     g.strokeStyle = plant.dry ? "#87926a" : "#417e4c";
@@ -1104,10 +1142,14 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
       }
     }
     drawPlantFlowers(g, plant, x, base - height, night);
+    g.restore();
   }
   for (const facility of state.facilities ?? []) {
     const { x, y } = plot(facility.x, facility.y);
     g.save();
+    g.translate(x, y);
+    g.scale(scale, scale);
+    g.translate(-x, -y);
     g.globalAlpha = facility.enabled ? 1 : 0.35;
     if (facility.kind === "mulch") {
       g.fillStyle = "#b79157";
@@ -1190,7 +1232,11 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
   const locations = bugPositions(surfaceBugs, positions, capacity(state).size);
   for (const bug of surfaceBugs) {
     const location = locations.get(bug.id);
-    const x = location.x, y = location.y - (isFlying(bug.species) ? 30 : 0);
+    const x = location.x, y = location.y - (isFlying(bug.species) ? 30 * scale : 0);
+    g.save();
+    g.translate(x, y);
+    g.scale(scale, scale);
+    g.translate(-x, -y);
     g.fillStyle = "rgba(33,28,20,.26)";
     g.beginPath();
     g.ellipse(x, y + 9, 14, 4, 0, 0, Math.PI * 2);
@@ -1306,6 +1352,7 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
       g.arc(x + 5, y - 2, 1.5, 0, Math.PI * 2);
       g.fill();
     }
+    g.restore();
   }
   for (const hit of hits) {
     const { x, y } = plot(hit.x, hit.y);
@@ -1323,19 +1370,19 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
   g.lineWidth = 12;
   g.lineCap = "round";
   g.beginPath();
-  g.moveTo(142, 160);
-  g.lineTo(142, 280);
-  g.moveTo(168, 151);
-  g.lineTo(168, 222);
+  g.moveTo(76, 100);
+  g.lineTo(76, 173);
+  g.moveTo(94, 92);
+  g.lineTo(94, 140);
   g.stroke();
   g.strokeStyle = night ? "#a7c1c7" : "#eff8ea";
   g.lineWidth = 9;
   g.beginPath();
-  g.roundRect(105, 125, 590, 285, 32);
+  g.roundRect(60, 70, 680, 400, 24);
   g.stroke();
   g.fillStyle = night ? "#40555a" : "#72906f";
   g.beginPath();
-  g.roundRect(160, 400, 480, 20, 10);
+  g.roundRect(90, 460, 620, 15, 7);
   g.fill();
 }
 function createLandRenderer(canvas) {

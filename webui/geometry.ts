@@ -1,3 +1,14 @@
+export const LAND_SURFACE = { x: 84, y: 204, width: 632, height: 216 };
+export const WATER_SURFACE = { x: 90, y: 128, width: 620, height: 286 };
+
+export function cellPosition(surface: typeof LAND_SURFACE, x: number, y: number, size: number): { x: number; y: number } {
+  return { x: surface.x + (x + .5) * surface.width / size, y: surface.y + (y + .5) * surface.height / size };
+}
+
 export function plotPosition(x: number, y: number, size = 5): { x: number; y: number } {
-  return size === 5 ? { x: 260 + x * 70, y: 290 + y * 9 } : { x: 160 + x * 480 / (size - 1), y: 280 + y * 60 / (size - 1) };
+  return cellPosition(LAND_SURFACE, x, y, size);
+}
+
+export function residentScale(size: number): number {
+  return 5 / size;
 }

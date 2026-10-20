@@ -1,16 +1,21 @@
-.terrarium-scene { display: block; width: min(100%, 800px); height: auto; aspect-ratio: 8 / 5; margin: 12px 0; border-radius: 12px; }
-.terrarium-details { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-bottom: 12px; }
+.terrarium-scene { display: block; width: 100%; max-width: 1000px; height: auto; aspect-ratio: 8 / 5; margin: 12px 0; border-radius: 12px; }
+.terrarium-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 10px; }
+.terrarium-details > div { min-width: 0; overflow-wrap: anywhere; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, currentColor 4%, transparent); line-height: 1.7; }
+.terrarium-details:empty { display: none; }
 .terrarium-scene[hidden], .terrarium-details[hidden], .terrarium-habitat[hidden] { display: none; }
 .terrarium-plant { color: var(--ink, var(--text, inherit)); }
 
-.terrarium-habitat { display: flex; flex-wrap: wrap; align-items: start; gap: 16px; margin: 16px 0; }
-.terrarium-grid { display: grid; grid-template-columns: repeat(5, 42px); gap: 3px; }
-.terrarium-cell { height: 36px; border: 1px solid #647b80; border-radius: 4px; cursor: pointer; font: inherit; font-size: 12px; }
+.terrarium-habitat { display: grid; grid-template-columns: minmax(0, 1fr) minmax(160px, 230px); align-items: start; gap: 16px; margin: 16px 0; }
+.terrarium-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; width: 100%; min-width: 0; }
+.terrarium-cell { min-height: 48px; border: 1px solid #647b80; border-radius: 4px; cursor: pointer; font: inherit; font-size: 12px; }
 .terrarium-cell:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
-.terrarium-cell-status { max-width: 230px; }
-.terrarium-requirements { font-size: 13px; line-height: 1.7; }
+.terrarium-cell-status { line-height: 1.8; overflow-wrap: anywhere; padding: 12px; border-radius: 10px; background: color-mix(in srgb, currentColor 5%, transparent); }
+.terrarium-cell-moisture, .terrarium-cell-light { display: block; line-height: 1.4; font-variant-numeric: tabular-nums; }
+.terrarium-cell-moisture { font-size: 14px; font-weight: 600; }
+.terrarium-cell-light { font-size: 10px; opacity: .7; }
+.terrarium-requirements { grid-column: 1 / -1; font-size: 13px; line-height: 1.7; }
 .terrarium-select { max-width: 100%; padding: 6px; color: inherit; background: var(--paper, var(--bg, transparent)); border: 1px solid #82938c; border-radius: 4px; }
-.terrarium-history { display: block; width: min(100%, 800px); height: auto; margin: 12px 0; }
+.terrarium-history { display: block; width: 100%; max-width: 1000px; height: auto; margin: 12px 0; }
 .terrarium-cell[aria-pressed="true"] { box-shadow: inset 0 0 0 2px #18313b; }
 .terrarium-select option { color: var(--ink, var(--text, CanvasText)); background: var(--paper, var(--bg, Canvas)); }
 
@@ -35,7 +40,7 @@
 @keyframes terrarium-feedback-in { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .terrarium-feedback-panel { animation: none; } .terrarium-feedback textarea, .terrarium-feedback input { transition: none; } }
 
-.terrarium-watering { display: flex; flex-direction: column; gap: 8px; flex-basis: 100%; }
+.terrarium-watering { display: flex; flex-direction: column; gap: 8px; grid-column: 1 / -1; }
 .terrarium-watering[hidden] { display: none; }
 .terrarium-watering-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
 .terrarium-watering-buttons button { transition: transform 160ms ease, box-shadow 160ms ease; }
@@ -65,3 +70,21 @@
 .terrarium-progress-head{display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:16px}.terrarium-progress-head strong{font-size:28px;font-weight:600;letter-spacing:2px}.terrarium-progress-limits,.terrarium-progress-score{font-size:12px;opacity:.78;margin:8px 0;line-height:1.7}.terrarium-progress-track{height:7px;overflow:hidden;border-radius:10px;background:color-mix(in srgb,currentColor 10%,transparent)}.terrarium-progress-track span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#669d85,#aecb85);transition:width .5s ease}.terrarium-letter{margin-top:18px;padding:16px;border-radius:14px;background:color-mix(in srgb,#bd9b65 10%,transparent)}.terrarium-letter h3{font-size:16px;margin:14px 0 8px}.terrarium-letter p{line-height:1.9;margin:8px 0;max-width:65ch}.terrarium-letter-task{opacity:.78;font-size:13px}.terrarium-progress-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.terrarium-facilities{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:16px}.terrarium-facility{border:1px solid color-mix(in srgb,currentColor 12%,transparent);border-radius:14px;padding:14px;min-width:0}.terrarium-facility p{font-size:12px;line-height:1.8;opacity:.75;min-height:44px}.terrarium-facility.is-locked{opacity:.55}.terrarium-progress-status{margin-top:8px;font-size:13px}.terrarium-grid button{min-width:0;padding-inline:3px;font-size:12px}.terrarium-progress button{white-space:normal}
 @media(max-width:650px){.terrarium-facilities{grid-template-columns:1fr}.terrarium-progress{padding:14px}.terrarium-facility p{min-height:0}.terrarium-grid button{font-size:10px}}
 @media(prefers-reduced-motion:reduce){.terrarium-progress-track span{transition:none}}
+
+.terrarium-panel { display: grid; gap: 18px; min-width: 0; max-width: 1000px; margin-inline: auto; }
+.terrarium-panel > * { min-width: 0; max-width: 100%; }
+.terrarium-panel [hidden] { display: none; }
+.terrarium-panel > h2, .terrarium-panel > h3 { margin-block: 4px; }
+.terrarium-panel .terrarium-scene, .terrarium-panel .terrarium-sync, .terrarium-panel .terrarium-progress, .terrarium-panel .terrarium-habitat { margin-block: 0; }
+.terrarium-panel .terrarium-scene { border: 1px solid color-mix(in srgb, currentColor 12%, transparent); box-sizing: border-box; }
+.terrarium-panel .terrarium-care { display: grid; gap: 12px; padding-block: 14px; border-block: 1px solid color-mix(in srgb, currentColor 12%, transparent); }
+.terrarium-panel .terrarium-grid button { white-space: nowrap; min-height: 44px; padding: 4px 2px; border-radius: 8px; }
+.terrarium-panel .terrarium-grid .terrarium-cell { min-height: 52px; }
+.terrarium-panel .terrarium-facilities { grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
+@media(max-width:650px) {
+  .terrarium-habitat { grid-template-columns: minmax(0, 1fr); }
+  .terrarium-grid { gap: 4px; }
+  .terrarium-cell-status { padding: 8px 12px; }
+  .terrarium-panel { gap: 14px; }
+  .terrarium-progress-head { flex-wrap: wrap; gap: 8px; }
+}

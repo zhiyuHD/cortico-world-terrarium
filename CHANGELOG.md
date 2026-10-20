@@ -2,6 +2,14 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.8.4
+
+- Enlarge the land surface and place all grid cells within the terrarium; center water cells in contiguous tiles inside the aquarium.
+- Scale plants, animals and facilities with expanded grids, draw land plants from back to front and bound animal grouping offsets.
+- Fit scenes and cell controls to panel width, stack habitat controls on narrow screens and separate moisture and light labels.
+- Show the live scene before progression controls and separate organism details with spacing and wrapping.
+- Apply the same scene geometry to public galleries, nest hit detection and recorded replays.
+
 ## 0.8.3 · 小满
 
 - Score only the strongest three members of each species at 100%, 50% and 25%; include animal maturity, hunger and water conditions, remove seed/moisture bonuses and require both fish and plants for water environment points.

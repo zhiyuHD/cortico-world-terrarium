@@ -24,7 +24,8 @@ it('finishes a bug move when an unchanged report arrives during animation', () =
   const gradient = { addColorStop() {} };
   const context = {
     createLinearGradient: () => gradient, fillRect() {}, beginPath() {}, arc() {}, fill() {},
-    roundRect() {}, moveTo() {}, lineTo() {}, stroke() {}, quadraticCurveTo() {},
+    roundRect() {}, rect() {}, moveTo() {}, lineTo() {}, stroke() {}, quadraticCurveTo() {},
+    save() {}, restore() {}, translate() {}, scale() {},
     ellipse(x: number, _y: number, radiusX: number, radiusY: number) {
       if (radiusX === 13 && radiusY === 9) beetleCenters.push(x);
     },

@@ -18,6 +18,7 @@ export function mountWater(ctx: WebUiPanelContext): void {
   const card = ctx.ui.sheet({ title: '生态箱·水', en: 'Terrarium · Water' });
   const title = ctx.ui.h('h2', '');
   const status = ctx.ui.msgline(zh ? '读取中' : 'Loading');
+  card.body.classList.add('terrarium-panel');
   const canvas = document.createElement('canvas'); canvas.width = 800; canvas.height = 500; canvas.className = 'terrarium-scene'; canvas.setAttribute('role', 'img'); canvas.setAttribute('aria-label', zh ? '生态箱·水' : 'Water aquarium');
   const details = ctx.ui.h('div', 'terrarium-details');
   const deathHistory = createDeathHistory(ctx);
@@ -33,7 +34,7 @@ export function mountWater(ctx: WebUiPanelContext): void {
   ctx.signal.addEventListener('abort', () => { scene.dispose(); replay.dispose(); }, { once: true });
   const sync = createSyncControls(ctx, () => load());
   const refresh = ctx.ui.button(zh ? '刷新' : 'Refresh', { size: 'sm', onClick: () => { void load(); } });
-  card.body.append(title, status, sync.el, progression.el, canvas, details, diagnosis, deathHistory.el, grid, careControls.el, replayContainer, history, scoreChart, refresh, createFeedbackControls(ctx)); ctx.root.append(card.el);
+  card.body.append(title, status, sync.el, canvas, details, diagnosis, deathHistory.el, grid, careControls.el, progression.el, replayContainer, history, scoreChart, refresh, createFeedbackControls(ctx)); ctx.root.append(card.el);
   const load = async (): Promise<void> => {
     try {
       const response = await ctx.invoke<{ sync: TerrariumSyncStatus; claimed: boolean; id?: string; state?: AquariumState & AquariumFrame & { care: ReturnType<typeof waterCare>; returnReport?: ReturnReport; scoreHistory: { recordedAtMs: number; score: number | null }[] } }>('state');

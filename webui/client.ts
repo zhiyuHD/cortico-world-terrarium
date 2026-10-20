@@ -23,6 +23,7 @@ function mount(ctx: WebUiPanelContext): void {
     en: { loading: 'Loading', refresh: 'Refresh', day: 'Day', night: 'Night', fern: 'Fern', clover: 'Clover', stage: 'stage', moisture: 'moisture', dry: 'dry soil', scene: ' terrarium', seed: 'seeds', bug: 'bugs', egg: 'eggs', nest: 'ant nest', food: 'stored food', depth: 'levels', light: 'Current light', soil: 'Soil moisture', history: 'Hourly history · Last seven days', health: 'Health', empty: 'Waiting for a second hourly sample', needs: 'Growth conditions (moisture / daylight)', plot: 'Cell', critical: 'Critical', bud: 'Budding', bloom: 'Blooming', energy: 'Energy', hunger: 'Hunger' },
   });
   const card = ctx.ui.sheet({ title: '生态箱·地', en: 'Terrarium · Land' });
+  card.body.classList.add('terrarium-panel');
   const name = ctx.ui.h('h2', '');
   const status = ctx.ui.msgline(copy.loading);
   const canvas = document.createElement('canvas');
@@ -68,7 +69,7 @@ function mount(ctx: WebUiPanelContext): void {
     chart.replaceChildren(drawHistory(current.history, selected, copy, ctx.language, capacity(current).size));
   };
   select.addEventListener('change', () => { selected = select.value; renderHistory(); });
-  card.body.append(name, status, sync.el, progression.el, canvas, replayContainer, details, diagnosis, deathHistory.el, habitat, careControls.el, historyTitle, select, chart, scoreChart, refresh, createFeedbackControls(ctx));
+  card.body.append(name, status, sync.el, canvas, replayContainer, details, diagnosis, deathHistory.el, habitat, careControls.el, progression.el, historyTitle, select, chart, scoreChart, refresh, createFeedbackControls(ctx));
   ctx.root.appendChild(card.el);
   const load = async (): Promise<void> => {
     try {
@@ -97,7 +98,7 @@ function mount(ctx: WebUiPanelContext): void {
         button.style.setProperty('--terrarium-dark-moisture', `${28 - cell.moisture * .14}%`);
         button.style.backgroundColor = `hsl(195 35% ${85 - cell.moisture * .45}%)`;
         button.style.color = cell.moisture > 65 ? '#fff' : '#18313b';
-        button.textContent = `${Math.round(cell.moisture)} · ${light.toFixed(2)}`;
+        button.append(ctx.ui.h('span', 'terrarium-cell-moisture', `${Math.round(cell.moisture)}`), ctx.ui.h('span', 'terrarium-cell-light', light.toFixed(2)));
         button.title = label; button.setAttribute('aria-label', label);
         button.addEventListener('click', () => {
           selected = `soil:${index}`; select.value = selected;

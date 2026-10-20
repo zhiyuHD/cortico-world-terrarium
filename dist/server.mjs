@@ -3895,7 +3895,7 @@ var FeedbackStore = class {
 // package.json
 var package_default = {
   name: "cortico-world-terrarium",
-  version: "0.8.3",
+  version: "0.8.4",
   type: "module",
   description: "Claimable land and water ecosystems with plants, bugs, fish and a public leaderboard",
   license: "MIT",
@@ -3928,8 +3928,8 @@ var package_default = {
       "game"
     ],
     describe: "describe.json",
-    webUiClient: "dist/webui/0.8.3/client.js",
-    webUiStyle: "dist/webui/0.8.3/client.css",
+    webUiClient: "dist/webui/0.8.4/client.js",
+    webUiStyle: "dist/webui/0.8.4/client.css",
     locales: {
       zh: {
         displayName: "\u751F\u6001\u7BB1",
@@ -3963,7 +3963,7 @@ var package_default = {
     test: "vitest run",
     typecheck: "tsc --noEmit",
     "typecheck:webui": "tsc --noEmit -p tsconfig.web.json",
-    "build:webui": "esbuild webui/client.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/webui/0.8.3/client.js",
+    "build:webui": "esbuild webui/client.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/webui/0.8.4/client.js",
     "build:server": "tsx server/build.ts",
     "build:admin": "esbuild server/admin.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/admin.mjs"
   },

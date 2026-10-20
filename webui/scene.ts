@@ -1,5 +1,5 @@
 import { capacity, type DevelopmentState } from '../src/progression.ts';
-import { plotPosition } from './geometry.ts';
+import { LAND_SURFACE, plotPosition, residentScale } from './geometry.ts';
 export { plotPosition } from './geometry.ts';
 import { isFlying } from '../src/flight.ts';
 import type { EggState, NestState, LandFood } from '../src/state.ts';
@@ -38,10 +38,13 @@ export function bugPositions(bugs: SceneState['bugs'], positions: ReadonlyMap<st
     const position = positions.get(bug.id) ?? bug;
     const group = groups.get(`${bug.x},${bug.y}`)!;
     const ordinal = group.indexOf(bug.id);
-    const row = Math.floor(ordinal / 3);
-    const rowSize = Math.min(3, group.length - row * 3);
+    const columns = Math.min(3, group.length);
+    const row = Math.floor(ordinal / columns);
+    const rows = Math.ceil(group.length / columns);
+    const rowSize = Math.min(columns, group.length - row * columns);
+    const spacing = residentScale(size);
     const plot = plotPosition(position.x, position.y, size);
-    result.set(bug.id, { x: plot.x + (ordinal % 3 - (rowSize - 1) / 2) * 28, y: plot.y - 6 + row * 19 });
+    result.set(bug.id, { x: plot.x + (ordinal % columns - (rowSize - 1) / 2) * 28 * spacing, y: plot.y - 6 * spacing + (row - (rows - 1) / 2) * Math.min(19 * spacing, 24 / rows) });
   }
   return result;
 }
@@ -49,7 +52,9 @@ export function bugPositions(bugs: SceneState['bugs'], positions: ReadonlyMap<st
 export function drawScene(canvas: HTMLCanvasElement, state: SceneState, positions: ReadonlyMap<string, { x: number; y: number }> = new Map(), hits: ReadonlyArray<{ x: number; y: number; strength: number }> = []): void {
   const g = canvas.getContext('2d');
   if (!g) return;
-  const plot = (x: number, y: number) => plotPosition(x, y, capacity(state).size);
+  const size = capacity(state).size;
+  const scale = residentScale(size);
+  const plot = (x: number, y: number) => plotPosition(x, y, size);
   const night = state.phase === 'night';
   const sky = g.createLinearGradient(0, 0, 0, 500);
   sky.addColorStop(0, night ? '#162c47' : '#9ccbcf');
@@ -66,20 +71,25 @@ export function drawScene(canvas: HTMLCanvasElement, state: SceneState, position
   g.fillStyle = night ? '#415866' : '#91af91';
   g.beginPath(); g.ellipse(400, 453, 350, 32, 0, 0, Math.PI * 2); g.fill();
   g.fillStyle = night ? 'rgba(99,136,147,.2)' : 'rgba(236,255,241,.25)';
-  g.beginPath(); g.roundRect(105, 125, 590, 285, 32); g.fill();
+  g.beginPath(); g.roundRect(60, 70, 680, 400, 24); g.fill();
   g.fillStyle = night ? '#50493e' : '#715438';
-  g.beginPath(); g.roundRect(122, 306, 556, 93, [8, 8, 25, 25]); g.fill();
+  g.beginPath(); g.roundRect(76, 202, 648, 250, [10, 10, 20, 20]); g.fill();
   g.fillStyle = night ? '#756b53' : '#a7875b';
-  g.beginPath(); g.ellipse(400, 310, 278, 29, 0, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.roundRect(76, 194, 648, 236, 12); g.fill();
 
-  for (const cell of state.soil ?? []) {
-    const { x, y } = plot(cell.x, cell.y);
-    g.fillStyle = `rgba(36,91,107,${cell.moisture / 160})`;
-    g.beginPath(); g.ellipse(x, y + 1, 30, 5, 0, 0, Math.PI * 2); g.fill();
-    if (daylight(state, cell.x, cell.y) < .4) {
-      g.fillStyle = 'rgba(20,30,40,.25)';
-      g.beginPath(); g.ellipse(x, y, 31, 6, 0, 0, Math.PI * 2); g.fill();
+  const cellWidth = LAND_SURFACE.width / size, cellHeight = LAND_SURFACE.height / size;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const center = plot(x, y);
+    const cell = state.soil?.find(cell => cell.x === x && cell.y === y);
+    const left = center.x - cellWidth / 2, top = center.y - cellHeight / 2;
+    g.fillStyle = `rgba(36,91,107,${(cell?.moisture ?? 0) / 230})`;
+    g.fillRect(left + 1, top + 1, cellWidth - 2, cellHeight - 2);
+    if (daylight(state, x, y) < .4) {
+      g.fillStyle = 'rgba(20,30,40,.18)';
+      g.fillRect(left + 1, top + 1, cellWidth - 2, cellHeight - 2);
     }
+    g.strokeStyle = night ? '#dce9c51c' : '#f9efd42e'; g.lineWidth = 1;
+    g.beginPath(); g.rect(left, top, cellWidth, cellHeight); g.stroke();
   }
   for (const nest of state.nests ?? []) {
     const { x, y } = plot(nest.x, nest.y);
@@ -109,8 +119,9 @@ export function drawScene(canvas: HTMLCanvasElement, state: SceneState, position
     g.fillStyle = egg.species === 'ant' ? '#eee2bd' : '#dbd9b0';
     g.beginPath(); g.ellipse(x - 12 + index % 4 * 7, y - 4, 3, 4, -.3, 0, Math.PI * 2); g.fill();
   }
-  for (const plant of state.plants) {
+  for (const plant of [...state.plants].sort((a, b) => a.y - b.y || a.x - b.x)) {
     const { x, y: base } = plot(plant.x, plant.y);
+    g.save(); g.translate(x, base); g.scale(scale, scale); g.translate(-x, -base);
     const height = 13 + plant.stage * 20;
     const leaves = 1 + plant.stage * 2;
     g.strokeStyle = plant.dry ? '#87926a' : '#417e4c';
@@ -129,10 +140,11 @@ export function drawScene(canvas: HTMLCanvasElement, state: SceneState, position
       for (const dx of [-8, 0, 8]) { g.beginPath(); g.arc(x + dx, base - height, 9, 0, Math.PI * 2); g.fill(); }
     }
     drawPlantFlowers(g, plant, x, base - height, night);
+    g.restore();
   }
   for (const facility of state.facilities ?? []) {
     const { x, y } = plot(facility.x, facility.y);
-    g.save(); g.globalAlpha = facility.enabled ? 1 : .35;
+    g.save(); g.translate(x, y); g.scale(scale, scale); g.translate(-x, -y); g.globalAlpha = facility.enabled ? 1 : .35;
     if (facility.kind === 'mulch') {
       g.fillStyle = '#b79157'; g.beginPath(); g.ellipse(x, y, 24, 10, 0, 0, Math.PI * 2); g.fill();
       g.strokeStyle = '#74522f'; g.lineWidth = 2;
@@ -164,7 +176,8 @@ export function drawScene(canvas: HTMLCanvasElement, state: SceneState, position
   const locations = bugPositions(surfaceBugs, positions, capacity(state).size);
   for (const bug of surfaceBugs) {
     const location = locations.get(bug.id)!;
-    const x = location.x, y = location.y - (isFlying(bug.species) ? 30 : 0);
+    const x = location.x, y = location.y - (isFlying(bug.species) ? 30 * scale : 0);
+    g.save(); g.translate(x, y); g.scale(scale, scale); g.translate(-x, -y);
     g.fillStyle = 'rgba(33,28,20,.26)';
     g.beginPath(); g.ellipse(x, y + 9, 14, 4, 0, 0, Math.PI * 2); g.fill();
     if (isFlying(bug.species)) {
@@ -210,6 +223,7 @@ export function drawScene(canvas: HTMLCanvasElement, state: SceneState, position
       }
       g.fillStyle = '#24352b'; g.beginPath(); g.arc(x + 5, y - 2, 1.5, 0, Math.PI * 2); g.fill();
     }
+    g.restore();
   }
   for (const hit of hits) {
     const { x, y } = plot(hit.x, hit.y);
@@ -221,11 +235,11 @@ export function drawScene(canvas: HTMLCanvasElement, state: SceneState, position
     }
   }
   g.strokeStyle = 'rgba(255,255,255,.4)'; g.lineWidth = 12; g.lineCap = 'round';
-  g.beginPath(); g.moveTo(142, 160); g.lineTo(142, 280); g.moveTo(168, 151); g.lineTo(168, 222); g.stroke();
+  g.beginPath(); g.moveTo(76, 100); g.lineTo(76, 173); g.moveTo(94, 92); g.lineTo(94, 140); g.stroke();
   g.strokeStyle = night ? '#a7c1c7' : '#eff8ea'; g.lineWidth = 9;
-  g.beginPath(); g.roundRect(105, 125, 590, 285, 32); g.stroke();
+  g.beginPath(); g.roundRect(60, 70, 680, 400, 24); g.stroke();
   g.fillStyle = night ? '#40555a' : '#72906f';
-  g.beginPath(); g.roundRect(160, 400, 480, 20, 10); g.fill();
+  g.beginPath(); g.roundRect(90, 460, 620, 15, 7); g.fill();
 }
 
 export function createLandRenderer(canvas: HTMLCanvasElement): { setState(state: SceneState): void; dispose(): void } {
