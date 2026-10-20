@@ -95,7 +95,8 @@ export class LeaderboardClient {
 
   async claim(): Promise<string | undefined> {
     if (!this.options.url) return undefined;
-    return (await this.authorize(new URL(this.options.url))).id;
+    try { return (await this.authorize(new URL(this.options.url))).id; }
+    catch (error) { this.syncStatus.state = 'error'; this.syncStatus.lastError = error instanceof Error ? error.message : String(error); throw error; }
   }
 
   async restore(): Promise<void> {

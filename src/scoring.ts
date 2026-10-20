@@ -31,3 +31,5 @@ export function score(state: TerrariumState | AquariumState): number {
 }
 export interface LeaderboardBoxSummary { rank: number; competitiveRank?: number; id: string; name?: string; score: number; scoreParts: ScoreParts; reportedAt: string }
 export interface LeaderboardSummary { habitat: 'land' | 'water'; total: number; entries: LeaderboardBoxSummary[]; own: LeaderboardBoxSummary | null }
+
+export const TERRARIUM_SCORE_RULES = '同种只取贡献最高的前三个，权重 100%/50%/25%；种子和额外浇水不直接计分。动物成熟度在 24 个模拟小时后达到上限，饥饿或健康、能量与水环境影响动物分。水环境分 = round(40 × min(氧气, 水质)/100 × min(1, 植物分/40, 鱼分/40))。';

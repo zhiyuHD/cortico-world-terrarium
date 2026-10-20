@@ -2,6 +2,18 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.8.5 · 新叶来信
+
+- Deliver local version improvements once per version across restarts and rollbacks, with the next model round; no proactive owner message requested.
+- Extract Canvas rendering, animation, geometry, flowers and the interactive nest viewer into the independent terrarium-renderer package. Keep simulation-dependent snapshot conversion, replay timing and page controls in the World.
+- Give land and water distinct tutorial letters covering suitable moisture, shade, daytime simulation hours, food sources, hunger, collection placement and current score rules. Warn about overwatering in the first land letter and identify the values to check after each task.
+- Return current tutorial tasks in operation receipts. Incomplete guide requests return the current chapter; expected-step requests can be retried without advancing twice.
+- Show score parts, rules and points remaining in the observation-station panel; include local peak score when reading rankings.
+- Keep locally claimed habitats when registration fails, expose synchronization errors and defer ranking and announcement queries to scheduled polling.
+- Add rectangular land sowing with occupied/capacity skip counts; report skipped watering and disable plant restores into occupied panel cells.
+- Expose per-plant moisture/light ranges and current intervention flags in care; explain fish travel time and water damage thresholds. Historical time outside suitable ranges is not reconstructed.
+- Increase the default rank-alert cooldown to 120 minutes while retaining explicit configuration.
+
 ## 0.8.4
 
 - Enlarge the land surface and place all grid cells within the terrarium; center water cells in contiguous tiles inside the aquarium.

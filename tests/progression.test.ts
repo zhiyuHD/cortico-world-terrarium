@@ -45,7 +45,7 @@ it('inherits current-formula historical peak without expanding saves automatical
   expect(s.progression).toBeUndefined(); expect(capacity(s)).toEqual(TERRARIUM_LEVELS[0]);
   expect(observeProgress(s).peakScore).toBe(TERRARIUM_LEVELS[2].requiredScore);
   expect(guide(s)).toMatchObject({ step: 0, ready: false });
-  expect(() => advanceGuide(s)).toThrow('task'); recordAction(s, 'observe'); advanceGuide(s);
+  expect(advanceGuide(s)).toBe(false); recordAction(s, 'observe'); advanceGuide(s);
   expect(guide(s)).toMatchObject({ step: 1, ready: false });
   waterSoil(s, 2, 2, { amount: 1 }); advanceGuide(s); sow(s, 'bean', 3, 2); advanceGuide(s);
   const bug = releaseBug(s, 'ant', 2, 2); advanceGuide(s); collect(s, bug.id); advanceGuide(s);

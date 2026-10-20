@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { bugPositions, createLandRenderer as createScene, plotPosition, type SceneState } from '../webui/scene.ts';
+import { bugPositions, createLandRenderer as createScene, plotPosition, landScene, type SceneState } from '../webui/scene.ts';
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
@@ -43,4 +43,12 @@ it('finishes a bug move when an unchanged report arrives during animation', () =
   render!(1000);
   expect(beetleCenters).toEqual([plotPosition(1, 2).x, (plotPosition(1, 2).x + plotPosition(2, 2).x) / 2, plotPosition(2, 2).x]);
   scene.dispose();
+});
+
+it('converts engine-owned display fields without passing history and progression into the renderer', () => {
+  const state: SceneState & { history: unknown[] } = { phase: 'day', history: [], progression: { level: 4, peakScore: 420, guideStep: 0, guideSkipped: false, actions: [] }, plants: [], bugs: [{ id: 'flying', species: 'moth', x: 0, y: 0 }], seeds: [], items: [{ id: 'pebble', x: 0, y: 0 }], soil: [{ x: 0, y: 0, moisture: 50 }], nests: [{ id: 'nest', x: 0, y: 0, depth: 2, food: 3 }] };
+  const scene = landScene(state);
+  expect(scene.gridSize).toBe(8); expect(scene.soil?.[0].daylight).toBeCloseTo(.6 * .35);
+  expect(scene.bugs[0].flying).toBe(true); expect(scene.nests?.[0].foodCapacity).toBe(state.nests![0].depth * 20);
+  expect(scene).not.toHaveProperty('history'); expect(scene).not.toHaveProperty('progression');
 });

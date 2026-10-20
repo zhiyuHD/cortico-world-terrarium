@@ -37,6 +37,7 @@ export const TERRARIUM: WorldDefinition<TerrariumConfigSection> = {
       terrarium_history: { zh: '查询一株植物或一格土壤的小时历史。', en: 'Reads hourly history for one plant or soil cell.' },
       terrarium_water: { zh: '按植物 ID 或格子坐标给土壤浇水。', en: 'Waters soil by plant ID or grid coordinates.' },
       terrarium_move: { zh: '移动生态箱里的硬币或石子。', en: 'Moves the coin or pebble.' },
+      terrarium_sow_area: { zh: '在地箱矩形区域批量播种，跳过已占用格子并遵守容量。', en: 'Sows a land rectangle, skipping occupied plots and respecting capacity.' },
       terrarium_sow: { zh: '在指定位置播种。', en: 'Sows a seed at a plot.' },
       terrarium_release_bug: { zh: '放入一只虫子。', en: 'Releases a bug.' },
       terrarium_feed_bug: { zh: '给指定虫子补充 35 能量，不降低饥饿值。', en: 'Restores 35 bug energy without reducing hunger.' },
@@ -44,6 +45,7 @@ export const TERRARIUM: WorldDefinition<TerrariumConfigSection> = {
       terrarium_remove: { zh: '移出指定植物、种子或虫子。', en: 'Removes one organism.' },
     }),
     events: [
+      { type: 'terrarium.updated', description: { zh: '每个版本首次启动后的更新说明，跨重启去重，随下次回合投递。', en: 'Version improvements delivered with the next round, once per version across restarts.' } },
       { type: 'terrarium.care', description: { zh: '同一生态箱的照料异常合并投递，仅在新出现、恶化或恢复时提醒。', en: 'Combined care conditions for a habitat, emitted on onset, worsening or recovery.' } },
       { type: 'terrarium.return', description: { zh: '启动时的补算变化和照料自检，随下次回合投递。', en: 'Startup catch-up changes and care checks, delivered with the next round.' } },
       { type: 'terrarium.irrigation', description: { zh: '本次结算中执行的定时补水次数和水量，随下次回合投递。', en: 'Scheduled watering count and amount for this settlement, delivered with the next round.' } },

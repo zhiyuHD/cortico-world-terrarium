@@ -1,10 +1,10 @@
-import { capacity, development } from './progression.ts';
+import { capacity, development, guideHint } from './progression.ts';
 import type { AquariumState } from './aquarium.ts';
 import { landCare, waterCare } from './care.ts';
 import { colonySnapshot } from './colony.ts';
 import { daylight, TERRARIUM_PLANT_REQUIREMENTS } from './habitat.ts';
 import type { ReturnReport } from './return-report.ts';
-import { score } from './scoring.ts';
+import { score, scoreParts, TERRARIUM_SCORE_RULES } from './scoring.ts';
 import { phase, type TerrariumState } from './state.ts';
 
 export const TERRARIUM_INSPECT_SECTIONS = ['summary', 'soil', 'care', 'colonies', 'return', 'objects', 'residents'] as const;
@@ -26,7 +26,7 @@ export function inspectState(state: State, nowMs: number, timezone: string, sect
   const currentPhase = phase(nowMs, timezone);
   if (section === 'soil') {
     if (water) throw new Error('Soil inspection requires land');
-    return { soil: state.soil.map(c => ({ ...c, daylight: daylight(state, c.x, c.y), light: currentPhase === 'day' ? daylight(state, c.x, c.y) : 0 })), requirements: TERRARIUM_PLANT_REQUIREMENTS };
+    return { shadeRule: '石子将所在格与上下左右的日光乘以 0.35；遮阴棚再乘以 0.6。夜间植物和种子不生长。', soil: state.soil.map(c => ({ ...c, daylight: daylight(state, c.x, c.y), light: currentPhase === 'day' ? daylight(state, c.x, c.y) : 0 })), requirements: TERRARIUM_PLANT_REQUIREMENTS };
   }
   if (section === 'care') {
     const care = water ? waterCare(state, nowMs, timezone) : landCare(state, nowMs, timezone);
@@ -50,6 +50,7 @@ export function inspectState(state: State, nowMs: number, timezone: string, sect
     return water ? { food: page(state.food, offset, limit) } : { items: state.items, food: page(state.food ?? [], offset, limit), webs: page(state.webs ?? [], offset, limit), irrigation: page(state.irrigation ?? [], offset, limit), eggs: page(state.eggs ?? [], offset, limit) };
   }
   const common = {
+    guide: guideHint(state), scoreParts: scoreParts(state), scoreRules: TERRARIUM_SCORE_RULES, timeBasis: '生长进度按适宜白天模拟小时累计，夜间不累计。',
     expansion: { ...capacity(state), peakScore: development(state).peakScore, next: development(state).next, tool: 'terrarium_progress' },
     facilities: state.facilities,
     residents: { plants: state.plants.length, animals: water ? state.fish.length : state.bugs.length, ...(water ? {} : { seeds: state.seeds.length }), shownPerGroup: 12, section: 'residents' },

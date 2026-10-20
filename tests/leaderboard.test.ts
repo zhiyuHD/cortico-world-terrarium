@@ -267,7 +267,7 @@ it('reads both rankings before claiming and preserves each claimed identity thro
     expect(await call('terrarium_leaderboard')).toEqual({ habitat: 'land', total: 0, entries: [], own: null });
     expect(await call('terrarium_leaderboard', { habitat: 'water' })).toEqual({ habitat: 'water', total: 0, entries: [], own: null });
     expect(registrations).toBe(0);
-    await expect(access(join(dir, 'deployment'))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(access(options.stateFile)).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(access(credentialsFile)).rejects.toMatchObject({ code: 'ENOENT' });
     for (const args of [{ habitat: 'other' }, { limit: 0 }, { limit: 101 }, { limit: 1.5 }]) await expect(call('terrarium_leaderboard', args)).rejects.toThrow();
     const land = await call('terrarium_claim', { habitat: 'land', name: '小园' });
@@ -320,7 +320,7 @@ it('reports disabled rankings without creating a box or credentials', async () =
   try {
     await world.start(host);
     await expect(world.tools().find(tool => tool.name === 'terrarium_leaderboard')!.handler({}, context)).rejects.toThrow('Leaderboard is disabled');
-    await expect(access(join(dir, 'land'))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(access(join(dir, 'land', 'state.json'))).rejects.toMatchObject({ code: 'ENOENT' });
   } finally { await world.stop(); }
 });
 
@@ -357,6 +357,8 @@ it('emits rank drops once per habitat, persists baselines and opt-outs, and sile
     await call('terrarium_claim', { habitat: 'land' });
     await call('terrarium_claim', { habitat: 'water' });
     expect(alerts()).toEqual([]);
+    expect(rankingReads).toBe(0);
+    await tick(); // Establish baselines on scheduled polling after claiming.
     await reportLand(grown); await reportWater(aquarium);
     const reads = rankingReads;
     await call('terrarium_inspect');
@@ -416,6 +418,9 @@ it('checks water ranks when no land box is owned', async () => {
   try {
     await world.start(host);
     await world.tools().find(tool => tool.name === 'terrarium_claim')!.handler({ habitat: 'water' }, context);
+    now += TERRARIUM_DEFAULTS.tickIntervalMs;
+    await vi.advanceTimersByTimeAsync(10_000);
+    await world.tools().find(tool => tool.name === 'terrarium_inspect')!.handler({}, context);
     const rival = newAquarium(now); stockFish(rival, 'guppy', 2, 2);
     await new LeaderboardClient({ url, id: 'water-rival', kind: 'water', credentialsFile: join(dir, 'rival.json') }).report(rival, 'day');
     now += TERRARIUM_DEFAULTS.tickIntervalMs;

@@ -8,3 +8,5 @@ This package owns the `terrarium` World. It stays independent of Cortico's built
 - Keep `cortico.tags` aligned with the official index vocabulary. Certification is granted by index maintainers after publication.
 - Release announcements are reserved for a new major or minor series, such as 0.8.0. Patch releases such as 0.7.1 do not publish announcements.
 - Managed server deployments use `box-release install` and `box-release activate`; never overwrite the active payload. See `docs/server-releases.md` for migration and rollback.
+
+- Update `src/version-notice.ts` with the theme and improvements for each release.

@@ -22,10 +22,10 @@ export function careText(care: ReturnType<typeof landCare> | ReturnType<typeof w
       if (p.lightShortfall) reasons.push(`${zh ? '白天光照还差' : 'daylight shortfall'} ${p.lightShortfall.toFixed(2)}`);
       if (p.lightExcess) reasons.push(`${zh ? '白天光照超出' : 'excess daylight'} ${p.lightExcess.toFixed(2)}`);
     } else if (p.cleanlinessShortfall) reasons.push(`${zh ? '水质还差' : 'cleanliness shortfall'} ${p.cleanlinessShortfall.toFixed(1)}`);
-    lines.push(`${p.id} · ${p.nextStage === null ? (zh ? '已到最高阶段' : 'fully grown') : `${Math.round(p.progress * 100)}% · ${zh ? '下阶段还需适宜白天' : 'suitable daylight remaining'} ${p.suitableHoursRemaining.toFixed(1)}h`}${reasons.length ? ` · ${reasons.join(' / ')}` : ''}`);
+    lines.push(`${p.id} · ${p.nextStage === null ? (zh ? '已到最高阶段' : 'fully grown') : `${Math.round(p.progress * 100)}% · ${zh ? '下阶段还需适宜白天模拟小时' : 'suitable daylight remaining'} ${p.suitableHoursRemaining.toFixed(1)}h`}${reasons.length ? ` · ${reasons.join(' / ')}` : ''}`);
     if ('advice' in p && p.advice) lines.push(p.advice);
   }
-  if ('seeds' in care) for (const s of care.seeds) lines.push(`${s.id} · ${zh ? '发芽还需适宜白天' : 'suitable daylight until sprouting'} ${s.suitableDaylightHoursRemaining.toFixed(1)}h${s.waitForDaylight ? (zh ? ' · 等天亮' : ' · waiting for daylight') : ''}${s.moistureShortfall ? ` · ${zh ? '缺水' : 'moisture shortfall'} ${s.moistureShortfall.toFixed(1)}` : ''}`);
+  if ('seeds' in care) for (const s of care.seeds) lines.push(`${s.id} · ${zh ? '发芽还需适宜白天模拟小时' : 'suitable daylight until sprouting'} ${s.suitableDaylightHoursRemaining.toFixed(1)}h${s.waitForDaylight ? (zh ? ' · 等天亮' : ' · waiting for daylight') : ''}${s.moistureShortfall ? ` · ${zh ? '缺水' : 'moisture shortfall'} ${s.moistureShortfall.toFixed(1)}` : ''}`);
   if ('oxygenForecast' in care) lines.push(zh ? `天亮含氧估计 ${care.oxygenForecast.oxygen.toFixed(1)}；假定期间不人工操作，实际可能变化。` : `Estimated dawn oxygen ${care.oxygenForecast.oxygen.toFixed(1)}; assumes no caretaker actions.`);
   const goals: Record<string, string> = zh ? { 'healthy-diversity': '健康植物种类', 'three-blooms': '同时开花', 'stocked-colony': '蚁巢储粮', 'healthy-aquatic-diversity': '健康水草种类', 'balanced-water': '氧气与水质均衡' } : {};
   for (const g of care.goals) lines.push(`${goals[g.id] ?? g.id}: ${Math.min(g.current, g.target).toFixed(0)}/${g.target}`);
@@ -48,7 +48,7 @@ export function createCareControls(ctx: WebUiPanelContext, habitat: 'land' | 'wa
   return { el, update(state: DevelopmentState & { plants: { id: string; x: number; y: number }[]; bugs?: { id: string }[]; fish?: { id: string }[]; seeds?: { id: string }[]; collection?: { kind: string; specimen: { id: string; x: number; y: number } }[]; food?: { id: string }[]; soil?: { x: number; y: number; allowAntForaging?: boolean }[]; nests?: { id: string }[] }, cell: { x: number; y: number } = { x: 2, y: 2 }) {
     hint.textContent = zh ? `收藏后暂停模拟、不计分；当前收藏容量 ${capacity(state).collection}，放回仍受生物和占格限制。` : `Collected organisms are frozen and unscored; collection capacity ${capacity(state).collection}. Restoring uses normal limits.`;
     actions.replaceChildren();
-    const add = (text: string, args: Record<string, unknown>) => actions.append(ctx.ui.button(text, { size: 'sm', onClick: () => { void run(args); } }));
+    const add = (text: string, args: Record<string, unknown>, disabled = false) => { const button = ctx.ui.button(text, { size: 'sm', onClick: () => { void run(args); } }); button.disabled = disabled; actions.append(button); };
     if (habitat === 'land') {
       const allowed = state.soil?.find(c => c.x === cell.x && c.y === cell.y)?.allowAntForaging !== false;
       add(zh ? `(${cell.x},${cell.y}) ${allowed ? '禁止' : '允许'}蚂蚁采集` : `${allowed ? 'Forbid' : 'Allow'} ant harvesting in selected cell`, { tool: 'terrarium_set_ant_foraging', ...cell, enabled: !allowed });
@@ -61,6 +61,9 @@ export function createCareControls(ctx: WebUiPanelContext, habitat: 'land' | 'wa
       for (const species of ['waterweed', 'waterlily', 'algae']) add(`${zh ? '选中格种植' : 'Plant selected cell'} ${species}`, { tool: 'terrarium_plant_aquatic_area', species, x1: cell.x, y1: cell.y, x2: cell.x, y2: cell.y });
     }
     for (const p of [...state.plants, ...(state.bugs ?? []), ...(state.fish ?? []), ...(state.seeds ?? [])]) add(`${zh ? '收藏' : 'Collect'} ${p.id}`, { tool: 'terrarium_collection', action: 'collect', id: p.id });
-    for (const item of state.collection ?? []) add(`${zh ? '放回选中格' : 'Restore to selected cell'} ${item.specimen.id}`, { tool: 'terrarium_collection', action: 'restore', id: item.specimen.id, ...cell });
+    for (const item of state.collection ?? []) {
+      const blocked = ['plant', 'seed', 'aquatic'].includes(item.kind) && [...state.plants, ...(state.seeds ?? [])].some(p => { const position = p as { x?: number; y?: number }; return position.x === cell.x && position.y === cell.y; });
+      add(`${blocked ? (zh ? '请先选空格再放回' : 'Select an empty cell to restore') : (zh ? '放回选中格' : 'Restore to selected cell')} ${item.specimen.id}`, { tool: 'terrarium_collection', action: 'restore', id: item.specimen.id, ...cell }, blocked);
+    }
   } };
 }

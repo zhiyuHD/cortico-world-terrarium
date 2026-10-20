@@ -435,8 +435,9 @@ it('returns changed IDs for collection operations and pages listings without ret
   try {
     await saveState(file, s); await world.start(host);
     const collected = await call('terrarium_collection', { action: 'collect', id: 'fern' });
-    expect(collected).toEqual({ habitat: 'land', action: 'collect', id: 'fern', collectionCount: 48 });
-    expect(JSON.stringify(collected).length).toBeLessThan(200);
+    expect(collected).toMatchObject({ habitat: 'land', action: 'collect', id: 'fern', collectionCount: 48 });
+    expect(collected.guide).toMatchObject({ step: 0, ready: false });
+    expect(JSON.stringify(collected).length).toBeLessThan(700);
     const page = await call('terrarium_collection', { action: 'list' });
     expect(page.total).toBe(48); expect(page.collection).toHaveLength(5); expect(page.nextOffset).toBe(5);
     expect(page.collection[0].specimen.health).toBeUndefined();

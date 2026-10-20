@@ -22,10 +22,12 @@ it('waters by dose or target, skips sufficiently moist cells and does not heal a
 it('reports exact growth deficits and distinguishes night from unsuitable daylight', () => {
   const state = newState(start); state.plants[0].moisture = 10;
   const care = landCare(state, start, 'Asia/Shanghai');
-  expect(care.plants[0]).toMatchObject({ moistureShortfall: 20, moistureExcess: 0, canGrowNow: false, nextStage: 1, suitableHoursRemaining: 2 });
+  expect(care.plants[0]).toMatchObject({ moisture: 10, suitable: { minMoisture: 30, maxMoisture: 85 }, needsAction: true, moistureShortfall: 20, moistureExcess: 0, canGrowNow: false, nextStage: 1, suitableHoursRemaining: 2 });
   const night = Date.parse('2026-06-01T15:00:00Z');
   expect(phaseTiming(night, 'Asia/Shanghai')).toMatchObject({ phase: 'night', nextPhaseAtMs: Date.parse('2026-06-01T22:00:00Z') });
   expect(landCare(state, night, 'Asia/Shanghai').plants.every(p => p.waitForDaylight)).toBe(true);
+  state.plants[0].moisture = 55;
+  expect(landCare(state, night, 'Asia/Shanghai').plants[0]).toMatchObject({ needsAction: false, waitForDaylight: true });
 });
 
 it('forecasts with the simulation without mutating the aquarium or emitting its projected events', () => {

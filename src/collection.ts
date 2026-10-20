@@ -30,12 +30,12 @@ export function restoreCollected(state: TerrariumState | AquariumState, id: stri
     if (entry.kind === 'fish') {
       if (state.fish.length >= capacity(state).organisms) throw new Error('Fish capacity reached'); state.fish.push(specimen as FishState);
     } else if (entry.kind === 'aquatic') {
-      if (state.plants.length >= capacity(state).organisms || state.plants.some(p => p.x === x && p.y === y)) throw new Error('Aquatic capacity or plot occupied'); state.plants.push(specimen as AquaticPlantState);
+      if (state.plants.length >= capacity(state).organisms || state.plants.some(p => p.x === x && p.y === y)) throw new Error('Aquatic capacity or plot occupied: select a cell without aquatic plants; the specimen remains in collection'); state.plants.push(specimen as AquaticPlantState);
     } else throw new Error('Collection habitat mismatch');
   } else if (entry.kind === 'bug') {
     if (state.bugs.length + (state.eggs?.length ?? 0) >= capacity(state).organisms) throw new Error('Bug capacity reached'); state.bugs.push(specimen as BugState);
   } else if (entry.kind === 'plant' || entry.kind === 'seed') {
-    if (state.plants.length + state.seeds.length >= capacity(state).organisms || [...state.plants, ...state.seeds].some(p => p.x === x && p.y === y)) throw new Error('Plant capacity or plot occupied');
+    if (state.plants.length + state.seeds.length >= capacity(state).organisms || [...state.plants, ...state.seeds].some(p => p.x === x && p.y === y)) throw new Error('Plant capacity or plot occupied: select a cell without a plant or seed; the specimen remains in collection');
     if (entry.kind === 'plant') { const plant = specimen as PlantState; plant.moisture = state.soil[y * capacity(state).size + x].moisture; plant.dry = plant.moisture < TERRARIUM_PLANT_REQUIREMENTS[plant.species].minMoisture; state.plants.push(plant); }
     else state.seeds.push(specimen as SeedState);
   } else throw new Error('Collection habitat mismatch');

@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      terrarium-renderer:
+        specifier: ^0.1.0
+        version: 0.1.0
       ws:
         specifier: ^8.22.0
         version: 8.22.0
@@ -35,6 +38,9 @@ importers:
         version: 2.1.9(@types/node@22.20.5)
 
 packages:
+
+  terrarium-renderer@0.1.0:
+    resolution: {integrity: sha512-XlE8S2cHFJgXHLfeH1GMDvV9JppZvQgvSLhjLBumrUBhiegUv4kNZc7MzFVTxMjTJVbjUo1ouiSrdymGPYuJ4g==}
 
   '@babel/runtime@7.29.10':
     resolution: {integrity: sha512-NpugTzbKgGrNe45Ui32cN8vCFFMxVtP/9rtfwv0nP5FRDAjvYBxJcLVpYA9mr1jxP6cnIT7x9LUzuDTbWYYNRA==}
@@ -1153,6 +1159,8 @@ packages:
         optional: true
 
 snapshots:
+
+  terrarium-renderer@0.1.0: {}
 
   '@babel/runtime@7.29.10': {}
 

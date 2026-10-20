@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
+import { TERRARIUM_DEFAULTS } from '../src/config.ts';
 import { RankAlerts } from '../src/rank-alerts.ts';
 
 const dirs: string[] = [];
@@ -43,7 +44,7 @@ it('accumulates small drops, ignores tied-score ordering and persists the cooldo
   expect(await prefs.observe('a', 5, 3000, { competitiveRank: 4 })).toMatchObject({ rank: 1 });
   expect(await prefs.observe('a', 8, 4000, { competitiveRank: 7 })).toBeUndefined();
   const restarted = new RankAlerts(file); await restarted.restore();
-  expect(await restarted.observe('a', 9, 30 * 60_000 + 3000, { competitiveRank: 8 })).toMatchObject({ rank: 5 });
+  expect(await restarted.observe('a', 9, TERRARIUM_DEFAULTS.rankAlertCooldownMinutes! * 60_000 + 3000, { competitiveRank: 8 })).toMatchObject({ rank: 5 });
   await restarted.setEnabled(false); await restarted.setEnabled(true);
   expect(await restarted.observe('a', 20, 40 * 60_000, { competitiveRank: 20 })).toBeUndefined();
 });
