@@ -1,9 +1,10 @@
+import { capacity, nearFacility, type DevelopmentState } from './progression.ts';
 export type PlantSpecies = 'fern' | 'clover' | 'moss' | 'basil' | 'bean';
 export interface PlantRequirements { minMoisture: number; maxMoisture: number; minLight: number; maxLight: number }
 export interface SoilCell { x: number; y: number; moisture: number; allowAntForaging?: boolean }
 export const TERRARIUM_PLANT_LOW_HEALTH = 20;
 export const TERRARIUM_PLANT_RECOVERED_HEALTH = 35;
-export interface Habitat { items: ReadonlyArray<{ id: string; x: number; y: number }> }
+export interface Habitat extends DevelopmentState { items: ReadonlyArray<{ id: string; x: number; y: number }> }
 
 /** Simulation conditions, expressed as soil moisture (0–100) and daylight (0–1). */
 export const TERRARIUM_PLANT_REQUIREMENTS: Record<PlantSpecies, PlantRequirements> = {
@@ -31,12 +32,16 @@ export function wateringReport(plants: ReadonlyArray<WateredPlant>, cells: Reado
 
 export function daylight(habitat: Habitat, x: number, y: number): number {
   const shaded = habitat.items.some(item => item.id === 'pebble' && Math.abs(item.x - x) + Math.abs(item.y - y) <= 1);
-  return (.6 + x * .1) * (shaded ? .35 : 1);
+  let light = (.6 + x * .4 / (capacity(habitat).size - 1)) * (shaded ? .35 : 1);
+  if (nearFacility(habitat, 'shade', x, y)) light *= .6;
+  if (nearFacility(habitat, 'grow_light', x, y)) light = Math.max(.75, light);
+  return light;
 }
 
 export interface HistorySample {
+  gridSize?: number;
   recordedAtMs: number;
-  score?: number;
+  score?: number; scoreVersion?: number;
   soilMoisture: number[];
   plants: Array<{ id: string; species: PlantSpecies; moisture: number; health: number; stage: number; growthHours: number }>;
 }

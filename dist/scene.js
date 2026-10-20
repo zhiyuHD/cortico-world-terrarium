@@ -1,3 +1,26 @@
+// src/progression.ts
+var TERRARIUM_LEVELS = [
+  { level: 1, requiredScore: 0, size: 5, organisms: 12, collection: 48 },
+  { level: 2, requiredScore: 120, size: 6, organisms: 18, collection: 64 },
+  { level: 3, requiredScore: 260, size: 7, organisms: 24, collection: 96 },
+  { level: 4, requiredScore: 420, size: 8, organisms: 32, collection: 128 }
+];
+var TERRARIUM_WATER_LEVELS = TERRARIUM_LEVELS.map((level, index) => ({ ...level, requiredScore: [0, 120, 240, 360][index] }));
+function expansionLevels(state) {
+  return "kind" in state && state.kind === "water" ? TERRARIUM_WATER_LEVELS : TERRARIUM_LEVELS;
+}
+function capacity(state) {
+  return expansionLevels(state).find((l) => l.level === state.progression?.level) ?? expansionLevels(state)[0];
+}
+function nearFacility(state, kind, x, y) {
+  return state.facilities?.some((f) => f.kind === kind && f.enabled && Math.abs(f.x - x) + Math.abs(f.y - y) <= 1) ?? false;
+}
+
+// webui/geometry.ts
+function plotPosition(x, y, size = 5) {
+  return size === 5 ? { x: 260 + x * 70, y: 290 + y * 9 } : { x: 160 + x * 480 / (size - 1), y: 280 + y * 60 / (size - 1) };
+}
+
 // src/flight.ts
 var TERRARIUM_FLY_SPECIES = ["fruit_fly", "mosquito", "moth"];
 function isFlying(species) {
@@ -15,7 +38,10 @@ var TERRARIUM_PLANT_REQUIREMENTS = {
 };
 function daylight(habitat, x, y) {
   const shaded = habitat.items.some((item) => item.id === "pebble" && Math.abs(item.x - x) + Math.abs(item.y - y) <= 1);
-  return (0.6 + x * 0.1) * (shaded ? 0.35 : 1);
+  let light = (0.6 + x * 0.4 / (capacity(habitat).size - 1)) * (shaded ? 0.35 : 1);
+  if (nearFacility(habitat, "shade", x, y)) light *= 0.6;
+  if (nearFacility(habitat, "grow_light", x, y)) light = Math.max(0.75, light);
+  return light;
 }
 var TERRARIUM_FLOWER_BUD_HOURS = 12;
 var TERRARIUM_FLOWER_BLOOM_HOURS = 18;
@@ -398,8 +424,8 @@ function createNestViewer(canvas, language = "zh") {
     const rx = Math.max(24, 30 * bounds.width / canvas.width), ry = Math.max(24, 20 * bounds.height / canvas.height);
     const targets = (state?.nests ?? []).map((nest2) => ({
       nest: nest2,
-      dx: event.clientX - bounds.left - (260 + nest2.x * 70) * bounds.width / canvas.width,
-      dy: event.clientY - bounds.top - (290 + nest2.y * 9) * bounds.height / canvas.height
+      dx: event.clientX - bounds.left - plotPosition(nest2.x, nest2.y, capacity(state).size).x * bounds.width / canvas.width,
+      dy: event.clientY - bounds.top - plotPosition(nest2.x, nest2.y, capacity(state).size).y * bounds.height / canvas.height
     })).filter(({ dx, dy }) => Math.abs(dx) <= rx && Math.abs(dy) <= ry);
     targets.sort((a, b) => a.dx ** 2 + a.dy ** 2 - b.dx ** 2 - b.dy ** 2);
     const nest = targets[0]?.nest;
@@ -495,7 +521,7 @@ function createWaterScene(canvas) {
   let movedAt = 0;
   let request = 0;
   let disposed = false;
-  const position = (x, y) => ({ x: 130 + x * 130, y: 130 + y * 65 });
+  const position = (x, y) => ({ x: 110 + x * 580 / (capacity(state ?? {}).size - 1), y: 120 + y * 280 / (capacity(state ?? {}).size - 1) });
   const locations = (now) => new Map((state?.fish ?? []).map((fish) => {
     const previous = old.get(fish.id) ?? fish;
     const t = Math.min(1, (now - movedAt) / 900);
@@ -525,9 +551,9 @@ function createWaterScene(canvas) {
       g.fillText(`O\u2082 ${state.oxygen.toFixed(1)} \xB7 ${state.cleanliness.toFixed(1)} / 100`, 72, 42);
       g.lineWidth = 1;
       g.strokeStyle = "#ffffff25";
-      for (let x = 0; x < 5; x++) for (let y = 0; y < 5; y++) {
+      for (let x = 0; x < capacity(state).size; x++) for (let y = 0; y < capacity(state).size; y++) {
         const p = position(x, y);
-        g.strokeRect(p.x - 50, p.y - 25, 100, 50);
+        g.strokeRect(p.x - 290 / capacity(state).size, p.y - 140 / capacity(state).size, 580 / capacity(state).size, 280 / capacity(state).size);
       }
       for (const plant of state.plants) {
         const p = position(plant.x, plant.y), h = 22 + plant.stage * 9;
@@ -554,6 +580,53 @@ function createWaterScene(canvas) {
           g.arc(p.x + i % 4 * 5 - 8, p.y + Math.floor(i / 4) * 5, 2, 0, Math.PI * 2);
           g.fill();
         }
+      }
+      for (const facility of state.facilities ?? []) {
+        const p = position(facility.x, facility.y);
+        g.save();
+        g.globalAlpha = facility.enabled ? 1 : 0.35;
+        if (facility.kind === "air_stone") {
+          g.fillStyle = "#769cad";
+          g.beginPath();
+          g.ellipse(p.x, p.y + 12, 15, 7, 0, 0, Math.PI * 2);
+          g.fill();
+          if (facility.enabled) for (let i = 0; i < 5; i++) {
+            const rise = (now / 35 + i * 18) % 90;
+            g.strokeStyle = "#d4f8ff99";
+            g.lineWidth = 1.5;
+            g.beginPath();
+            g.arc(p.x + Math.sin(i + now / 1200) * 9, p.y - rise, 2 + i % 3, 0, Math.PI * 2);
+            g.stroke();
+          }
+        } else if (facility.kind === "filter") {
+          g.fillStyle = "#547e82";
+          g.beginPath();
+          g.roundRect(p.x - 12, p.y - 35, 24, 46, 6);
+          g.fill();
+          g.strokeStyle = "#b4e9db";
+          g.lineWidth = 2;
+          for (let i = 0; i < 3; i++) {
+            g.beginPath();
+            g.moveTo(p.x - 7, p.y - 24 + i * 8);
+            g.lineTo(p.x + 7, p.y - 24 + i * 8);
+            g.stroke();
+          }
+        } else if (facility.kind === "water_light") {
+          g.fillStyle = night ? "#7d8580" : "#f9e6a4";
+          g.beginPath();
+          g.roundRect(p.x - 23, p.y - 45, 46, 8, 4);
+          g.fill();
+          if (!night && facility.enabled) {
+            g.fillStyle = "#ffffba25";
+            g.beginPath();
+            g.moveTo(p.x - 18, p.y - 37);
+            g.lineTo(p.x + 30, p.y + 20);
+            g.lineTo(p.x - 30, p.y + 20);
+            g.closePath();
+            g.fill();
+          }
+        }
+        g.restore();
       }
       const points = locations(now);
       for (const fish of state.fish) {
@@ -886,10 +959,7 @@ function createPublicReplayControls(container, createRenderer, language = "zh") 
 }
 
 // webui/scene.ts
-function plotPosition(x, y) {
-  return { x: 260 + x * 70, y: 290 + y * 9 };
-}
-function bugPositions(bugs, positions = /* @__PURE__ */ new Map()) {
+function bugPositions(bugs, positions = /* @__PURE__ */ new Map(), size = 5) {
   const groups = /* @__PURE__ */ new Map();
   for (const bug of bugs) {
     const tile = `${bug.x},${bug.y}`;
@@ -905,7 +975,7 @@ function bugPositions(bugs, positions = /* @__PURE__ */ new Map()) {
     const ordinal = group.indexOf(bug.id);
     const row = Math.floor(ordinal / 3);
     const rowSize = Math.min(3, group.length - row * 3);
-    const plot = plotPosition(position.x, position.y);
+    const plot = plotPosition(position.x, position.y, size);
     result.set(bug.id, { x: plot.x + (ordinal % 3 - (rowSize - 1) / 2) * 28, y: plot.y - 6 + row * 19 });
   }
   return result;
@@ -913,6 +983,7 @@ function bugPositions(bugs, positions = /* @__PURE__ */ new Map()) {
 function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = []) {
   const g = canvas.getContext("2d");
   if (!g) return;
+  const plot = (x, y) => plotPosition(x, y, capacity(state).size);
   const night = state.phase === "night";
   const sky = g.createLinearGradient(0, 0, 0, 500);
   sky.addColorStop(0, night ? "#162c47" : "#9ccbcf");
@@ -948,7 +1019,7 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
   g.ellipse(400, 310, 278, 29, 0, 0, Math.PI * 2);
   g.fill();
   for (const cell of state.soil ?? []) {
-    const { x, y } = plotPosition(cell.x, cell.y);
+    const { x, y } = plot(cell.x, cell.y);
     g.fillStyle = `rgba(36,91,107,${cell.moisture / 160})`;
     g.beginPath();
     g.ellipse(x, y + 1, 30, 5, 0, 0, Math.PI * 2);
@@ -961,11 +1032,11 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
     }
   }
   for (const nest of state.nests ?? []) {
-    const { x, y } = plotPosition(nest.x, nest.y);
+    const { x, y } = plot(nest.x, nest.y);
     drawAntNest(g, x, y, night);
   }
   for (const web of state.webs ?? []) {
-    const { x, y } = plotPosition(web.x, web.y);
+    const { x, y } = plot(web.x, web.y);
     g.save();
     g.translate(x, y - 38);
     g.strokeStyle = night ? "#cfdfed9c" : "#fff8e5b8";
@@ -990,7 +1061,7 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
     g.restore();
   }
   for (const food of state.food ?? []) {
-    const { x, y } = plotPosition(food.x, food.y);
+    const { x, y } = plot(food.x, food.y);
     g.fillStyle = "#e4b66c";
     for (let i = 0; i < Math.min(6, food.portions); i++) {
       g.beginPath();
@@ -999,14 +1070,14 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
     }
   }
   for (const [index, egg] of (state.eggs ?? []).filter((egg2) => !egg2.inside).entries()) {
-    const { x, y } = plotPosition(egg.x, egg.y);
+    const { x, y } = plot(egg.x, egg.y);
     g.fillStyle = egg.species === "ant" ? "#eee2bd" : "#dbd9b0";
     g.beginPath();
     g.ellipse(x - 12 + index % 4 * 7, y - 4, 3, 4, -0.3, 0, Math.PI * 2);
     g.fill();
   }
   for (const plant of state.plants) {
-    const { x, y: base } = plotPosition(plant.x, plant.y);
+    const { x, y: base } = plot(plant.x, plant.y);
     const height = 13 + plant.stage * 20;
     const leaves = 1 + plant.stage * 2;
     g.strokeStyle = plant.dry ? "#87926a" : "#417e4c";
@@ -1034,8 +1105,66 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
     }
     drawPlantFlowers(g, plant, x, base - height, night);
   }
+  for (const facility of state.facilities ?? []) {
+    const { x, y } = plot(facility.x, facility.y);
+    g.save();
+    g.globalAlpha = facility.enabled ? 1 : 0.35;
+    if (facility.kind === "mulch") {
+      g.fillStyle = "#b79157";
+      g.beginPath();
+      g.ellipse(x, y, 24, 10, 0, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = "#74522f";
+      g.lineWidth = 2;
+      for (let i = -2; i <= 2; i++) {
+        g.beginPath();
+        g.moveTo(x + i * 7 - 3, y - 4);
+        g.lineTo(x + i * 7 + 3, y + 4);
+        g.stroke();
+      }
+    } else if (facility.kind === "shade") {
+      g.strokeStyle = "#9b7958";
+      g.lineWidth = 3;
+      for (const dx of [-25, 25]) {
+        g.beginPath();
+        g.moveTo(x + dx, y + 4);
+        g.lineTo(x + dx, y - 54);
+        g.stroke();
+      }
+      g.fillStyle = "#638b76bb";
+      g.beginPath();
+      g.moveTo(x - 33, y - 54);
+      g.lineTo(x + 28, y - 58);
+      g.lineTo(x + 34, y - 41);
+      g.lineTo(x - 28, y - 37);
+      g.closePath();
+      g.fill();
+    } else if (facility.kind === "grow_light") {
+      g.strokeStyle = "#68847b";
+      g.lineWidth = 3;
+      g.beginPath();
+      g.moveTo(x + 18, y);
+      g.lineTo(x + 18, y - 64);
+      g.lineTo(x - 10, y - 64);
+      g.stroke();
+      g.fillStyle = night ? "#a49b70" : "#ffe9a0";
+      g.beginPath();
+      g.ellipse(x - 10, y - 60, 14, 5, 0, 0, Math.PI * 2);
+      g.fill();
+      if (!night && facility.enabled) {
+        g.fillStyle = "#ffeda126";
+        g.beginPath();
+        g.moveTo(x - 22, y - 56);
+        g.lineTo(x + 14, y);
+        g.lineTo(x - 35, y);
+        g.closePath();
+        g.fill();
+      }
+    }
+    g.restore();
+  }
   for (const item of state.items) {
-    const { x, y } = plotPosition(item.x, item.y);
+    const { x, y } = plot(item.x, item.y);
     g.fillStyle = "rgba(30,28,23,.25)";
     g.beginPath();
     g.ellipse(x, y + 7, 21, 6, 0, 0, Math.PI * 2);
@@ -1051,14 +1180,14 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
     }
   }
   for (const seed of state.seeds ?? []) {
-    const { x, y } = plotPosition(seed.x, seed.y);
+    const { x, y } = plot(seed.x, seed.y);
     g.fillStyle = "#d9bd75";
     g.beginPath();
     g.ellipse(x, y, 7, 4, -0.3, 0, Math.PI * 2);
     g.fill();
   }
   const surfaceBugs = state.bugs.filter((bug) => !bug.inside);
-  const locations = bugPositions(surfaceBugs, positions);
+  const locations = bugPositions(surfaceBugs, positions, capacity(state).size);
   for (const bug of surfaceBugs) {
     const location = locations.get(bug.id);
     const x = location.x, y = location.y - (isFlying(bug.species) ? 30 : 0);
@@ -1179,7 +1308,7 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
     }
   }
   for (const hit of hits) {
-    const { x, y } = plotPosition(hit.x, hit.y);
+    const { x, y } = plot(hit.x, hit.y);
     g.strokeStyle = `rgba(255,210,91,${hit.strength})`;
     g.lineWidth = 3;
     for (let i = 0; i < 6; i++) {

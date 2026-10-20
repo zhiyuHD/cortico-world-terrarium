@@ -26,7 +26,7 @@ it('registers each claimed habitat once across repeated tool calls and World res
   const call = async (name: string, args: Record<string, unknown> = {}) => JSON.parse(String(await world.tools().find(tool => tool.name === name)!.handler(args, context)));
   try {
     await world.start(host);
-    expect(await call('terrarium_inspect')).toMatchObject({ land: { habitat: 'land', claimed: false, sync: { state: 'idle', mode: 'full', consecutiveFailures: 0 } }, water: { habitat: 'water', claimed: false, sync: { state: 'idle', mode: 'full', consecutiveFailures: 0 } } });
+    expect(await call('terrarium_inspect')).toMatchObject({ land: { habitat: 'land', claimed: false, sync: { state: 'idle', mode: TERRARIUM_DEFAULTS.incrementalReports ? 'incremental' : 'full', consecutiveFailures: 0 } }, water: { habitat: 'water', claimed: false, sync: { state: 'idle', mode: TERRARIUM_DEFAULTS.incrementalReports ? 'incremental' : 'full', consecutiveFailures: 0 } } });
     await expect(call('terrarium_sync')).rejects.toThrow('not claimed');
     await expect(world.webUi().invoke!('water', 'sync', [])).rejects.toThrow('not claimed');
     expect(registrations).toBe(0);

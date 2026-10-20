@@ -32,8 +32,8 @@ describe('terrarium state', () => {
     expect(move(state, 'coin', 0, 2)).toMatchObject({ x: 0, y: 2 });
     expect(() => move(state, 'coin', 2, 1)).toThrow('occupied');
     expect(() => move(state, 'coin', 0, 0)).toThrow('plant');
-    expect(() => move(state, 'coin', 5, 0)).toThrow('5×5');
-    expect(() => move(state, 'coin', NaN, 1)).toThrow('5×5');
+    expect(() => move(state, 'coin', 5, 0)).toThrow('grid');
+    expect(() => move(state, 'coin', NaN, 1)).toThrow('grid');
   });
 
   it('persists state and rejects invalid saved positions', async () => {
@@ -83,7 +83,7 @@ it('lets the keeper feed, relocate and remove organisms', () => {
   bug.energy = 15;
   expect(feedBug(state, bug.id).energy).toBe(50);
   expect(relocateBug(state, bug.id, 3, 4)).toMatchObject({ x: 3, y: 4 });
-  expect(() => relocateBug(state, bug.id, 5, 0)).toThrow('5×5');
+  expect(() => relocateBug(state, bug.id, 5, 0)).toThrow('grid');
   const seed = sow(state, 'bean', 2, 2);
   expect(removeOrganism(state, seed.id)).toMatchObject({ id: seed.id, species: 'bean' });
   expect(removeOrganism(state, bug.id)).toMatchObject({ id: bug.id, species: 'beetle' });
@@ -299,7 +299,7 @@ it('moves ants every ten seconds, digs and stores food while other bugs act ever
   const file = join(dir, 'state.json'); await saveState(file, state);
   expect(await loadState(file, start)).toEqual(state);
   expect(() => dropLandFood(state, 0, 0, 11)).toThrow('1..10');
-  expect(() => dropLandFood(state, 5, 0, 1)).toThrow('5×5');
+  expect(() => dropLandFood(state, 5, 0, 1)).toThrow('grid');
 });
 
 it('lets ants harvest plants and validates eggs, carrying, nests and food at the save boundary', async () => {

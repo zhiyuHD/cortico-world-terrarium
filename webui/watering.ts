@@ -1,3 +1,4 @@
+import { capacity, type DevelopmentState } from '../src/progression.ts';
 import { waterAdded, wateringReport, TERRARIUM_PLANT_REQUIREMENTS, type SoilCell, type WateredPlant } from '../src/habitat.ts';
 import type { WebUiPanelContext } from 'cortico/web/shared/client-panel.ts';
 
@@ -9,11 +10,11 @@ export function createWateringControls(ctx: WebUiPanelContext, reload: () => Pro
   const hint = ctx.ui.h('div', 'terrarium-watering-hint', zh ? '选择水量或目标水分；实际浇水的植物 +5 健康。' : 'Choose a dose or moisture target; actually watered plants gain 5 health.');
   const preview = ctx.ui.h('div', 'terrarium-watering-status');
   let amount: number | undefined = 35, targetMoisture: number | undefined, onlyDry = false;
-  let lastState: { plants: ReadonlyArray<WateredPlant>; soil: ReadonlyArray<SoilCell> } | undefined;
+  let lastState: DevelopmentState & { plants: ReadonlyArray<WateredPlant>; soil: ReadonlyArray<SoilCell> } | undefined;
   let busy = false, claimed = false, cell: { x: number; y: number } | undefined;
   const buttons = ctx.ui.h('div', 'terrarium-watering-buttons');
-  const nearby = ctx.ui.button(zh ? '浇选中格及周围' : 'Water selected neighborhood', { size: 'sm', onClick: () => { if (cell) void submit(Math.max(0, cell.x - 1), Math.max(0, cell.y - 1), Math.min(4, cell.x + 1), Math.min(4, cell.y + 1)); } });
-  const all = ctx.ui.button(zh ? '浇全部 25 格' : 'Water all 25 cells', { size: 'sm', onClick: () => { void submit(0, 0, 4, 4); } });
+  const nearby = ctx.ui.button(zh ? '浇选中格及周围' : 'Water selected neighborhood', { size: 'sm', onClick: () => { if (cell) void submit(Math.max(0, cell.x - 1), Math.max(0, cell.y - 1), Math.min(capacity(lastState ?? {}).size - 1, cell.x + 1), Math.min(capacity(lastState ?? {}).size - 1, cell.y + 1)); } });
+  const all = ctx.ui.button(zh ? '浇全部 25 格' : 'Water all 25 cells', { size: 'sm', onClick: () => { void submit(0, 0, capacity(lastState ?? {}).size - 1, capacity(lastState ?? {}).size - 1); } });
   const updateButtons = (): void => { nearby.disabled = busy || !claimed || !cell; all.disabled = busy || !claimed; };
   const submit = async (x1: number, y1: number, x2: number, y2: number): Promise<void> => {
     if (busy || !claimed || ctx.signal.aborted) return;
@@ -50,9 +51,10 @@ export function createWateringControls(ctx: WebUiPanelContext, reload: () => Pro
   el.append(modes);
   refreshModes(); el.append(buttons, hint, preview, status);
   updateButtons();
-  return { el, update(available: boolean, selected?: { x: number; y: number }, state?: { plants: ReadonlyArray<WateredPlant>; soil: ReadonlyArray<SoilCell> }): void {
+  return { el, update(available: boolean, selected?: { x: number; y: number }, state?: DevelopmentState & { plants: ReadonlyArray<WateredPlant>; soil: ReadonlyArray<SoilCell> }): void {
     claimed = available; cell = selected; el.hidden = !claimed; updateButtons();
     lastState = state; renderPreview();
-    nearby.title = cell ? `(${Math.max(0, cell.x - 1)},${Math.max(0, cell.y - 1)})–(${Math.min(4, cell.x + 1)},${Math.min(4, cell.y + 1)})` : '';
+    all.textContent = zh ? `浇全部 ${capacity(state ?? {}).size ** 2} 格` : `Water all ${capacity(state ?? {}).size ** 2} cells`;
+    nearby.title = cell ? `(${Math.max(0, cell.x - 1)},${Math.max(0, cell.y - 1)})–(${Math.min(capacity(lastState ?? {}).size - 1, cell.x + 1)},${Math.min(capacity(lastState ?? {}).size - 1, cell.y + 1)})` : '';
   } };
 }

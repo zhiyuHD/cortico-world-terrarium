@@ -43,7 +43,7 @@ export class LeaderboardClient {
   private syncStatus: TerrariumSyncStatus;
 
   constructor(private readonly options: LeaderboardClientOptions) {
-    this.syncStatus = { clientVersion: TERRARIUM_CLIENT_VERSION, state: options.url ? 'idle' : 'disabled', mode: options.incrementalReports ? 'incremental' : 'full', consecutiveFailures: 0 };
+    this.syncStatus = { clientVersion: TERRARIUM_CLIENT_VERSION, state: options.url ? 'idle' : 'disabled', mode: (options.incrementalReports ?? TERRARIUM_DEFAULTS.incrementalReports) ? 'incremental' : 'full', consecutiveFailures: 0 };
   }
 
   status(): TerrariumSyncStatus { return { ...this.syncStatus }; }
@@ -165,7 +165,7 @@ export class LeaderboardClient {
     requireHttps(url);
     const credentials = await this.authorize(url);
     if (Date.now() >= this.httpFallbackUntilMs) {
-      this.reportSocket ??= new ReportSocket({ url, ...credentials, incremental: this.options.incrementalReports === true, timeoutMs: this.options.requestTimeoutMs, onNotice: this.options.onNotice });
+      this.reportSocket ??= new ReportSocket({ url, ...credentials, incremental: (this.options.incrementalReports ?? TERRARIUM_DEFAULTS.incrementalReports) === true, timeoutMs: this.options.requestTimeoutMs, onNotice: this.options.onNotice });
       try { await this.reportSocket.report(state, phase); return 'ws'; }
       catch (error) {
         if (!(error instanceof ReportSocketError) || ![404, 405, 426, 501].includes(error.status ?? 0)) throw error;

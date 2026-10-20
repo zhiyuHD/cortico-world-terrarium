@@ -14,14 +14,22 @@ export class ReportSocket {
   private baselineHash: string | undefined;
   private revision: string | undefined;
   private seq = 0;
+  private settledSeq = 0;
+  private reportQueue: Promise<void> = Promise.resolve();
   private pending: { seq: number; resolve: (reply: ReportReply) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> } | undefined;
 
   constructor(private readonly options: { url: URL; id: string; token: string; incremental: boolean; timeoutMs?: number; onNotice?: (notice: Announcement) => Promise<void> }) {}
 
   close(): void { this.disconnect(new Error('Report connection closed')); }
 
-  async report(state: unknown, phase: 'day' | 'night'): Promise<void> {
+  report(state: unknown, phase: 'day' | 'night'): Promise<void> {
     const snapshot: unknown = JSON.parse(JSON.stringify(state));
+    const task = this.reportQueue.then(() => this.reportSnapshot(snapshot, phase));
+    this.reportQueue = task.catch(() => {});
+    return task;
+  }
+
+  private async reportSnapshot(snapshot: unknown, phase: 'day' | 'night'): Promise<void> {
     for (let attempt = 0; ; attempt++) {
       try { await this.deliver(snapshot, phase); return; }
       catch (error) {
@@ -39,7 +47,8 @@ export class ReportSocket {
     let message: ReportMessage = changes && changes.length <= TERRARIUM_REPORT_MAX_CHANGES
       ? { ...header, kind: 'delta', baseRevision: this.revision!, baseHash: this.baselineHash!, changes }
       : { ...header, kind: 'full', state };
-    if (Buffer.byteLength(JSON.stringify(message)) > TERRARIUM_REPORT_MAX_BYTES) message = { ...header, kind: 'full', state };
+    const full: ReportMessage = { ...header, kind: 'full', state };
+    if (message.kind === 'delta' && Buffer.byteLength(JSON.stringify(message)) >= Buffer.byteLength(JSON.stringify(full))) message = full;
     let reply = await this.send(socket, message);
     if (reply.kind === 'resync') reply = await this.send(socket, { ...header, seq: ++this.seq, kind: 'full', state });
     if (reply.kind === 'error') throw new ReportSocketError(reply.error, reply.status);
@@ -69,8 +78,11 @@ export class ReportSocket {
           return;
         }
         const reply = frame as ReportReply;
-        if (!reply || !this.pending || reply.seq !== this.pending.seq) throw new Error('Invalid report acknowledgement');
-        const pending = this.pending; this.pending = undefined; clearTimeout(pending.timer); pending.resolve(reply);
+        if (!reply || !Number.isSafeInteger(reply.seq) || reply.seq < 1 || !['ack', 'error', 'resync'].includes(reply.kind)) throw new Error('Invalid report acknowledgement');
+        // Settled replies can arrive again after a proxy retries delivery.
+        if (reply.seq <= this.settledSeq) return;
+        if (!this.pending || reply.seq !== this.pending.seq) throw new Error('Invalid report acknowledgement');
+        const pending = this.pending; this.pending = undefined; this.settledSeq = reply.seq; clearTimeout(pending.timer); pending.resolve(reply);
       } catch { this.disconnect(new Error('Invalid report acknowledgement')); }
     });
     socket.on('error', () => { if (this.socket === socket) this.disconnect(new Error('Report connection failed')); });

@@ -2,6 +2,19 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.8.3 · 小满
+
+- Score only the strongest three members of each species at 100%, 50% and 25%; include animal maturity, hunger and water conditions, remove seed/moisture bonuses and require both fish and plants for water environment points.
+- Recalculate all stored leaderboard totals on server startup. Version score history and expansion peaks; old-formula values cannot unlock levels, while earned space remains.
+- Add six optional observation-station letters with persisted task completion and a skip action.
+- Set land expansion gates to 120/260/420 and water gates to 120/240/360 so non-predatory aquariums can reach the final level.
+- Expand land and water independently through four levels using recorded peak scores; increase grid, active organism and frozen collection capacities without spending score or reducing levels.
+- Unlock mulch, shade and grow lights on land; air stones, filters and aquatic grow lights in water. Facilities can be moved and disabled.
+- Preserve existing saves, coordinates and past grid sizes in history and hunt replays; accept older clients without progression fields.
+- Allow reports up to 8 MiB so expanded habitats retain full histories and hunt replays.
+- Enable incremental reporting by default; serialize socket reports, ignore duplicate settled replies and send full snapshots when patches are larger. Preserve checksum validation and full resynchronization after reconnect or acknowledgement loss.
+- Bound expanded inspection summaries to twelve entries per organism group and add paged resident details.
+
 ## 0.8.2
 
 - Return compact model-facing inspection, with paged detail sections and display rounding; keep browser snapshots complete and simulation precision unchanged.

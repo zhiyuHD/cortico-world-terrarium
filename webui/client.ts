@@ -1,3 +1,5 @@
+import { capacity } from '../src/progression.ts';
+import { createProgressionControls } from './progression.ts';
 import { createDeathHistory } from './deaths.ts';
 import { careText, returnReportText, createCareControls } from './care.ts';
 import type { ReturnReport } from '../src/return-report.ts';
@@ -36,6 +38,7 @@ function mount(ctx: WebUiPanelContext): void {
   const deathHistory = createDeathHistory(ctx);
   const diagnosis = ctx.ui.h('div', 'terrarium-details');
   const careControls = createCareControls(ctx, 'land', () => load());
+  const progression = createProgressionControls(ctx, () => load());
   const sync = createSyncControls(ctx, () => load());
   const refresh = ctx.ui.button(copy.refresh, { size: 'sm', onClick: () => { void load(); } });
   const habitat = ctx.ui.h('div', 'terrarium-habitat');
@@ -55,16 +58,17 @@ function mount(ctx: WebUiPanelContext): void {
   const renderHistory = (): void => {
     if (!current) return;
     const plant = current.plants.find(plant => plant.id === selected);
-    const index = selected.startsWith('soil:') ? Number(selected.slice(5)) : plant ? plant.y * 5 + plant.x : -1;
+    const index = selected.startsWith('soil:') ? Number(selected.slice(5)) : plant ? plant.y * capacity(current).size + plant.x : -1;
     const cell = current.soil[index];
     watering.update(true, cell, current);
     careControls.update(current, cell);
+    progression.update(current, cell);
     cellStatus.textContent = cell ? `(${cell.x},${cell.y}) · ${copy.moisture} ${cell.moisture.toFixed(1)} · ${copy.light} ${(current.phase === 'day' ? daylight(current, cell.x, cell.y) : 0).toFixed(2)}` : '';
     grid.querySelectorAll('button').forEach((button, i) => { button.setAttribute('aria-pressed', String(i === index)); });
-    chart.replaceChildren(drawHistory(current.history, selected, copy, ctx.language));
+    chart.replaceChildren(drawHistory(current.history, selected, copy, ctx.language, capacity(current).size));
   };
   select.addEventListener('change', () => { selected = select.value; renderHistory(); });
-  card.body.append(name, status, sync.el, canvas, replayContainer, details, diagnosis, deathHistory.el, habitat, careControls.el, historyTitle, select, chart, scoreChart, refresh, createFeedbackControls(ctx));
+  card.body.append(name, status, sync.el, progression.el, canvas, replayContainer, details, diagnosis, deathHistory.el, habitat, careControls.el, historyTitle, select, chart, scoreChart, refresh, createFeedbackControls(ctx));
   ctx.root.appendChild(card.el);
   const load = async (): Promise<void> => {
     try {
@@ -73,7 +77,7 @@ function mount(ctx: WebUiPanelContext): void {
       sync.update(response.sync, response.claimed);
       watering.update(response.claimed);
       const state = response.state;
-      for (const el of [canvas, replayContainer, details, diagnosis, deathHistory.el, habitat, careControls.el, historyTitle, select, chart, scoreChart]) el.hidden = !response.claimed;
+      for (const el of [progression.el, canvas, replayContainer, details, diagnosis, deathHistory.el, habitat, careControls.el, historyTitle, select, chart, scoreChart]) el.hidden = !response.claimed;
       if (!response.claimed || !state) { status.textContent = pick(ctx.language, { zh: '未认领 · 先通过 terrarium_claim 认领地箱，再检查每格水分和光照后播种。', en: 'Unclaimed · Use terrarium_claim, inspect moisture and light, then sow.' }); return; }
       if (ctx.signal.aborted) return;
       name.textContent = state.name ?? pick(ctx.language, { zh: '生态箱', en: 'Terrarium' });
@@ -102,6 +106,7 @@ function mount(ctx: WebUiPanelContext): void {
         return button;
       });
       grid.setAttribute('aria-label', copy.soil);
+      grid.style.gridTemplateColumns = `repeat(${capacity(state).size}, minmax(0, 1fr))`;
       grid.replaceChildren(...cells);
       const names = new Map(state.history.flatMap(sample => sample.plants.map(plant => [plant.id, plant.species] as const)));
       for (const plant of state.plants) names.set(plant.id, plant.species as PlantSpecies);

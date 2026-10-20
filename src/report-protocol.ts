@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-export const TERRARIUM_REPORT_MAX_BYTES = 1_048_576;
+export const TERRARIUM_REPORT_MAX_BYTES = 8_388_608;
 export const TERRARIUM_REPORT_MAX_CHANGES = 16_384;
 
 export type ReportChange = { op: 'add' | 'replace'; path: string; value: unknown } | { op: 'remove'; path: string };

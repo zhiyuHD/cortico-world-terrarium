@@ -1,3 +1,6 @@
+import { capacity, type DevelopmentState } from '../src/progression.ts';
+import { plotPosition } from './geometry.ts';
+export { plotPosition } from './geometry.ts';
 import { isFlying } from '../src/flight.ts';
 import type { EggState, NestState, LandFood } from '../src/state.ts';
 import type { ReplayFrame } from '../src/replay.ts';
@@ -8,7 +11,7 @@ import { drawAntNest } from './nest-scene.ts';
 export { createWaterScene, createWaterReplayControls } from './water-scene.ts';
 import { daylight, type SoilCell } from '../src/habitat.ts';
 
-export interface SceneState {
+export interface SceneState extends DevelopmentState {
   phase: 'day' | 'night';
   soil?: SoilCell[];
   eggs?: EggState[];
@@ -21,11 +24,7 @@ export interface SceneState {
   items: Array<{ id: 'coin' | 'pebble'; x: number; y: number }>;
 }
 
-export function plotPosition(x: number, y: number): { x: number; y: number } {
-  return { x: 260 + x * 70, y: 290 + y * 9 };
-}
-
-export function bugPositions(bugs: SceneState['bugs'], positions: ReadonlyMap<string, { x: number; y: number }> = new Map()): Map<string, { x: number; y: number }> {
+export function bugPositions(bugs: SceneState['bugs'], positions: ReadonlyMap<string, { x: number; y: number }> = new Map(), size = 5): Map<string, { x: number; y: number }> {
   const groups = new Map<string, string[]>();
   for (const bug of bugs) {
     const tile = `${bug.x},${bug.y}`;
@@ -41,7 +40,7 @@ export function bugPositions(bugs: SceneState['bugs'], positions: ReadonlyMap<st
     const ordinal = group.indexOf(bug.id);
     const row = Math.floor(ordinal / 3);
     const rowSize = Math.min(3, group.length - row * 3);
-    const plot = plotPosition(position.x, position.y);
+    const plot = plotPosition(position.x, position.y, size);
     result.set(bug.id, { x: plot.x + (ordinal % 3 - (rowSize - 1) / 2) * 28, y: plot.y - 6 + row * 19 });
   }
   return result;
@@ -50,6 +49,7 @@ export function bugPositions(bugs: SceneState['bugs'], positions: ReadonlyMap<st
 export function drawScene(canvas: HTMLCanvasElement, state: SceneState, positions: ReadonlyMap<string, { x: number; y: number }> = new Map(), hits: ReadonlyArray<{ x: number; y: number; strength: number }> = []): void {
   const g = canvas.getContext('2d');
   if (!g) return;
+  const plot = (x: number, y: number) => plotPosition(x, y, capacity(state).size);
   const night = state.phase === 'night';
   const sky = g.createLinearGradient(0, 0, 0, 500);
   sky.addColorStop(0, night ? '#162c47' : '#9ccbcf');
@@ -73,7 +73,7 @@ export function drawScene(canvas: HTMLCanvasElement, state: SceneState, position
   g.beginPath(); g.ellipse(400, 310, 278, 29, 0, 0, Math.PI * 2); g.fill();
 
   for (const cell of state.soil ?? []) {
-    const { x, y } = plotPosition(cell.x, cell.y);
+    const { x, y } = plot(cell.x, cell.y);
     g.fillStyle = `rgba(36,91,107,${cell.moisture / 160})`;
     g.beginPath(); g.ellipse(x, y + 1, 30, 5, 0, 0, Math.PI * 2); g.fill();
     if (daylight(state, cell.x, cell.y) < .4) {
@@ -82,11 +82,11 @@ export function drawScene(canvas: HTMLCanvasElement, state: SceneState, position
     }
   }
   for (const nest of state.nests ?? []) {
-    const { x, y } = plotPosition(nest.x, nest.y);
+    const { x, y } = plot(nest.x, nest.y);
     drawAntNest(g, x, y, night);
   }
   for (const web of state.webs ?? []) {
-    const { x, y } = plotPosition(web.x, web.y);
+    const { x, y } = plot(web.x, web.y);
     g.save(); g.translate(x, y - 38); g.strokeStyle = night ? '#cfdfed9c' : '#fff8e5b8'; g.lineWidth = 1;
     for (let i = 0; i < 8; i++) {
       const angle = i * Math.PI / 4;
@@ -100,17 +100,17 @@ export function drawScene(canvas: HTMLCanvasElement, state: SceneState, position
     g.restore();
   }
   for (const food of state.food ?? []) {
-    const { x, y } = plotPosition(food.x, food.y);
+    const { x, y } = plot(food.x, food.y);
     g.fillStyle = '#e4b66c';
     for (let i = 0; i < Math.min(6, food.portions); i++) { g.beginPath(); g.arc(x - 8 + i % 3 * 6, y + Math.floor(i / 3) * 5, 2.5, 0, Math.PI * 2); g.fill(); }
   }
   for (const [index, egg] of (state.eggs ?? []).filter(egg => !egg.inside).entries()) {
-    const { x, y } = plotPosition(egg.x, egg.y);
+    const { x, y } = plot(egg.x, egg.y);
     g.fillStyle = egg.species === 'ant' ? '#eee2bd' : '#dbd9b0';
     g.beginPath(); g.ellipse(x - 12 + index % 4 * 7, y - 4, 3, 4, -.3, 0, Math.PI * 2); g.fill();
   }
   for (const plant of state.plants) {
-    const { x, y: base } = plotPosition(plant.x, plant.y);
+    const { x, y: base } = plot(plant.x, plant.y);
     const height = 13 + plant.stage * 20;
     const leaves = 1 + plant.stage * 2;
     g.strokeStyle = plant.dry ? '#87926a' : '#417e4c';
@@ -130,8 +130,26 @@ export function drawScene(canvas: HTMLCanvasElement, state: SceneState, position
     }
     drawPlantFlowers(g, plant, x, base - height, night);
   }
+  for (const facility of state.facilities ?? []) {
+    const { x, y } = plot(facility.x, facility.y);
+    g.save(); g.globalAlpha = facility.enabled ? 1 : .35;
+    if (facility.kind === 'mulch') {
+      g.fillStyle = '#b79157'; g.beginPath(); g.ellipse(x, y, 24, 10, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#74522f'; g.lineWidth = 2;
+      for (let i = -2; i <= 2; i++) { g.beginPath(); g.moveTo(x + i * 7 - 3, y - 4); g.lineTo(x + i * 7 + 3, y + 4); g.stroke(); }
+    } else if (facility.kind === 'shade') {
+      g.strokeStyle = '#9b7958'; g.lineWidth = 3;
+      for (const dx of [-25, 25]) { g.beginPath(); g.moveTo(x + dx, y + 4); g.lineTo(x + dx, y - 54); g.stroke(); }
+      g.fillStyle = '#638b76bb'; g.beginPath(); g.moveTo(x - 33, y - 54); g.lineTo(x + 28, y - 58); g.lineTo(x + 34, y - 41); g.lineTo(x - 28, y - 37); g.closePath(); g.fill();
+    } else if (facility.kind === 'grow_light') {
+      g.strokeStyle = '#68847b'; g.lineWidth = 3; g.beginPath(); g.moveTo(x + 18, y); g.lineTo(x + 18, y - 64); g.lineTo(x - 10, y - 64); g.stroke();
+      g.fillStyle = night ? '#a49b70' : '#ffe9a0'; g.beginPath(); g.ellipse(x - 10, y - 60, 14, 5, 0, 0, Math.PI * 2); g.fill();
+      if (!night && facility.enabled) { g.fillStyle = '#ffeda126'; g.beginPath(); g.moveTo(x - 22, y - 56); g.lineTo(x + 14, y); g.lineTo(x - 35, y); g.closePath(); g.fill(); }
+    }
+    g.restore();
+  }
   for (const item of state.items) {
-    const { x, y } = plotPosition(item.x, item.y);
+    const { x, y } = plot(item.x, item.y);
     g.fillStyle = 'rgba(30,28,23,.25)';
     g.beginPath(); g.ellipse(x, y + 7, 21, 6, 0, 0, Math.PI * 2); g.fill();
     g.fillStyle = item.id === 'coin' ? '#d0a34d' : '#919a94';
@@ -139,11 +157,11 @@ export function drawScene(canvas: HTMLCanvasElement, state: SceneState, position
     if (item.id === 'coin') { g.strokeStyle = '#f4d682'; g.lineWidth = 2; g.stroke(); }
   }
   for (const seed of state.seeds ?? []) {
-    const { x, y } = plotPosition(seed.x, seed.y);
+    const { x, y } = plot(seed.x, seed.y);
     g.fillStyle = '#d9bd75'; g.beginPath(); g.ellipse(x, y, 7, 4, -.3, 0, Math.PI * 2); g.fill();
   }
   const surfaceBugs = state.bugs.filter(bug => !bug.inside);
-  const locations = bugPositions(surfaceBugs, positions);
+  const locations = bugPositions(surfaceBugs, positions, capacity(state).size);
   for (const bug of surfaceBugs) {
     const location = locations.get(bug.id)!;
     const x = location.x, y = location.y - (isFlying(bug.species) ? 30 : 0);
@@ -194,7 +212,7 @@ export function drawScene(canvas: HTMLCanvasElement, state: SceneState, position
     }
   }
   for (const hit of hits) {
-    const { x, y } = plotPosition(hit.x, hit.y);
+    const { x, y } = plot(hit.x, hit.y);
     g.strokeStyle = `rgba(255,210,91,${hit.strength})`; g.lineWidth = 3;
     for (let i = 0; i < 6; i++) {
       const angle = i * Math.PI / 3;

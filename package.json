@@ -1,6 +1,6 @@
 {
   "name": "cortico-world-terrarium",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "type": "module",
   "description": "Claimable land and water ecosystems with plants, bugs, fish and a public leaderboard",
   "license": "MIT",
@@ -33,8 +33,8 @@
       "game"
     ],
     "describe": "describe.json",
-    "webUiClient": "dist/webui/0.8.2/client.js",
-    "webUiStyle": "dist/webui/0.8.2/client.css",
+    "webUiClient": "dist/webui/0.8.3/client.js",
+    "webUiStyle": "dist/webui/0.8.3/client.css",
     "locales": {
       "zh": {
         "displayName": "生态箱",
@@ -68,7 +68,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "typecheck:webui": "tsc --noEmit -p tsconfig.web.json",
-    "build:webui": "esbuild webui/client.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/webui/0.8.2/client.js",
+    "build:webui": "esbuild webui/client.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/webui/0.8.3/client.js",
     "build:server": "tsx server/build.ts",
     "build:admin": "esbuild server/admin.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/admin.mjs"
   },

@@ -123,7 +123,7 @@ it('delivers birth and hunger events so the bot can inspect the changed state', 
     const cellHistory = JSON.parse(String(await history.handler({ x: 0, y: 0, limit: 1 }, {} as ToolCallContext)));
     expect(cellHistory.samples).toEqual([{ recordedAtMs: now, x: 0, y: 0, moisture: expect.closeTo(soil.soil[0].moisture, 1) }]);
     await expect(history.handler({ plant: 'fern', x: 0, y: 0 }, {} as ToolCallContext)).rejects.toThrow('OR');
-    await expect(history.handler({ x: 9, y: 0 }, {} as ToolCallContext)).rejects.toThrow('5×5');
+    await expect(history.handler({ x: 9, y: 0 }, {} as ToolCallContext)).rejects.toThrow('grid');
     await expect(history.handler({ plant: 'fern', limit: TERRARIUM_MAX_HISTORY + 1 }, {} as ToolCallContext)).rejects.toThrow('limit');
     const remove = world.tools().find(tool => tool.name === 'terrarium_remove')!;
     await remove.handler({ id: 'fern' }, {} as ToolCallContext);

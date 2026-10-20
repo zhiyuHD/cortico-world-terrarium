@@ -1,3 +1,4 @@
+import { capacity, type DevelopmentState } from '../src/progression.ts';
 import type { WebUiPanelContext } from 'cortico/web/shared/client-panel.ts';
 import type { landCare, waterCare } from '../src/care.ts';
 import type { ReturnReport } from '../src/return-report.ts';
@@ -35,7 +36,7 @@ export function careText(care: ReturnType<typeof landCare> | ReturnType<typeof w
 export function createCareControls(ctx: WebUiPanelContext, habitat: 'land' | 'water', reload: () => Promise<void>) {
   const zh = ctx.language.startsWith('zh'), el = ctx.ui.h('div', 'terrarium-care'), status = ctx.ui.h('div', '');
   status.setAttribute('role', 'status');
-  const hint = ctx.ui.h('div', '', zh ? '收藏后暂停生长与消耗，不计分；每箱最多 48 个，放回仍受容量限制。' : 'Collected organisms are frozen and unscored; up to 48 per habitat. Restoring uses normal capacity.');
+  const hint = ctx.ui.h('div', '', zh ? '收藏后暂停生长与消耗，不计分；容量随等级扩建，放回仍受容量限制。' : 'Collected organisms are frozen and unscored; capacity expands with level. Restoring uses normal capacity.');
   const actions = ctx.ui.h('div', 'terrarium-watering-buttons'); let busy = false;
   const run = async (args: Record<string, unknown>) => {
     if (busy || ctx.signal.aborted) return; busy = true;
@@ -44,7 +45,8 @@ export function createCareControls(ctx: WebUiPanelContext, habitat: 'land' | 'wa
     finally { busy = false; }
   };
   el.append(hint, actions, status);
-  return { el, update(state: { plants: { id: string; x: number; y: number }[]; bugs?: { id: string }[]; fish?: { id: string }[]; seeds?: { id: string }[]; collection?: { kind: string; specimen: { id: string; x: number; y: number } }[]; food?: { id: string }[]; soil?: { x: number; y: number; allowAntForaging?: boolean }[]; nests?: { id: string }[] }, cell: { x: number; y: number } = { x: 2, y: 2 }) {
+  return { el, update(state: DevelopmentState & { plants: { id: string; x: number; y: number }[]; bugs?: { id: string }[]; fish?: { id: string }[]; seeds?: { id: string }[]; collection?: { kind: string; specimen: { id: string; x: number; y: number } }[]; food?: { id: string }[]; soil?: { x: number; y: number; allowAntForaging?: boolean }[]; nests?: { id: string }[] }, cell: { x: number; y: number } = { x: 2, y: 2 }) {
+    hint.textContent = zh ? `收藏后暂停模拟、不计分；当前收藏容量 ${capacity(state).collection}，放回仍受生物和占格限制。` : `Collected organisms are frozen and unscored; collection capacity ${capacity(state).collection}. Restoring uses normal limits.`;
     actions.replaceChildren();
     const add = (text: string, args: Record<string, unknown>) => actions.append(ctx.ui.button(text, { size: 'sm', onClick: () => { void run(args); } }));
     if (habitat === 'land') {

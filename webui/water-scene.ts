@@ -1,3 +1,4 @@
+import { capacity } from '../src/progression.ts';
 import type { AquariumFrame } from '../src/aquarium.ts';
 import { createPlaybackControls } from './playback.ts';
 
@@ -7,7 +8,7 @@ export function createWaterScene(canvas: HTMLCanvasElement) {
   let movedAt = 0;
   let request = 0;
   let disposed = false;
-  const position = (x: number, y: number) => ({ x: 130 + x * 130, y: 130 + y * 65 });
+  const position = (x: number, y: number) => ({ x: 110 + x * 580 / (capacity(state ?? {}).size - 1), y: 120 + y * 280 / (capacity(state ?? {}).size - 1) });
   const locations = (now: number) => new Map((state?.fish ?? []).map(fish => {
     const previous = old.get(fish.id) ?? fish;
     const t = Math.min(1, (now - movedAt) / 900);
@@ -26,7 +27,7 @@ export function createWaterScene(canvas: HTMLCanvasElement) {
       g.font = '16px system-ui'; g.fillStyle = night ? '#def5fa' : '#164257';
       g.fillText(`O₂ ${state.oxygen.toFixed(1)} · ${state.cleanliness.toFixed(1)} / 100`, 72, 42);
       g.lineWidth = 1; g.strokeStyle = '#ffffff25';
-      for (let x = 0; x < 5; x++) for (let y = 0; y < 5; y++) { const p = position(x, y); g.strokeRect(p.x - 50, p.y - 25, 100, 50); }
+      for (let x = 0; x < capacity(state).size; x++) for (let y = 0; y < capacity(state).size; y++) { const p = position(x, y); g.strokeRect(p.x - 290 / capacity(state).size, p.y - 140 / capacity(state).size, 580 / capacity(state).size, 280 / capacity(state).size); }
       for (const plant of state.plants) {
         const p = position(plant.x, plant.y), h = 22 + plant.stage * 9;
         g.strokeStyle = plant.species === 'algae' ? '#506f37' : '#236e46'; g.lineWidth = 5;
@@ -34,6 +35,20 @@ export function createWaterScene(canvas: HTMLCanvasElement) {
         if (plant.species === 'waterlily') { g.fillStyle = '#e7b8cf'; g.beginPath(); g.ellipse(p.x, p.y - h + 22, 13, 6, 0, 0, Math.PI * 2); g.fill(); }
       }
       for (const food of state.food) { const p = position(food.x, food.y); g.fillStyle = '#f4ca77'; for (let i = 0; i < food.portions; i++) { g.beginPath(); g.arc(p.x + (i % 4) * 5 - 8, p.y + Math.floor(i / 4) * 5, 2, 0, Math.PI * 2); g.fill(); } }
+      for (const facility of state.facilities ?? []) {
+        const p = position(facility.x, facility.y); g.save(); g.globalAlpha = facility.enabled ? 1 : .35;
+        if (facility.kind === 'air_stone') {
+          g.fillStyle = '#769cad'; g.beginPath(); g.ellipse(p.x, p.y + 12, 15, 7, 0, 0, Math.PI * 2); g.fill();
+          if (facility.enabled) for (let i = 0; i < 5; i++) { const rise = (now / 35 + i * 18) % 90; g.strokeStyle = '#d4f8ff99'; g.lineWidth = 1.5; g.beginPath(); g.arc(p.x + Math.sin(i + now / 1200) * 9, p.y - rise, 2 + i % 3, 0, Math.PI * 2); g.stroke(); }
+        } else if (facility.kind === 'filter') {
+          g.fillStyle = '#547e82'; g.beginPath(); g.roundRect(p.x - 12, p.y - 35, 24, 46, 6); g.fill();
+          g.strokeStyle = '#b4e9db'; g.lineWidth = 2; for (let i = 0; i < 3; i++) { g.beginPath(); g.moveTo(p.x - 7, p.y - 24 + i * 8); g.lineTo(p.x + 7, p.y - 24 + i * 8); g.stroke(); }
+        } else if (facility.kind === 'water_light') {
+          g.fillStyle = night ? '#7d8580' : '#f9e6a4'; g.beginPath(); g.roundRect(p.x - 23, p.y - 45, 46, 8, 4); g.fill();
+          if (!night && facility.enabled) { g.fillStyle = '#ffffba25'; g.beginPath(); g.moveTo(p.x - 18, p.y - 37); g.lineTo(p.x + 30, p.y + 20); g.lineTo(p.x - 30, p.y + 20); g.closePath(); g.fill(); }
+        }
+        g.restore();
+      }
       const points = locations(now);
       for (const fish of state.fish) {
         const p = position(points.get(fish.id)!.x, points.get(fish.id)!.y);

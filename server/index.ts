@@ -71,6 +71,7 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
   let reportQueue: Promise<unknown> = Promise.resolve();
   try { registry = Object.assign(Object.create(null), JSON.parse(await readFile(file, 'utf8'))); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  for (const entry of Object.values(registry)) entry.score = score(entry.state);
   try { credentials = Object.assign(Object.create(null), JSON.parse(await readFile(credentialsFile, 'utf8'))); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   const releaseId = process.env.CORTICO_TERRARIUM_RELEASE_ID;
@@ -298,7 +299,7 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
         let raw = '';
         for await (const chunk of req) {
           raw += String(chunk);
-          if (Buffer.byteLength(raw) > 1048576) { reply(413, { error: 'Report too large' }); return; }
+          if (Buffer.byteLength(raw) > TERRARIUM_REPORT_MAX_BYTES) { reply(413, { error: 'Report too large' }); return; }
         }
         const input = JSON.parse(raw) as { id?: string; state?: unknown; phase?: unknown; clientVersion?: unknown; coopanionVersion?: unknown } | null;
         if (!input || typeof input.id !== 'string' || !idPattern.test(input.id)) { reply(400, { error: 'Invalid report' }); return; }

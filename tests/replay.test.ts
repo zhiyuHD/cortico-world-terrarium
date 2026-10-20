@@ -1,3 +1,4 @@
+import { TERRARIUM_REPORT_MAX_BYTES } from '../src/report-protocol.ts';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -121,6 +122,6 @@ it('uploads and retains recorded scenes through a real leaderboard server restar
     server = await startServer(options);
     const restored = await (await fetch(url() + '/api/boxes/replay-box')).json();
     expect(restored.state.replays).toEqual(state.replays);
-    expect((await fetch(url() + '/api/reports', { method: 'PUT', body: 'x'.repeat(1048577) })).status).toBe(413);
+    expect((await fetch(url() + '/api/reports', { method: 'PUT', body: 'x'.repeat(TERRARIUM_REPORT_MAX_BYTES + 1) })).status).toBe(413);
   } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
 });

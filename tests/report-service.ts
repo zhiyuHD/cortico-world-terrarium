@@ -9,6 +9,8 @@ export async function createReportProxy(target: string, onReport?: (message: Rep
   let rewriteReply: ((reply: ReportReply) => ReportReply) | undefined;
   let omitChecksums = false;
   let skipReplies = 0;
+  let duplicateReplies = false;
+  let previousReply: string | undefined;
   const server = createServer((req, res) => {
     const forwarded = request(new URL(req.url ?? '/', target), { method: req.method, headers: req.headers }, response => {
       res.writeHead(response.statusCode ?? 500, response.headers); response.pipe(res);
@@ -41,7 +43,12 @@ export async function createReportProxy(target: string, onReport?: (message: Rep
         let outgoing = rewriteReply ? rewriteReply(reply) : reply;
         rewriteReply = undefined;
         if (omitChecksums && outgoing.kind === 'ack') { outgoing = { ...outgoing }; delete outgoing.stateHash; }
-        if (downstream.readyState === WebSocket.OPEN) downstream.send(JSON.stringify(outgoing), { binary });
+        if (downstream.readyState === WebSocket.OPEN) {
+          if (duplicateReplies && previousReply) downstream.send(previousReply);
+          previousReply = JSON.stringify(outgoing);
+          downstream.send(previousReply, { binary });
+          if (duplicateReplies) downstream.send(previousReply, { binary });
+        }
       });
     });
   });
@@ -53,6 +60,7 @@ export async function createReportProxy(target: string, onReport?: (message: Rep
     rewriteNextReply(rewrite: (reply: ReportReply) => ReportReply) { rewriteReply = rewrite; },
     omitReplyChecksums() { omitChecksums = true; },
     skipNextReply() { skipReplies++; },
+    duplicateReplies() { duplicateReplies = true; },
     disconnect() { for (const peer of peers) peer.terminate(); },
     async close() {
       for (const peer of peers) peer.terminate(); sockets.close();

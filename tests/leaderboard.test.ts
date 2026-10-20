@@ -445,3 +445,25 @@ it('rejects an ignored HTTP success response instead of recording an accepted sn
     expect(client.status().lastSuccessStateAt).toBeUndefined();
   } finally { client.close(); }
 });
+
+
+it('recalculates persisted leaderboard totals on restart without changing uploaded state or revisions', async () => {
+  const { server, options } = await service();
+  await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  servers.splice(servers.indexOf(server), 1);
+  const land = newState(Date.now()), water = newAquarium(Date.now());
+  const registry = {
+    'box-land-fixture': { id: 'box-land-fixture', kind: 'land', state: land, score: 9999, reportedAt: new Date().toISOString(), reportRevision: 'a'.repeat(32) },
+    'box-water-fixture': { id: 'box-water-fixture', kind: 'water', state: water, score: 9998, reportedAt: new Date().toISOString(), reportRevision: 'b'.repeat(32) },
+  };
+  await writeFile(options.dataFile, JSON.stringify(registry));
+  const restarted = await start(options); servers.push(restarted);
+  const address = restarted.address(); if (!address || typeof address === 'string') throw new Error('Missing port');
+  const url = `http://127.0.0.1:${address.port}`;
+  for (const entry of Object.values(registry)) {
+    const result = await (await fetch(`${url}/api/boxes/${entry.id}`)).json();
+    expect(result).toEqual({ ...entry, score: score(entry.state) });
+    const summary = await (await fetch(`${url}/api/leaderboard?kind=${entry.kind}&view=summary`)).json();
+    expect(summary.entries[0].score).toBe(Object.values(summary.entries[0].scoreParts).reduce((sum: number, part) => sum + Number(part), 0));
+  }
+});

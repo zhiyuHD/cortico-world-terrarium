@@ -10,7 +10,7 @@ export interface TerrariumConfigSection {
   requestTimeoutMs?: number;
 }
 
-export const TERRARIUM_DEFAULTS: TerrariumConfigSection = { enabled: false, tickIntervalMs: 60_000, leaderboardUrl: 'https://cortico-box.zhiyuhub.top', incrementalReports: false, rankAlertMinDrop: 3, rankAlertCooldownMinutes: 30, requestTimeoutMs: 15_000 };
+export const TERRARIUM_DEFAULTS: TerrariumConfigSection = { enabled: false, tickIntervalMs: 60_000, leaderboardUrl: 'https://cortico-box.zhiyuhub.top', incrementalReports: true, rankAlertMinDrop: 3, rankAlertCooldownMinutes: 30, requestTimeoutMs: 15_000 };
 
 export const TERRARIUM_CONFIG_GROUP: ConfigGroup = {
   id: 'world:terrarium', owner: 'world:terrarium',
@@ -20,6 +20,6 @@ export const TERRARIUM_CONFIG_GROUP: ConfigGroup = {
     'worlds.terrarium.rankAlertCooldownMinutes': { type: 'integer', title: '排名提醒最短间隔（分钟）', description: '默认 30 分钟；间隔内继续累计下降，之后合并提醒。', minimum: 0, maximum: 1440, 'x-hot': false },
     'worlds.terrarium.requestTimeoutMs': { type: 'integer', title: '网络请求超时（毫秒）', description: 'HTTP、WS 握手和提交确认的等待上限，默认 15000。', minimum: 1000, maximum: 120000, 'x-hot': false },
     'worlds.terrarium.leaderboardUrl': { type: 'string', title: '排行榜服务地址（留空关闭上报）', 'x-hot': false },
-    'worlds.terrarium.incrementalReports': { type: 'boolean', title: '增量上报（可能不稳定）', description: '默认关闭，每次通过 WebSocket 发送完整状态。手动开启后先发送完整状态，再发送增量；重连或需要重新同步时重发完整状态。重启后生效。', 'x-hot': false },
+    'worlds.terrarium.incrementalReports': { type: 'boolean', title: '增量上报', description: '默认开启。首次发送完整状态，后续提交已确认状态的增量；校验失败或重连时重新发送完整状态。关闭后每次提交完整状态。重启后生效。', 'x-hot': false },
   } },
 };

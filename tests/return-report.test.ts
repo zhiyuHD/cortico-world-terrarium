@@ -107,3 +107,13 @@ it('exposes startup care checks, nest feeding and cell protection through the Wo
     expect(events.filter(e => e.type === 'terrarium.return')).toHaveLength(1);
   } finally { await world.stop(); await rm(dir, { recursive: true, force: true }); }
 });
+
+
+it('hides numeric legacy scores from the current-formula score curve', () => {
+  for (const state of [newState(start), newAquarium(start)]) {
+    state.history[0].score = 9999; delete state.history[0].scoreVersion;
+    if ('fish' in state) advanceAquarium(state, start + hour, 'UTC'); else advance(state, start + hour, 'UTC');
+    expect(recentScores(state, start + hour)[0].score).toBeNull();
+    expect(recentScores(state, start + hour).at(-1)?.score).toBe(score(state));
+  }
+});

@@ -1,3 +1,6 @@
+import { releaseBug, sow, advance, type TerrariumState } from '../src/state.ts';
+import { TERRARIUM_REPORT_MAX_BYTES } from '../src/report-protocol.ts';
+import { observeProgress, upgradeHabitat, installFacility, capacity, TERRARIUM_LEVELS } from '../src/progression.ts';
 import { TERRARIUM_DEFAULTS } from '../src/config.ts';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -7,6 +10,7 @@ import { setImmediate as nextTurn } from 'node:timers/promises';
 import WebSocket from 'ws';
 import { afterEach, expect, it, vi } from 'vitest';
 import { start } from '../server/index.ts';
+import { ReportSocket } from '../src/report-socket.ts';
 import { LeaderboardClient } from '../src/leaderboard.ts';
 import { newState } from '../src/state.ts';
 import { newAquarium, stockFish } from '../src/aquarium.ts';
@@ -17,7 +21,7 @@ import { createReportProxy } from './report-service.ts';
 const disposals: Array<() => Promise<void>> = [];
 afterEach(async () => { try { for (const dispose of disposals.splice(0).reverse()) await dispose(); } finally { vi.unstubAllEnvs(); } });
 
-async function fixture(incrementalReports = false, rejectUpgrade = false, kind: 'land' | 'water' = 'land') {
+async function fixture(incrementalReports: boolean | undefined = undefined, rejectUpgrade = false, kind: 'land' | 'water' = 'land') {
   const dir = await mkdtemp(join(tmpdir(), 'terrarium-ws-'));
   const server = await start({ port: 0, dataFile: join(dir, 'server.json'), credentialsFile: join(dir, 'server-tokens.json') });
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('Missing port');
@@ -82,8 +86,8 @@ it('rejects invalid Coopanion metadata on both transports without changing the s
   } finally { ws.terminate(); }
 });
 
-it('reuses WebSocket connections with full reports by default and always declares the actual client version', async () => {
-  const { client, proxy, get } = await fixture();
+it('keeps explicit full reporting and always declares the actual client version', async () => {
+  const { client, proxy, get } = await fixture(false);
   const state = newState(Date.now());
   await client.report(state, 'day'); state.name = '第二次'; await client.report(state, 'night');
   expect(proxy.frames.map(frame => frame.kind)).toEqual(['full', 'full']);
@@ -249,7 +253,7 @@ it('tracks acknowledged uploads and failures independently of reads, and full sy
 it('keeps reporting disabled during manual full sync without creating credentials', async () => {
   const client = new LeaderboardClient({ url: '', id: '', credentialsFile: 'unused' });
   await client.report(newState(Date.now()), 'day', true);
-  expect(client.status()).toMatchObject({ state: 'disabled', mode: 'full', consecutiveFailures: 0 });
+  expect(client.status()).toMatchObject({ state: 'disabled', mode: TERRARIUM_DEFAULTS.incrementalReports ? 'incremental' : 'full', consecutiveFailures: 0 });
   expect(client.id).toBeUndefined();
 });
 
@@ -377,8 +381,10 @@ it.each(['land', 'water'] as const)('keeps %s checksums identical across 30 roun
     const accepted = await get(), reply = proxy.replies.at(-1);
     expect(accepted.state).toEqual(state);
     expect(reply).toMatchObject({ kind: 'ack', stateHash: reportStateHash(state) });
-    expect(proxy.frames.at(-1)?.kind).toBe('delta');
   }
+  state.name = '最终细小修改'; await client.report(state, 'day');
+  expect(proxy.frames.at(-1)?.kind).toBe('delta');
+  expect((await get()).state).toEqual(state);
   expect(proxy.replies.some(reply => reply.kind === 'resync')).toBe(false);
 });
 
@@ -395,4 +401,96 @@ it('keeps the accepted simulation time unchanged after an ignored acknowledgemen
   expect(client.status()).toMatchObject({ state: 'error', lastSuccessStateAt: before.lastSuccessStateAt, lastSuccessAt: before.lastSuccessAt });
   await client.report(state, 'day', true);
   expect(client.status()).toMatchObject({ state: 'synced', lastSuccessStateAt: new Date(state.updatedAtMs).toISOString() });
+});
+
+
+it.each(['land', 'water'] as const)('accepts legacy then expanded %s states over checked WebSocket deltas', async habitat => {
+  const { client, proxy, get } = await fixture(true, false, habitat);
+  const state = habitat === 'land' ? newState(Date.now()) : newAquarium(Date.now());
+  delete state.progression;
+  if (!('fish' in state)) for (const h of state.history) delete h.gridSize;
+  await client.report(state, 'day');
+  observeProgress(state).peakScore = TERRARIUM_LEVELS[3].requiredScore;
+  while (capacity(state).level < 4) upgradeHabitat(state);
+  installFacility(state, habitat === 'land' ? 'mulch' : 'air_stone', 7, 7);
+  await client.report(state, 'day');
+  const accepted = await get(); expect(accepted.state).toEqual(JSON.parse(JSON.stringify(state)));
+  expect(capacity(accepted.state).size).toBe(8);
+  state.name = '扩容后的增量'; await client.report(state, 'day');
+  expect(proxy.frames.at(-1)?.kind).toBe('delta');
+  expect((await get()).state).toEqual(JSON.parse(JSON.stringify(state)));
+});
+
+
+it('uploads an expanded full habitat with seven days of history and all hunt replays within the report limit', async () => {
+  const { client, get } = await fixture();
+  const at=Date.now(), state=newState(at); observeProgress(state).peakScore=TERRARIUM_LEVELS[3].requiredScore;
+  while(capacity(state).level<4)upgradeHabitat(state);
+  state.plants=[];
+  for(let i=0;i<32;i++){
+    const seed=sow(state,'bean',i%8,Math.floor(i/8));state.seeds.splice(state.seeds.indexOf(seed),1);
+    state.plants.push({id:seed.id,species:'bean',x:seed.x,y:seed.y,moisture:50.123456789,health:100,growthHours:18.123456789,stage:3,dry:false});
+  }
+  const spider=releaseBug(state,'spider',7,7);spider.energy=0;
+  const prey=releaseBug(state,'aphid',7,7);
+  advance(state,at+60_000,'UTC');
+  const hunt=state.replays![0];expect(hunt).toBeDefined();
+  const makeBugs=(bugs:TerrariumState['bugs'])=>{
+    const next=structuredClone(bugs);
+    while(next.length<32)next.push({id:`resident-${next.length}`.padEnd(32,'x'),species:'ant',x:6,y:6,energy:62.123456789,hunger:32.123456789,ageHours:18.123456789});
+    return next;
+  };
+  for(const frame of hunt.frames)frame.bugs=makeBugs(frame.bugs);
+  state.bugs=makeBugs(state.bugs).filter(b=>b.id!==prey.id);
+  state.replays=Array.from({length:16},(_,i)=>({...structuredClone(hunt),id:`full-replay-${i}`}));
+  state.history=Array.from({length:168},(_,i)=>({recordedAtMs:state.updatedAtMs-(167-i)*3_600_000,gridSize:8,soilMoisture:state.soil.map(c=>c.moisture),plants:state.plants.map(({id,species,moisture,health,growthHours,stage})=>({id,species,moisture,health,growthHours,stage})),score:420}));
+  const bytes=Buffer.byteLength(JSON.stringify(state));expect(bytes).toBeGreaterThan(1_048_576);expect(bytes).toBeLessThan(TERRARIUM_REPORT_MAX_BYTES);
+  await client.report(state,'day'); expect((await get()).state).toEqual(JSON.parse(JSON.stringify(state)));
+});
+
+
+it('enables acknowledged deltas when incremental configuration is omitted', async () => {
+  const { client, proxy, get } = await fixture();
+  const state = newState(Date.now());
+  await client.report(state, 'day'); state.name = '默认增量'; await client.report(state, 'night');
+  expect(client.status().mode).toBe(TERRARIUM_DEFAULTS.incrementalReports ? 'incremental' : 'full');
+  expect(proxy.frames.map(frame => frame.kind)).toEqual(['full', 'delta']);
+  expect((await get()).state).toEqual(state);
+});
+
+it('keeps the delta baseline through duplicate and delayed settled acknowledgements', async () => {
+  const { client, proxy, get } = await fixture();
+  proxy.duplicateReplies();
+  const state = newState(Date.now());
+  for (let i = 0; i < 5; i++) { state.name = `养护${i}`; await client.report(state, 'day'); }
+  expect(proxy.frames.map(frame => frame.kind)).toEqual(['full', 'delta', 'delta', 'delta', 'delta']);
+  expect((await get()).state).toEqual(state);
+});
+
+it('serializes direct socket reports and recovers the queue after a rejected report', async () => {
+  const { credentials, proxy, get } = await fixture();
+  const socket = new ReportSocket({ url: new URL(proxy.url), ...credentials, incremental: true });
+  try {
+    const state = newState(Date.now());
+    const first = socket.report(state, 'day'); state.name = '排队快照';
+    const expected = structuredClone(state), second = socket.report(state, 'night');
+    state.name = '未投递'; await Promise.all([first, second]);
+    expect(proxy.frames.map(frame => frame.kind)).toEqual(['full', 'delta']);
+    expect((await get()).state).toEqual(expected);
+    await expect(socket.report({ invalid: true }, 'day')).rejects.toThrow();
+    await socket.report(expected, 'day');
+    expect(proxy.frames.at(-1)?.kind).toBe('full');
+    expect((await get()).state).toEqual(expected);
+  } finally { socket.close(); }
+});
+
+it('uses a full snapshot when a valid delta would be larger than the snapshot', async () => {
+  const { client, proxy, get } = await fixture();
+  const state = newState(Date.now());
+  await client.report(state, 'day');
+  for (const cell of state.soil) cell.moisture = 77;
+  state.plants = []; state.seeds = []; state.bugs = [];
+  await client.report(state, 'night');
+  expect(proxy.frames.map(frame => frame.kind)).toEqual(['full', 'full']);
+  expect((await get()).state).toEqual(state);
 });

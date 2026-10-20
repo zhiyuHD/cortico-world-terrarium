@@ -1,3 +1,5 @@
+import { capacity } from '../src/progression.ts';
+import { plotPosition } from './geometry.ts';
 import { nestContents, TERRARIUM_NEST_SIZE } from '../src/colony.ts';
 import type { NestState } from '../src/state.ts';
 import type { SceneState } from './scene.ts';
@@ -135,8 +137,8 @@ export function createNestViewer(canvas: HTMLCanvasElement, language: 'zh' | 'en
     const bounds = canvas.getBoundingClientRect();
     const rx = Math.max(24, 30 * bounds.width / canvas.width), ry = Math.max(24, 20 * bounds.height / canvas.height);
     const targets = (state?.nests ?? []).map(nest => ({ nest,
-      dx: event.clientX - bounds.left - (260 + nest.x * 70) * bounds.width / canvas.width,
-      dy: event.clientY - bounds.top - (290 + nest.y * 9) * bounds.height / canvas.height,
+      dx: event.clientX - bounds.left - plotPosition(nest.x, nest.y, capacity(state!).size).x * bounds.width / canvas.width,
+      dy: event.clientY - bounds.top - plotPosition(nest.x, nest.y, capacity(state!).size).y * bounds.height / canvas.height,
     })).filter(({ dx, dy }) => Math.abs(dx) <= rx && Math.abs(dy) <= ry);
     targets.sort((a, b) => a.dx ** 2 + a.dy ** 2 - b.dx ** 2 - b.dy ** 2);
     const nest = targets[0]?.nest;

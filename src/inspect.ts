@@ -1,3 +1,4 @@
+import { capacity, development } from './progression.ts';
 import type { AquariumState } from './aquarium.ts';
 import { landCare, waterCare } from './care.ts';
 import { colonySnapshot } from './colony.ts';
@@ -6,7 +7,7 @@ import type { ReturnReport } from './return-report.ts';
 import { score } from './scoring.ts';
 import { phase, type TerrariumState } from './state.ts';
 
-export const TERRARIUM_INSPECT_SECTIONS = ['summary', 'soil', 'care', 'colonies', 'return', 'objects'] as const;
+export const TERRARIUM_INSPECT_SECTIONS = ['summary', 'soil', 'care', 'colonies', 'return', 'objects', 'residents'] as const;
 export type InspectSection = typeof TERRARIUM_INSPECT_SECTIONS[number];
 type State = TerrariumState | AquariumState;
 
@@ -44,10 +45,14 @@ export function inspectState(state: State, nowMs: number, timezone: string, sect
     const { changes, warnings, removed, added, ...timing } = report;
     return { returnReport: { ...timing, changes: page(changes, offset, limit), warnings: page(warnings, offset, limit), removed: page(removed, offset, limit), added: page(added, offset, limit) } };
   }
+  if (section === 'residents') return water ? { plants: page(state.plants, offset, limit), fish: page(state.fish, offset, limit) } : { plants: page(state.plants, offset, limit), seeds: page(state.seeds, offset, limit), bugs: page(state.bugs, offset, limit) };
   if (section === 'objects') {
     return water ? { food: page(state.food, offset, limit) } : { items: state.items, food: page(state.food ?? [], offset, limit), webs: page(state.webs ?? [], offset, limit), irrigation: page(state.irrigation ?? [], offset, limit), eggs: page(state.eggs ?? [], offset, limit) };
   }
   const common = {
+    expansion: { ...capacity(state), peakScore: development(state).peakScore, next: development(state).next, tool: 'terrarium_progress' },
+    facilities: state.facilities,
+    residents: { plants: state.plants.length, animals: water ? state.fish.length : state.bugs.length, ...(water ? {} : { seeds: state.seeds.length }), shownPerGroup: 12, section: 'residents' },
     phase: currentPhase, updatedAtMs: state.updatedAtMs, score: score(state),
     collection: { count: state.collection?.length ?? 0, tool: 'terrarium_collection' },
     history: { samples: state.history.length, tool: water ? 'terrarium_water_history' : 'terrarium_history' },
@@ -56,15 +61,15 @@ export function inspectState(state: State, nowMs: number, timezone: string, sect
     returnReport: report ? { elapsedHours: report.elapsedHours, simulatedHours: report.simulatedHours, changed: report.changes.length, warnings: report.warnings.length, section: 'return' } : undefined,
     sections: TERRARIUM_INSPECT_SECTIONS.slice(1),
   };
-  if (water) return { ...common, oxygen: state.oxygen, cleanliness: state.cleanliness, plants: state.plants.map(({ id, species, x, y, health, stage }) => ({ id, species, x, y, health, stage })), fish: state.fish.map(({ id, species, x, y, health, energy, ageHours }) => ({ id, species, x, y, health, energy, ageHours })), food: { piles: state.food.length, portions: state.food.reduce((n, f) => n + f.portions, 0) } };
+  if (water) return { ...common, oxygen: state.oxygen, cleanliness: state.cleanliness, plants: state.plants.slice(0, 12).map(({ id, species, x, y, health, stage }) => ({ id, species, x, y, health, stage })), fish: state.fish.slice(0, 12).map(({ id, species, x, y, health, energy, ageHours }) => ({ id, species, x, y, health, energy, ageHours })), food: { piles: state.food.length, portions: state.food.reduce((n, f) => n + f.portions, 0) } };
   return {
     ...common,
-    plants: state.plants.map(({ id, species, x, y, health, stage, moisture, dry }) => ({ id, species, x, y, health, stage, moisture, dry })),
-    bugs: state.bugs.map(({ id, species, x, y, energy, hunger, ageHours, role, inside, carrying }) => ({ id, species, x, y, energy, hunger, ageHours, role, inside, carrying })),
-    seeds: state.seeds.map(({ id, species, x, y }) => ({ id, species, x, y })),
+    plants: state.plants.slice(0, 12).map(({ id, species, x, y, health, stage, moisture, dry }) => ({ id, species, x, y, health, stage, moisture, dry })),
+    bugs: state.bugs.slice(0, 12).map(({ id, species, x, y, energy, hunger, ageHours, role, inside, carrying }) => ({ id, species, x, y, energy, hunger, ageHours, role, inside, carrying })),
+    seeds: state.seeds.slice(0, 12).map(({ id, species, x, y }) => ({ id, species, x, y })),
     nests: (state.nests ?? []).map(n => ({ ...n, ants: state.bugs.filter(b => b.inside?.nestId === n.id).length, eggs: (state.eggs ?? []).filter(e => e.inside?.nestId === n.id).length })),
     eggs: { count: state.eggs?.length ?? 0, nextHatchAtMs: state.eggs?.length ? Math.min(...state.eggs.map(e => e.hatchesAtMs)) : undefined },
-    soil: { moistureRows: Array.from({ length: 5 }, (_, y) => state.soil.slice(y * 5, y * 5 + 5).map(c => c.moisture)), protectedCells: state.soil.filter(c => c.allowAntForaging === false).map(({ x, y }) => [x, y]) },
+    soil: { moistureRows: Array.from({ length: capacity(state).size }, (_, y) => state.soil.slice(y * capacity(state).size, (y + 1) * capacity(state).size).map(c => c.moisture)), protectedCells: state.soil.filter(c => c.allowAntForaging === false).map(({ x, y }) => [x, y]) },
     food: { piles: state.food?.length ?? 0, portions: (state.food ?? []).reduce((n, f) => n + f.portions, 0) },
     webs: { count: state.webs?.length ?? 0 }, irrigation: { schedules: state.irrigation?.length ?? 0 },
   };

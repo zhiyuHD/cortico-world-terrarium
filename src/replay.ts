@@ -1,8 +1,9 @@
+import type { DevelopmentState } from './progression.ts';
 import type { TerrariumState } from './state.ts';
 
 export const TERRARIUM_MAX_REPLAYS = 16;
 export const TERRARIUM_REPLAY_RETENTION_MS = 7 * 24 * 60 * 60_000;
-export interface ReplayFrame {
+export interface ReplayFrame extends DevelopmentState {
   phase: 'day' | 'night';
   soil: TerrariumState['soil'];
   plants: TerrariumState['plants'];
@@ -24,5 +25,5 @@ export interface HuntReplay {
 }
 
 export function captureFrame(state: TerrariumState, phase: ReplayFrame['phase']): ReplayFrame {
-  return structuredClone({ phase, soil: state.soil, plants: state.plants, seeds: state.seeds, bugs: state.bugs, items: state.items, eggs: state.eggs, nests: state.nests, food: state.food, webs: state.webs });
+  return structuredClone({ progression: state.progression, facilities: state.facilities, phase, soil: state.soil, plants: state.plants, seeds: state.seeds, bugs: state.bugs, items: state.items, eggs: state.eggs, nests: state.nests, food: state.food, webs: state.webs });
 }

@@ -1,7 +1,7 @@
 import { TERRARIUM_MAX_CATCHUP_MS, type TerrariumState } from './state.ts';
 import type { AquariumState } from './aquarium.ts';
 import { TERRARIUM_PLANT_REQUIREMENTS } from './habitat.ts';
-import { score } from './scoring.ts';
+import { score, TERRARIUM_SCORE_VERSION } from './scoring.ts';
 
 type State = TerrariumState | AquariumState;
 export function captureConditions(state: State) {
@@ -47,7 +47,7 @@ export function createReturnReport(before: ReturnType<typeof captureConditions>,
 export type ReturnReport = ReturnType<typeof createReturnReport>;
 
 export function recentScores(state: State, nowMs: number) {
-  const samples = state.history.filter(h => h.recordedAtMs >= nowMs - 24 * 3_600_000 && h.recordedAtMs <= nowMs).map(h => ({ recordedAtMs: h.recordedAtMs, score: h.score ?? null }));
+  const samples = state.history.filter(h => h.recordedAtMs >= nowMs - 24 * 3_600_000 && h.recordedAtMs <= nowMs).map(h => ({ recordedAtMs: h.recordedAtMs, score: h.scoreVersion === TERRARIUM_SCORE_VERSION ? h.score ?? null : null }));
   const latest = { recordedAtMs: state.updatedAtMs, score: score(state) };
   if (samples.at(-1)?.recordedAtMs === latest.recordedAtMs) samples[samples.length - 1] = latest;
   else samples.push(latest);

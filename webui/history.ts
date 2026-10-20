@@ -15,7 +15,7 @@ export function drawScoreHistory(samples: { recordedAtMs: number; score: number 
     add('text', { x: '36', y, 'text-anchor': 'end', fill: 'currentColor', 'font-size': '12' }, value.toFixed(0));
   }
   for (const d of historyPaths(samples.map(s => ({ recordedAtMs: s.recordedAtMs, value: s.score })), maximum)) add('path', { d, fill: 'none', stroke: '#398db0', 'stroke-width': '2.5' });
-  if (samples.filter(s => s.score !== null).length < 2) add('text', { x: '400', y: '90', 'text-anchor': 'middle', fill: 'currentColor' }, zh ? '等待新的小时样本；旧记录未保存分数的部分留空。' : 'Waiting for hourly samples; older unrecorded scores remain blank.');
+  if (samples.filter(s => s.score !== null).length < 2) add('text', { x: '400', y: '90', 'text-anchor': 'middle', fill: 'currentColor' }, zh ? '等待新的小时样本；旧记录或旧公式分数留空。' : 'Waiting for hourly samples; older or previous-formula scores remain blank.');
   for (const [sample, x, anchor] of [[samples[0], '44', 'start'], [samples.at(-1), '740', 'end']] as const) if (sample) add('text', { x, y: '190', 'text-anchor': anchor, fill: 'currentColor', 'font-size': '12' }, new Date(sample.recordedAtMs).toLocaleString(language));
   el.append(title, svg); return el;
 }
@@ -40,7 +40,7 @@ export function historyPaths(points: HistoryPoint[], maxValue: number): string[]
   return paths;
 }
 
-export function drawHistory(history: HistorySample[], selected: string, labels: { moisture: string; health: string; stage: string; empty: string }, language: string): SVGSVGElement {
+export function drawHistory(history: HistorySample[], selected: string, labels: { moisture: string; health: string; stage: string; empty: string }, language: string, gridSize = 5): SVGSVGElement {
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('viewBox', '0 0 800 232');
@@ -69,7 +69,7 @@ export function drawHistory(history: HistorySample[], selected: string, labels: 
   for (const [i, line] of series.entries()) {
     const points = history.map(sample => {
       const plant = sample.plants.find(plant => plant.id === selected);
-      const value = soil ? sample.soilMoisture[Number(selected.slice(5))] : plant?.[line.field as 'moisture' | 'health' | 'stage'];
+      const value = soil ? (Math.floor(Number(selected.slice(5)) / gridSize) < (sample.gridSize ?? 5) && Number(selected.slice(5)) % gridSize < (sample.gridSize ?? 5) ? sample.soilMoisture[Math.floor(Number(selected.slice(5)) / gridSize) * (sample.gridSize ?? 5) + Number(selected.slice(5)) % gridSize] : null) : plant?.[line.field as 'moisture' | 'health' | 'stage'];
       return { recordedAtMs: sample.recordedAtMs, value: value ?? null };
     });
     for (const d of historyPaths(points, line.max)) add('path', { d, fill: 'none', stroke: line.color, 'stroke-width': '2.5' });
