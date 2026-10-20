@@ -2,6 +2,20 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.8.7 · 新邻初见（第一阶段）
+
+- Add land moisture/light matrices, non-mutating watering previews and consecutive out-of-range moisture samples.
+
+- Add sunflower and mint with distinct silhouettes, buds, flowers and sunflower seed heads.
+- Drop three sunflower seed portions after 30 suitable daylight growth hours and every 12 thereafter; persist rounds and enforce food limits across saves and collection.
+- Add ladybugs with three-cell aphid detection, hunting replays, paired eggs and hatching.
+- Make aphids feed according to energy and hunger; report host plants, infestation counts and care advice. Healthy mature mint shelters aphids from distant spiders.
+- Expand crowded ant nests from 4×4 to 8×8, add shared entrances only on empty soil, and expose a fill-hole tool and panel action that evacuate residents when closing the last entrance.
+- Spread overlapping ants without deleting them; keep one ant per surface or interior cell across loading, movement and hatching.
+- Increase insect clutches to three eggs, lower breeding maturity/intervals and shorten incubation to one hour, including existing eggs on their first simulation.
+- Visualize plant health with yellowing, brown patches and wilting; retain actual ant feeding holes across saves, collection and replays, with gradual regrowth under suitable conditions. Apply health colors to aquatic plants too.
+- Preserve old land saves, collections, reporting credentials and existing species score weights.
+
 ## 0.8.6 · 闲看生机
 
 - Public service: display a bold theme wordmark with leaves, water ripples and a fish integrated into letter strokes, adapting to dark mode, mobile screens and reduced motion. Deployed separately from the npm package.

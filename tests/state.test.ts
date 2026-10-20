@@ -251,11 +251,11 @@ it('lays eggs, reserves capacity, hatches juveniles and round trips older and ex
   for (let i = 0; i < 2; i++) { const bug = releaseBug(state, 'beetle', 4, 4); bug.ageHours = 23; bug.energy = 100; }
   const events = advance(state, start + hour, 'Asia/Shanghai');
   expect(events.filter(event => event.kind === 'egg')).toHaveLength(1);
-  expect(state.eggs).toHaveLength(2); expect(state.bugs).toHaveLength(2);
-  expect(state.eggs!.every(egg => egg.hatchesAtMs === start + 5 * hour)).toBe(true);
+  expect(state.eggs).toHaveLength(3); expect(state.bugs).toHaveLength(2);
+  expect(state.eggs!.every(egg => egg.hatchesAtMs === start + 2 * hour)).toBe(true);
   expect(migrateState(JSON.parse(JSON.stringify(state)))).toEqual(state);
-  expect(advance(state, start + 5 * hour - 1, 'Asia/Shanghai').some(event => event.kind === 'birth')).toBe(false);
-  expect(advance(state, start + 5 * hour, 'Asia/Shanghai').filter(event => event.kind === 'birth')).toHaveLength(2);
+  expect(advance(state, start + 2 * hour - 1, 'Asia/Shanghai').some(event => event.kind === 'birth')).toBe(false);
+  expect(advance(state, start + 2 * hour, 'Asia/Shanghai').filter(event => event.kind === 'birth')).toHaveLength(3);
   expect(state.bugs.slice(2).every(bug => bug.ageHours === 0 && bug.energy === 45)).toBe(true);
   expect(state.eggs).toEqual([]); expect(validState(state)).toBe(true);
   const old = newState(start); expect(migrateState(JSON.parse(JSON.stringify(old)))).toEqual(old);
@@ -306,7 +306,7 @@ it('lets ants harvest plants and validates eggs, carrying, nests and food at the
   const { TERRARIUM_ANT_ACTION_INTERVAL_MS, dropLandFood, validState } = await import('../src/state.ts');
   const start = Date.parse('2026-06-01T00:00:00Z'), state = newState(start);
   const ant = releaseBug(state, 'ant', 0, 0); ant.energy = 90;
-  const queen = releaseBug(state, 'ant', 0, 0); queen.role = 'queen'; ant.role = 'worker';
+  const queen = releaseBug(state, 'ant', 1, 0); queen.role = 'queen'; ant.role = 'worker';
   const health = state.plants[0].health;
   advance(state, start + 40 * TERRARIUM_ANT_ACTION_INTERVAL_MS, 'Asia/Shanghai');
   expect(state.plants[0].health).toBeLessThan(health); expect(state.nests![0].food).toBeGreaterThan(0);
@@ -323,17 +323,17 @@ it('lets ants harvest plants and validates eggs, carrying, nests and food at the
   advance(solitary, start + 48 * 3600000, 'Asia/Shanghai'); expect(solitary.food).toEqual([]);
 });
 
-it('incubates ant eggs for six hours without accelerating other bugs', async () => {
+it('incubates ant eggs for one hour within the shared population limit', async () => {
   const { TERRARIUM_ANT_ACTION_INTERVAL_MS, validState } = await import('../src/state.ts');
   const start = Date.parse('2026-06-01T00:00:00Z'), hour = 3600000, state = newState(start);
-  for (let i = 0; i < 2; i++) { const ant = releaseBug(state, 'ant', 0, 0); ant.ageHours = 23; ant.energy = 100; }
+  for (let i = 0; i < 2; i++) { const ant = releaseBug(state, 'ant', i, 0); ant.ageHours = 23; ant.energy = 100; }
   state.nests = [{ id: 'nest-3', x: 0, y: 0, depth: 5, food: 100 }]; state.nextId = 4;
   const changes = advance(state, start + hour, 'Asia/Shanghai');
   expect(changes.some(change => change.kind === 'egg')).toBe(true);
-  expect(state.eggs).toHaveLength(2); expect(state.eggs![0].hatchesAtMs).toBe(start + 7 * hour);
-  advance(state, start + 7 * hour - TERRARIUM_ANT_ACTION_INTERVAL_MS, 'Asia/Shanghai'); expect(state.bugs).toHaveLength(2);
-  const hatched = advance(state, start + 7 * hour, 'Asia/Shanghai');
-  expect(hatched.filter(change => change.kind === 'birth')).toHaveLength(2); expect(state.bugs).toHaveLength(4);
+  expect(state.eggs).toHaveLength(3); expect(state.eggs![0].hatchesAtMs).toBe(start + 2 * hour);
+  advance(state, start + 2 * hour - TERRARIUM_ANT_ACTION_INTERVAL_MS, 'Asia/Shanghai'); expect(state.bugs).toHaveLength(2);
+  const hatched = advance(state, start + 2 * hour, 'Asia/Shanghai');
+  expect(hatched.filter(change => change.kind === 'birth')).toHaveLength(3); expect(state.bugs).toHaveLength(5);
   expect(validState(state)).toBe(true);
 });
 
@@ -433,7 +433,7 @@ it('warns for pest damage after bug actions and emits death instead of a critica
   releaseBug(state, 'aphid', plant.x, plant.y);
   expect(advance(state, start + TERRARIUM_BUG_ACTION_INTERVAL_MS, 'UTC').filter(c => c.kind === 'health')).toHaveLength(1);
   expect(plant.health).toBeLessThan(TERRARIUM_PLANT_LOW_HEALTH);
-  delete plant.healthWarning; plant.health = 1;
+  delete plant.healthWarning; plant.health = 1; state.bugs[0].hunger = 30;
   const changes = advance(state, state.updatedAtMs + TERRARIUM_BUG_ACTION_INTERVAL_MS, 'UTC');
   expect(changes.filter(c => c.kind === 'health')).toHaveLength(0);
   expect(changes.some(c => c.kind === 'death' && c.text.includes(plant.id))).toBe(true);
@@ -471,11 +471,12 @@ it.each([{ moisture: 0, cause: '水分过低' }, { moisture: 100, cause: '水分
 
 it('reports pest losses without blaming suitable soil and merges crossed health thresholds', () => {
   const state = newState(0), plant = state.plants[0];
+  plant.health = 77;
   releaseBug(state, 'aphid', plant.x, plant.y);
   const warnings = advance(state, 17 * TERRARIUM_BUG_ACTION_INTERVAL_MS, 'UTC').filter(change => change.kind === 'health');
   expect(warnings).toHaveLength(1);
-  expect(warnings[0].text).toContain('100.0 → 49.0');
-  expect(warnings[0].text).toContain('蚜虫取食 -51.00');
+  expect(warnings[0].text).toContain('77.0 → 74.0');
+  expect(warnings[0].text).toContain('蚜虫取食 -3.00');
   expect(warnings[0].text).not.toContain('水分过');
 });
 
@@ -488,7 +489,7 @@ it('includes all actual loss causes in critical and death events', () => {
   expect(critical?.text).toContain('濒危');
   expect(critical?.text).toContain('水分过高');
   expect(critical?.text).toContain('蚜虫取食');
-  plant.health = 1;
+  plant.health = 1; state.bugs[0].hunger = 30;
   const death = advance(state, 2 * TERRARIUM_BUG_ACTION_INTERVAL_MS, 'UTC').find(change => change.kind === 'death');
   expect(death?.text).toContain('蚜虫取食');
 });

@@ -58,9 +58,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/constants.js
+// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/constants.js
 var require_constants = __commonJS({
-  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/constants.js"(exports, module) {
+  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/constants.js"(exports, module) {
     "use strict";
     var BINARY_TYPES = ["nodebuffer", "arraybuffer", "fragments"];
     var hasBlob = typeof Blob !== "undefined";
@@ -81,9 +81,9 @@ var require_constants = __commonJS({
   }
 });
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/buffer-util.js
+// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/buffer-util.js
 var require_buffer_util = __commonJS({
-  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/buffer-util.js"(exports, module) {
+  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/buffer-util.js"(exports, module) {
     "use strict";
     var { EMPTY_BUFFER } = require_constants();
     var FastBuffer = Buffer[Symbol.species];
@@ -156,9 +156,9 @@ var require_buffer_util = __commonJS({
   }
 });
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/limiter.js
+// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/limiter.js
 var require_limiter = __commonJS({
-  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/limiter.js"(exports, module) {
+  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/limiter.js"(exports, module) {
     "use strict";
     var kDone = /* @__PURE__ */ Symbol("kDone");
     var kRun = /* @__PURE__ */ Symbol("kRun");
@@ -206,9 +206,9 @@ var require_limiter = __commonJS({
   }
 });
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/permessage-deflate.js
+// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/permessage-deflate.js
 var require_permessage_deflate = __commonJS({
-  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/permessage-deflate.js"(exports, module) {
+  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/permessage-deflate.js"(exports, module) {
     "use strict";
     var zlib = __require("zlib");
     var bufferUtil = require_buffer_util();
@@ -589,9 +589,9 @@ var require_permessage_deflate = __commonJS({
   }
 });
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/validation.js
+// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/validation.js
 var require_validation = __commonJS({
-  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/validation.js"(exports, module) {
+  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/validation.js"(exports, module) {
     "use strict";
     var { isUtf8 } = __require("buffer");
     var { hasBlob } = require_constants();
@@ -790,9 +790,9 @@ var require_validation = __commonJS({
   }
 });
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/receiver.js
+// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/receiver.js
 var require_receiver = __commonJS({
-  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/receiver.js"(exports, module) {
+  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/receiver.js"(exports, module) {
     "use strict";
     var { Writable } = __require("stream");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -1413,9 +1413,9 @@ var require_receiver = __commonJS({
   }
 });
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/sender.js
+// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/sender.js
 var require_sender = __commonJS({
-  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/sender.js"(exports, module) {
+  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/sender.js"(exports, module) {
     "use strict";
     var { Duplex } = __require("stream");
     var { randomFillSync } = __require("crypto");
@@ -1906,9 +1906,9 @@ var require_sender = __commonJS({
   }
 });
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/event-target.js
+// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/event-target.js
 var require_event_target = __commonJS({
-  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/event-target.js"(exports, module) {
+  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/event-target.js"(exports, module) {
     "use strict";
     var { kForOnEventAttribute, kListener } = require_constants();
     var kCode = /* @__PURE__ */ Symbol("kCode");
@@ -2135,9 +2135,9 @@ var require_event_target = __commonJS({
   }
 });
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/extension.js
+// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/extension.js
 var require_extension = __commonJS({
-  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/extension.js"(exports, module) {
+  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/extension.js"(exports, module) {
     "use strict";
     var { tokenChars } = require_validation();
     function push(dest, name, elem) {
@@ -2288,9 +2288,9 @@ var require_extension = __commonJS({
   }
 });
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/websocket.js
+// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/websocket.js
 var require_websocket = __commonJS({
-  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/websocket.js"(exports, module) {
+  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/websocket.js"(exports, module) {
     "use strict";
     var EventEmitter = __require("events");
     var https = __require("https");
@@ -3197,9 +3197,9 @@ var require_websocket = __commonJS({
   }
 });
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/stream.js
+// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/stream.js
 var require_stream = __commonJS({
-  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/stream.js"(exports, module) {
+  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/stream.js"(exports, module) {
     "use strict";
     var WebSocket2 = require_websocket();
     var { Duplex } = __require("stream");
@@ -3295,9 +3295,9 @@ var require_stream = __commonJS({
   }
 });
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/subprotocol.js
+// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/subprotocol.js
 var require_subprotocol = __commonJS({
-  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/subprotocol.js"(exports, module) {
+  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/subprotocol.js"(exports, module) {
     "use strict";
     var { tokenChars } = require_validation();
     function parse(header) {
@@ -3340,9 +3340,9 @@ var require_subprotocol = __commonJS({
   }
 });
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/websocket-server.js
+// node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/websocket-server.js
 var require_websocket_server = __commonJS({
-  "../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/websocket-server.js"(exports, module) {
+  "node_modules/.pnpm/ws@8.22.0/node_modules/ws/lib/websocket-server.js"(exports, module) {
     "use strict";
     var EventEmitter = __require("events");
     var http = __require("http");
@@ -3927,7 +3927,7 @@ var FeedbackStore = class {
 // package.json
 var package_default = {
   name: "cortico-world-terrarium",
-  version: "0.8.6",
+  version: "0.8.7",
   type: "module",
   description: "Claimable land and water ecosystems with plants, bugs, fish and a public leaderboard",
   license: "MIT",
@@ -3960,8 +3960,8 @@ var package_default = {
       "game"
     ],
     describe: "describe.json",
-    webUiClient: "dist/webui/0.8.6/client.js",
-    webUiStyle: "dist/webui/0.8.6/client.css",
+    webUiClient: "dist/webui/0.8.7/client.js",
+    webUiStyle: "dist/webui/0.8.7/client.css",
     locales: {
       zh: {
         displayName: "\u751F\u6001\u7BB1",
@@ -3995,7 +3995,7 @@ var package_default = {
     test: "vitest run",
     typecheck: "tsc --noEmit",
     "typecheck:webui": "tsc --noEmit -p tsconfig.web.json",
-    "build:webui": "esbuild webui/client.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/webui/0.8.6/client.js",
+    "build:webui": "esbuild webui/client.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/webui/0.8.7/client.js",
     "build:server": "tsx server/build.ts",
     "build:admin": "esbuild server/admin.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/admin.mjs"
   },
@@ -4011,7 +4011,7 @@ var package_default = {
   author: "zhiyuxl",
   dependencies: {
     ws: "^8.22.0",
-    "terrarium-renderer": "^0.1.0"
+    "terrarium-renderer": "^0.1.1"
   }
 };
 
@@ -4340,7 +4340,7 @@ import { readFile as readFile6, mkdir as mkdir5, rename as rename5, writeFile as
 import { dirname as dirname5 } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/ws@8.22.0/node_modules/ws/wrapper.mjs
+// node_modules/.pnpm/ws@8.22.0/node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
 var import_extension = __toESM(require_extension(), 1);
 var import_permessage_deflate = __toESM(require_permessage_deflate(), 1);
@@ -4438,9 +4438,15 @@ var TERRARIUM_PLANT_REQUIREMENTS = {
   clover: { minMoisture: 20, maxMoisture: 80, minLight: 0.45, maxLight: 1 },
   moss: { minMoisture: 45, maxMoisture: 90, minLight: 0.15, maxLight: 0.4 },
   basil: { minMoisture: 30, maxMoisture: 75, minLight: 0.65, maxLight: 1 },
-  bean: { minMoisture: 25, maxMoisture: 70, minLight: 0.7, maxLight: 1 }
+  bean: { minMoisture: 25, maxMoisture: 70, minLight: 0.7, maxLight: 1 },
+  sunflower: { minMoisture: 25, maxMoisture: 70, minLight: 0.75, maxLight: 1 },
+  mint: { minMoisture: 35, maxMoisture: 85, minLight: 0.3, maxLight: 0.85 }
 };
 var TERRARIUM_MAX_HISTORY = 168;
+var TERRARIUM_SUNFLOWER = { seedHours: 30, seedIntervalHours: 12, seedPortions: 3 };
+function sunflowerSeedRounds(growthHours) {
+  return Math.max(0, Math.floor((growthHours - TERRARIUM_SUNFLOWER.seedHours) / TERRARIUM_SUNFLOWER.seedIntervalHours) + 1);
+}
 
 // src/care-alerts.ts
 function validCareAlerts(value) {
@@ -4462,6 +4468,26 @@ function validMeal(value, atMs) {
   if (!value || typeof value !== "object") return false;
   const meal = value;
   return Number.isFinite(meal.atMs) && meal.atMs <= atMs && typeof meal.kind === "string" && meal.kind.length <= 32 && (meal.id === void 0 || typeof meal.id === "string" && meal.id.length <= 32);
+}
+
+// src/colony.ts
+var TERRARIUM_NEST_SIZE = 4;
+var TERRARIUM_NEST_MAX_SIZE = 8;
+var TERRARIUM_NEST_DIG_ACTIONS = 12;
+var nestSize = (nest) => nest.size ?? TERRARIUM_NEST_SIZE;
+var nestEntrances = (nest) => [{ x: nest.x, y: nest.y }, ...nest.entrances ?? []];
+function validColony(state) {
+  const nests = state.nests ?? [];
+  const validResident = (resident) => {
+    if (resident.inside === void 0) return true;
+    const p = resident.inside;
+    const nest = nests.find((nest2) => nest2.id === p?.nestId);
+    return resident.species === "ant" && !!nest && resident.x === nest.x && resident.y === nest.y && Number.isInteger(p.x) && p.x >= 0 && p.x < nestSize(nest) && Number.isInteger(p.y) && p.y >= 0 && p.y < nestSize(nest);
+  };
+  if (!nests.every((n) => (n.size === void 0 || Number.isInteger(n.size) && n.size >= TERRARIUM_NEST_SIZE && n.size <= TERRARIUM_NEST_MAX_SIZE) && (n.digProgress === void 0 || Number.isInteger(n.digProgress) && n.digProgress >= 0 && n.digProgress < TERRARIUM_NEST_DIG_ACTIONS) && (n.entrances === void 0 || Array.isArray(n.entrances) && n.entrances.length <= nestSize(n) - 4 && n.entrances.every((p) => p && inHabitat(state, p.x, p.y))))) return false;
+  const entrances = nests.flatMap(nestEntrances);
+  if (new Set(entrances.map((p) => `${p.x},${p.y}`)).size !== entrances.length) return false;
+  return state.bugs.every((bug) => (bug.role === void 0 || bug.species === "ant" && ["queen", "worker"].includes(bug.role)) && validResident(bug)) && state.bugs.filter((bug) => bug.role === "queen").length <= 1 && (state.eggs ?? []).every(validResident);
 }
 
 // src/replay.ts
@@ -4554,19 +4580,6 @@ function isFlying(species) {
   return TERRARIUM_FLY_SPECIES.includes(species);
 }
 
-// src/colony.ts
-var TERRARIUM_NEST_SIZE = 4;
-function validColony(state) {
-  const nests = state.nests ?? [];
-  const validResident = (resident) => {
-    if (resident.inside === void 0) return true;
-    const p = resident.inside;
-    const nest = nests.find((nest2) => nest2.id === p?.nestId);
-    return resident.species === "ant" && !!nest && resident.x === nest.x && resident.y === nest.y && Number.isInteger(p.x) && p.x >= 0 && p.x < TERRARIUM_NEST_SIZE && Number.isInteger(p.y) && p.y >= 0 && p.y < TERRARIUM_NEST_SIZE;
-  };
-  return state.bugs.every((bug) => (bug.role === void 0 || bug.species === "ant" && ["queen", "worker"].includes(bug.role)) && validResident(bug)) && state.bugs.filter((bug) => bug.role === "queen").length <= 1 && (state.eggs ?? []).every(validResident);
-}
-
 // src/state.ts
 var TERRARIUM_MAX_NAME_LENGTH = 64;
 function validName(value) {
@@ -4629,7 +4642,7 @@ function initializeHabitat(state) {
 }
 function validHabitat(state) {
   const percent2 = (value) => Number.isFinite(value) && value >= 0 && value <= 100;
-  return Array.isArray(state.soil) && state.soil.length === capacity(state).size ** 2 && state.soil.every((cell, i) => cell && cell.x === i % capacity(state).size && cell.y === Math.floor(i / capacity(state).size) && percent2(cell.moisture) && (cell.allowAntForaging === void 0 || typeof cell.allowAntForaging === "boolean")) && Array.isArray(state.history) && state.history.length <= TERRARIUM_MAX_HISTORY && state.history.every((sample, i) => sample && Number.isFinite(sample.recordedAtMs) && (sample.scoreVersion === void 0 || sample.scoreVersion === 1 || sample.scoreVersion === TERRARIUM_SCORE_VERSION) && (sample.score === void 0 || Number.isSafeInteger(sample.score) && sample.score >= 0) && sample.recordedAtMs <= state.updatedAtMs && (i === 0 || sample.recordedAtMs > state.history[i - 1].recordedAtMs) && Array.isArray(sample.soilMoisture) && [5, 6, 7, 8].includes(sample.gridSize ?? 5) && (sample.gridSize ?? 5) <= capacity(state).size && sample.soilMoisture.length === (sample.gridSize ?? 5) ** 2 && sample.soilMoisture.every(percent2) && Array.isArray(sample.plants) && sample.plants.length <= (TERRARIUM_LEVELS.find((l) => l.size === (sample.gridSize ?? 5))?.organisms ?? 12) && sample.plants.every((p) => p && typeof p.id === "string" && p.id.length <= 32 && Object.hasOwn(TERRARIUM_PLANT_REQUIREMENTS, p.species) && percent2(p.moisture) && percent2(p.health) && Number.isInteger(p.stage) && p.stage >= 0 && p.stage <= 3 && Number.isFinite(p.growthHours) && p.growthHours >= 0));
+  return Array.isArray(state.soil) && state.soil.length === capacity(state).size ** 2 && state.soil.every((cell, i) => cell && cell.x === i % capacity(state).size && cell.y === Math.floor(i / capacity(state).size) && percent2(cell.moisture) && (cell.allowAntForaging === void 0 || typeof cell.allowAntForaging === "boolean") && (cell.antBackfilled === void 0 || typeof cell.antBackfilled === "boolean")) && Array.isArray(state.history) && state.history.length <= TERRARIUM_MAX_HISTORY && state.history.every((sample, i) => sample && Number.isFinite(sample.recordedAtMs) && (sample.scoreVersion === void 0 || sample.scoreVersion === 1 || sample.scoreVersion === TERRARIUM_SCORE_VERSION) && (sample.score === void 0 || Number.isSafeInteger(sample.score) && sample.score >= 0) && sample.recordedAtMs <= state.updatedAtMs && (i === 0 || sample.recordedAtMs > state.history[i - 1].recordedAtMs) && Array.isArray(sample.soilMoisture) && [5, 6, 7, 8].includes(sample.gridSize ?? 5) && (sample.gridSize ?? 5) <= capacity(state).size && sample.soilMoisture.length === (sample.gridSize ?? 5) ** 2 && sample.soilMoisture.every(percent2) && Array.isArray(sample.plants) && sample.plants.length <= (TERRARIUM_LEVELS.find((l) => l.size === (sample.gridSize ?? 5))?.organisms ?? 12) && sample.plants.every((p) => p && typeof p.id === "string" && p.id.length <= 32 && Object.hasOwn(TERRARIUM_PLANT_REQUIREMENTS, p.species) && percent2(p.moisture) && percent2(p.health) && Number.isInteger(p.stage) && p.stage >= 0 && p.stage <= 3 && Number.isFinite(p.growthHours) && p.growthHours >= 0));
 }
 function validReplays(state) {
   return state.replays === void 0 || Array.isArray(state.replays) && state.replays.length <= TERRARIUM_MAX_REPLAYS && state.replays.every((replay, i) => {
@@ -4638,14 +4651,14 @@ function validReplays(state) {
     const [before, contact, after] = replay.frames;
     const hunter = contact.bugs.find((bug) => bug.id === replay.hunterId);
     const prey = contact.bugs.find((bug) => bug.id === replay.preyId);
-    return !!hunter && !!prey && hunter.x === prey.x && hunter.y === prey.y && (hunter.species === "spider" ? prey.species !== "spider" : hunter.species === "beetle" && prey.species === "aphid") && before.bugs.some((bug) => bug.id === hunter.id) && before.bugs.some((bug) => bug.id === prey.id) && after.bugs.some((bug) => bug.id === hunter.id) && !after.bugs.some((bug) => bug.id === prey.id);
+    return !!hunter && !!prey && hunter.x === prey.x && hunter.y === prey.y && (hunter.species === "spider" ? prey.species !== "spider" : ["beetle", "ladybug"].includes(hunter.species) && prey.species === "aphid") && before.bugs.some((bug) => bug.id === hunter.id) && before.bugs.some((bug) => bug.id === prey.id) && after.bugs.some((bug) => bug.id === hunter.id) && !after.bugs.some((bug) => bug.id === prey.id);
   }) && new Set(state.replays.map((replay) => replay.id)).size === state.replays.length;
 }
 function validState(value) {
   if (!value || typeof value !== "object") return false;
   const state = value;
   if (!validDevelopment(state, "land") || !validCareAlerts(state.careAlerts) || !validDeaths(state.deaths, state.updatedAtMs, capacity(state).size) || !validCollection(state.collection, "land", capacity(state).collection) || state.irrigation !== void 0 && (!Array.isArray(state.irrigation) || state.irrigation.length > capacity(state).size ** 2 || new Set(state.irrigation.map((c) => `${c?.x},${c?.y}`)).size !== state.irrigation.length || !state.irrigation.every((c) => c && inHabitat(state, c.x, c.y) && Number.isFinite(c.targetMoisture) && c.targetMoisture >= 0 && c.targetMoisture <= 100 && Number.isFinite(c.intervalMinutes) && c.intervalMinutes >= 1 && c.intervalMinutes <= 1440 && Number.isFinite(c.lastWateredAtMs)))) return false;
-  return state.version === 3 && (state.name === void 0 || validName(state.name)) && validHabitat(state) && validReplays(state) && Number.isFinite(state.updatedAtMs) && Number.isSafeInteger(state.nextId) && state.nextId >= 1 && Array.isArray(state.plants) && state.plants.length <= capacity(state).organisms && state.plants.every((p) => p && typeof p.id === "string" && p.id.length <= 32 && ["fern", "clover", "moss", "basil", "bean"].includes(p.species) && inHabitat(state, p.x, p.y) && Number.isFinite(p.moisture) && p.moisture >= 0 && p.moisture <= 100 && Number.isFinite(p.growthHours) && p.growthHours >= 0 && Number.isInteger(p.stage) && p.stage >= 0 && p.stage <= 3 && typeof p.dry === "boolean" && Number.isFinite(p.health) && p.health >= 0 && p.health <= 100 && (p.healthWarning === void 0 || typeof p.healthWarning === "boolean")) && Array.isArray(state.seeds) && state.seeds.length <= capacity(state).organisms && state.plants.length + state.seeds.length <= capacity(state).organisms && state.seeds.every((s) => s && typeof s.id === "string" && Object.hasOwn(TERRARIUM_PLANT_REQUIREMENTS, s.species) && inHabitat(state, s.x, s.y) && Number.isFinite(s.ageHours) && s.ageHours >= 0) && Array.isArray(state.bugs) && state.bugs.length <= capacity(state).organisms && state.bugs.every((b) => b && typeof b.id === "string" && (["aphid", "beetle", "spider", "ant"].includes(b.species) || isFlying(b.species)) && inHabitat(state, b.x, b.y) && Number.isFinite(b.energy) && b.energy >= 0 && b.energy <= 100 && validMeal(b.lastMeal, state.updatedAtMs) && (b.hunger === void 0 || Number.isFinite(b.hunger) && b.hunger >= 0 && b.hunger <= 100) && (b.carrying === void 0 || b.species === "ant" && Number.isInteger(b.carrying) && b.carrying >= 0 && b.carrying <= 5) && Number.isFinite(b.ageHours) && b.ageHours >= 0) && (state.eggs === void 0 || Array.isArray(state.eggs) && state.eggs.length <= capacity(state).organisms && state.eggs.every((egg) => egg && typeof egg.id === "string" && egg.id.length <= 32 && (["beetle", "spider", "ant"].includes(egg.species) || isFlying(egg.species)) && inHabitat(state, egg.x, egg.y) && Number.isFinite(egg.laidAtMs) && egg.laidAtMs <= state.updatedAtMs && Number.isFinite(egg.hatchesAtMs) && egg.hatchesAtMs > egg.laidAtMs && egg.hatchesAtMs <= egg.laidAtMs + 6 * HOUR_MS2)) && state.bugs.length + (state.eggs?.length ?? 0) <= capacity(state).organisms && (state.nests === void 0 || Array.isArray(state.nests) && state.nests.length <= 5 && state.nests.every((nest) => nest && typeof nest.id === "string" && nest.id.length <= 32 && inHabitat(state, nest.x, nest.y) && Number.isInteger(nest.depth) && nest.depth >= 1 && nest.depth <= 5 && Number.isInteger(nest.food) && nest.food >= 0 && nest.food <= nest.depth * 20) && new Set(state.nests.map((nest) => `${nest.x},${nest.y}`)).size === state.nests.length) && (state.food === void 0 || Array.isArray(state.food) && state.food.length <= 20 && state.food.every((food) => food && typeof food.id === "string" && food.id.length <= 32 && inHabitat(state, food.x, food.y) && Number.isInteger(food.portions) && food.portions >= 1 && food.portions <= 10 && Number.isFinite(food.droppedAtMs) && food.droppedAtMs <= state.updatedAtMs)) && (state.webs === void 0 || Array.isArray(state.webs) && state.webs.length <= capacity(state).organisms * TERRARIUM_WEBS_PER_SPIDER && state.webs.every((web) => web && typeof web.id === "string" && web.id.length <= 32 && typeof web.spiderId === "string" && inHabitat(state, web.x, web.y) && Number.isFinite(web.createdAtMs) && web.createdAtMs <= state.updatedAtMs && state.bugs.some((bug) => bug.id === web.spiderId && bug.species === "spider")) && new Set(state.webs.map((web) => `${web.x},${web.y}`)).size === state.webs.length && state.bugs.every((bug) => state.webs.filter((web) => web.spiderId === bug.id).length <= TERRARIUM_WEBS_PER_SPIDER)) && Array.isArray(state.items) && state.items.length === 2 && ["coin", "pebble"].every((id) => state.items.filter((item) => item.id === id && inHabitat(state, item.x, item.y)).length === 1) && !(state.items[0].x === state.items[1].x && state.items[0].y === state.items[1].y) && new Set([...state.plants, ...state.seeds, ...state.bugs, ...state.eggs ?? [], ...state.nests ?? [], ...state.food ?? [], ...state.webs ?? [], ...(state.collection ?? []).map((e) => e.specimen)].map((v) => v.id)).size === (state.collection?.length ?? 0) + state.plants.length + state.seeds.length + state.bugs.length + (state.eggs?.length ?? 0) + (state.nests?.length ?? 0) + (state.food?.length ?? 0) + (state.webs?.length ?? 0) && new Set([...state.plants, ...state.seeds].map((v) => `${v.x},${v.y}`)).size === state.plants.length + state.seeds.length && validColony(state);
+  return state.version === 3 && (state.name === void 0 || validName(state.name)) && validHabitat(state) && validReplays(state) && Number.isFinite(state.updatedAtMs) && Number.isSafeInteger(state.nextId) && state.nextId >= 1 && Array.isArray(state.plants) && state.plants.length <= capacity(state).organisms && state.plants.every((p) => p && typeof p.id === "string" && p.id.length <= 32 && Object.hasOwn(TERRARIUM_PLANT_REQUIREMENTS, p.species) && inHabitat(state, p.x, p.y) && Number.isFinite(p.moisture) && p.moisture >= 0 && p.moisture <= 100 && Number.isFinite(p.growthHours) && p.growthHours >= 0 && Number.isInteger(p.stage) && p.stage >= 0 && p.stage <= 3 && typeof p.dry === "boolean" && Number.isFinite(p.health) && p.health >= 0 && p.health <= 100 && (p.healthWarning === void 0 || typeof p.healthWarning === "boolean") && (p.leafDamage === void 0 || Number.isFinite(p.leafDamage) && p.leafDamage >= 0 && p.leafDamage <= 100) && (p.seedRounds === void 0 || p.species === "sunflower" && Number.isSafeInteger(p.seedRounds) && p.seedRounds >= 0 && p.seedRounds <= sunflowerSeedRounds(p.growthHours))) && Array.isArray(state.seeds) && state.seeds.length <= capacity(state).organisms && state.plants.length + state.seeds.length <= capacity(state).organisms && state.seeds.every((s) => s && typeof s.id === "string" && Object.hasOwn(TERRARIUM_PLANT_REQUIREMENTS, s.species) && inHabitat(state, s.x, s.y) && Number.isFinite(s.ageHours) && s.ageHours >= 0) && Array.isArray(state.bugs) && state.bugs.length <= capacity(state).organisms && state.bugs.every((b) => b && typeof b.id === "string" && (["aphid", "beetle", "ladybug", "spider", "ant"].includes(b.species) || isFlying(b.species)) && inHabitat(state, b.x, b.y) && Number.isFinite(b.energy) && b.energy >= 0 && b.energy <= 100 && validMeal(b.lastMeal, state.updatedAtMs) && (b.hunger === void 0 || Number.isFinite(b.hunger) && b.hunger >= 0 && b.hunger <= 100) && (b.carrying === void 0 || b.species === "ant" && Number.isInteger(b.carrying) && b.carrying >= 0 && b.carrying <= 5) && Number.isFinite(b.ageHours) && b.ageHours >= 0) && (state.eggs === void 0 || Array.isArray(state.eggs) && state.eggs.length <= capacity(state).organisms && state.eggs.every((egg) => egg && typeof egg.id === "string" && egg.id.length <= 32 && (["beetle", "ladybug", "spider", "ant"].includes(egg.species) || isFlying(egg.species)) && inHabitat(state, egg.x, egg.y) && Number.isFinite(egg.laidAtMs) && egg.laidAtMs <= state.updatedAtMs && Number.isFinite(egg.hatchesAtMs) && egg.hatchesAtMs > egg.laidAtMs && egg.hatchesAtMs <= egg.laidAtMs + 6 * HOUR_MS2)) && state.bugs.length + (state.eggs?.length ?? 0) <= capacity(state).organisms && (state.nests === void 0 || Array.isArray(state.nests) && state.nests.length <= 5 && state.nests.every((nest) => nest && typeof nest.id === "string" && nest.id.length <= 32 && inHabitat(state, nest.x, nest.y) && Number.isInteger(nest.depth) && nest.depth >= 1 && nest.depth <= 5 && Number.isInteger(nest.food) && nest.food >= 0 && nest.food <= nest.depth * 20) && new Set(state.nests.map((nest) => `${nest.x},${nest.y}`)).size === state.nests.length) && (state.food === void 0 || Array.isArray(state.food) && state.food.length <= 20 && state.food.every((food) => food && typeof food.id === "string" && food.id.length <= 32 && inHabitat(state, food.x, food.y) && Number.isInteger(food.portions) && food.portions >= 1 && food.portions <= 10 && Number.isFinite(food.droppedAtMs) && food.droppedAtMs <= state.updatedAtMs && (food.kind === void 0 || food.kind === "sunflower_seed"))) && (state.webs === void 0 || Array.isArray(state.webs) && state.webs.length <= capacity(state).organisms * TERRARIUM_WEBS_PER_SPIDER && state.webs.every((web) => web && typeof web.id === "string" && web.id.length <= 32 && typeof web.spiderId === "string" && inHabitat(state, web.x, web.y) && Number.isFinite(web.createdAtMs) && web.createdAtMs <= state.updatedAtMs && state.bugs.some((bug) => bug.id === web.spiderId && bug.species === "spider")) && new Set(state.webs.map((web) => `${web.x},${web.y}`)).size === state.webs.length && state.bugs.every((bug) => state.webs.filter((web) => web.spiderId === bug.id).length <= TERRARIUM_WEBS_PER_SPIDER)) && Array.isArray(state.items) && state.items.length === 2 && ["coin", "pebble"].every((id) => state.items.filter((item) => item.id === id && inHabitat(state, item.x, item.y)).length === 1) && !(state.items[0].x === state.items[1].x && state.items[0].y === state.items[1].y) && new Set([...state.plants, ...state.seeds, ...state.bugs, ...state.eggs ?? [], ...state.nests ?? [], ...state.food ?? [], ...state.webs ?? [], ...(state.collection ?? []).map((e) => e.specimen)].map((v) => v.id)).size === (state.collection?.length ?? 0) + state.plants.length + state.seeds.length + state.bugs.length + (state.eggs?.length ?? 0) + (state.nests?.length ?? 0) + (state.food?.length ?? 0) + (state.webs?.length ?? 0) && new Set([...state.plants, ...state.seeds].map((v) => `${v.x},${v.y}`)).size === state.plants.length + state.seeds.length && validColony(state);
 }
 
 // server/index.ts

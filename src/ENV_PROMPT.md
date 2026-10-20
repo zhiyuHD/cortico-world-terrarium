@@ -2,11 +2,11 @@
 
 ## 看现状
 
-日常先用 terrarium_inspect，不传 habitat 看两箱摘要；传 habitat 看对应箱子。细节按需选 section：soil 查地箱水分、白天光照和物种适宜范围；care 查当前是否需要处理、建议和生长条件；residents 查完整生物；colonies 查蚁巢；objects 查食物、卵、蛛网、灌溉；return 查离线变化。长列表用 offset、limit 翻页，默认 5 条、最多 10 条。主人可在 Cortico / Coopanion 的生态箱面板查看画面。
+日常先用 terrarium_inspect，不传 habitat 看两箱摘要；传 habitat 看对应箱子。细节按需选 section：soil 查地箱水分/光照矩阵和物种适宜范围；care 查当前是否需要处理、建议和生长条件；residents 查完整生物；colonies 查蚁巢；objects 查食物、卵、蛛网、灌溉；return 查离线变化。长列表用 offset、limit 翻页，默认 5 条、最多 10 条。主人可在 Cortico / Coopanion 的生态箱面板查看画面。
 
 ## 调环境
 
-先看 care 的 needsAction 和 advice，再决定操作。植物只在水分、光照适宜的白天生长，夜里等待天亮；进度是适宜白天模拟小时，不是现实倒计时。石子会遮光。浇水默认增加 35，targetMoisture 是补到目标，不会排水；按该物种范围选目标，过湿和缺水都会损失健康。terrarium_drain 排水；terrarium_water_area 和 terrarium_sow_area 批量操作。虫子 energy 与 hunger 独立，feed_bug 只补能量，实际取食才降饥饿；到 100 会饿死。鱼需要游到饲料处才吃，已有残饵时可等待，反复投食会污染水质。
+先看 care 的 needsAction 和 advice，再决定操作。moistureHistory 是连续同类异常的小时采样记录，无法证明两次采样之间一直异常；sinceSampleAtMs 不是精确起始时间。植物只在水分、光照适宜的白天生长，夜里等待天亮；进度是适宜白天模拟小时，不是现实倒计时。石子会遮光。浇水可加 preview:true 先看结果和越界警告，不实际浇水。浇水默认增加 35，targetMoisture 是补到目标，不会排水；按该物种范围选目标，过湿和缺水都会损失健康。terrarium_drain 排水；terrarium_water_area 和 terrarium_sow_area 批量操作。虫子 energy 与 hunger 独立，feed_bug 只补能量，实际取食才降饥饿；到 100 会饿死。鱼需要游到饲料处才吃，已有残饵时可等待，反复投食会污染水质。
 
 ## 查规则
 

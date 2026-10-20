@@ -669,12 +669,12 @@ function pick(language, table) {
   return merged;
 }
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/terrarium-renderer@0.1.0/node_modules/terrarium-renderer/dist/types.js
+// ../../../packages/terrarium-renderer/dist/types.js
 function sceneSize(scene) {
   return scene.gridSize ?? 5;
 }
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/terrarium-renderer@0.1.0/node_modules/terrarium-renderer/dist/geometry.js
+// ../../../packages/terrarium-renderer/dist/geometry.js
 var LAND_SURFACE = { x: 84, y: 204, width: 632, height: 216 };
 var WATER_SURFACE = { x: 90, y: 128, width: 620, height: 286 };
 function cellPosition(surface, x, y, size) {
@@ -687,7 +687,7 @@ function residentScale(size) {
   return 5 / size;
 }
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/terrarium-renderer@0.1.0/node_modules/terrarium-renderer/dist/flowers.js
+// ../../../packages/terrarium-renderer/dist/flowers.js
 function drawPlantFlowers(g, plant, x, y, night) {
   const stage = plant.flower;
   if (!stage)
@@ -773,7 +773,7 @@ function drawPlantFlowers(g, plant, x, y, night) {
   g.restore();
 }
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/terrarium-renderer@0.1.0/node_modules/terrarium-renderer/dist/nest-viewer.js
+// ../../../packages/terrarium-renderer/dist/nest-viewer.js
 var NEST_SIZE = 4;
 var STYLE = `
 .tn-dialog{box-sizing:border-box;width:min(720px,calc(100vw - 24px));max-height:calc(100dvh - 32px);padding:0;border:1px solid #c0ac85;border-radius:24px;background:#f7f1e4;color:#473c2e;box-shadow:0 30px 120px #17170e55;font:14px/1.5 system-ui,sans-serif;overflow:auto}
@@ -1029,7 +1029,7 @@ function createNestViewer(canvas, language = "zh") {
   };
 }
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/terrarium-renderer@0.1.0/node_modules/terrarium-renderer/dist/nest-scene.js
+// ../../../packages/terrarium-renderer/dist/nest-scene.js
 function drawAntNest(g, x, y, night) {
   g.save();
   g.fillStyle = "rgba(35,25,18,.2)";
@@ -1065,7 +1065,7 @@ function drawAntNest(g, x, y, night) {
   g.restore();
 }
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/terrarium-renderer@0.1.0/node_modules/terrarium-renderer/dist/scene.js
+// ../../../packages/terrarium-renderer/dist/scene.js
 function bugPositions(bugs, positions = /* @__PURE__ */ new Map(), size = 5) {
   const groups = /* @__PURE__ */ new Map();
   for (const bug of bugs) {
@@ -1540,7 +1540,7 @@ function createScene(canvas, language = "zh") {
   };
 }
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/terrarium-renderer@0.1.0/node_modules/terrarium-renderer/dist/water-scene.js
+// ../../../packages/terrarium-renderer/dist/water-scene.js
 function createWaterScene(canvas) {
   let state;
   let old = /* @__PURE__ */ new Map();

@@ -86,6 +86,6 @@ it('lets flying bugs drink nectar without damaging flowers and hatch from saved 
   const fly = releaseBug(state, 'moth', flower.x, flower.y); fly.energy = 40; fly.hunger = 50;
   advance(state, end, 'UTC'); expect(fly.energy).toBeGreaterThan(44); expect(fly.hunger).toBeLessThan(36); expect(flower.health).toBe(100);
   const hatching = newState(0); hatching.eggs = [{ id: 'egg', species: 'mosquito', x: 2, y: 2, laidAtMs: 0, hatchesAtMs: 4 * 3600_000 }];
-  advance(hatching, 4 * 3600_000 - 1, 'UTC'); expect(hatching.bugs).toHaveLength(0);
-  advance(hatching, 4 * 3600_000, 'UTC'); expect(hatching.bugs).toHaveLength(1); expect(hatching.bugs[0]).toMatchObject({ species: 'mosquito', ageHours: 0, hunger: 0 }); expect(validState(hatching)).toBe(true);
+  advance(hatching, 3600_000 - 1, 'UTC'); expect(hatching.bugs).toHaveLength(0);
+  advance(hatching, 3600_000, 'UTC'); expect(hatching.bugs).toHaveLength(1); expect(hatching.bugs[0]).toMatchObject({ species: 'mosquito', ageHours: 0, hunger: 0 }); expect(validState(hatching)).toBe(true);
 });

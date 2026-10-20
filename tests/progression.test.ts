@@ -58,7 +58,7 @@ it.each(['land', 'water'] as const)('enforces expanded active and frozen capacit
   s.plants = [];
   for (let i = 0; i < max.organisms; i++) {
     if ('fish' in s) { plantAquatic(s, 'waterweed', i % max.size, Math.floor(i / max.size)); stockFish(s, 'guppy', 7, 7); }
-    else { sow(s, 'bean', i % max.size, Math.floor(i / max.size)); releaseBug(s, 'ant', 7, 7); }
+    else { sow(s, 'bean', i % max.size, Math.floor(i / max.size)); releaseBug(s, 'ant', i % max.size, Math.floor(i / max.size)); }
   }
   expect(() => 'fish' in s ? stockFish(s, 'guppy', 7, 7) : releaseBug(s, 'ant', 7, 7)).toThrow('capacity');
   expect(() => 'fish' in s ? plantAquatic(s, 'algae', 7, 7) : sow(s, 'bean', 7, 7)).toThrow('capacity');
@@ -67,7 +67,7 @@ it.each(['land', 'water'] as const)('enforces expanded active and frozen capacit
     const organism = 'fish' in s ? (s.fish.shift(), stockFish(s, 'guppy', 7, 7)) : (s.bugs.shift(), releaseBug(s, 'ant', 7, 7));
     collect(s, organism.id);
   }
-  const extra = 'fish' in s ? stockFish(s, 'guppy', 7, 7) : releaseBug(s, 'ant', 7, 7);
+  const extra = 'fish' in s ? stockFish(s, 'guppy', 7, 7) : releaseBug(s, 'ant', 6, 7);
   expect(() => collect(s, extra.id)).toThrow('capacity');
   const id = s.collection![0].specimen.id; restoreCollected(s, id, 7, 7);
   const valid = 'fish' in s ? validAquarium : validState; expect(valid(s)).toBe(true);
@@ -127,7 +127,7 @@ it('applies air stone, filtration and daylight-only aquatic growth boost, with d
 });
 it('bounds expanded model summaries while resident pages retain every organism', () => {
   const s = qualify(newState(now)); s.plants = [];
-  for (let i = 0; i < capacity(s).organisms; i++) { sow(s, 'bean', i % 8, Math.floor(i / 8)); releaseBug(s, 'ant', i % 8, 7); }
+  for (let i = 0; i < capacity(s).organisms; i++) { sow(s, 'bean', i % 8, Math.floor(i / 8)); releaseBug(s, 'ant', i % 8, Math.floor(i / 8)); }
   const summary = compactNumbers(inspectState(s, now, 'UTC', 'summary', 0, 5));
   expect(JSON.stringify(summary).length).toBeLessThan(8_000);
   expect(summary).toMatchObject({ residents: { animals: 32, seeds: 32 }, expansion: { size: 8 } });
@@ -196,7 +196,7 @@ it('reaches every land expansion gate through plant growth and non-predatory ani
     for (const bug of state.bugs) if (bug.energy < 70) feedBug(state, bug.id);
     advance(state, end, 'UTC');
     if (!stocked && end - now >= 36 * 3_600_000) {
-      for (const species of ['ant', 'fruit_fly', 'mosquito', 'moth'] as const) for (let i = 0; i < 3; i++) releaseBug(state, species, 4, 2);
+      for (const species of ['ant', 'fruit_fly', 'mosquito', 'moth'] as const) for (let i = 0; i < 3; i++) releaseBug(state, species, species === 'ant' ? i : 4, 2);
       stocked = true;
     }
     const p = observeProgress(state);

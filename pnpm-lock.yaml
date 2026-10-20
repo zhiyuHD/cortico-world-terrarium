@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       terrarium-renderer:
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: ^0.1.1
+        version: 0.1.1
       ws:
         specifier: ^8.22.0
         version: 8.22.0
@@ -39,8 +39,8 @@ importers:
 
 packages:
 
-  terrarium-renderer@0.1.0:
-    resolution: {integrity: sha512-XlE8S2cHFJgXHLfeH1GMDvV9JppZvQgvSLhjLBumrUBhiegUv4kNZc7MzFVTxMjTJVbjUo1ouiSrdymGPYuJ4g==}
+  terrarium-renderer@0.1.1:
+    resolution: {integrity: sha512-1FjoDYDaIpBdpHXCFul0c1SKi+OrB9LcF2IdF72+uYj0KPVTa66iN+zVYBWJNBPGkueVy6xDRR3gCktPX2eETw==}
 
   '@babel/runtime@7.29.10':
     resolution: {integrity: sha512-NpugTzbKgGrNe45Ui32cN8vCFFMxVtP/9rtfwv0nP5FRDAjvYBxJcLVpYA9mr1jxP6cnIT7x9LUzuDTbWYYNRA==}
@@ -1160,7 +1160,7 @@ packages:
 
 snapshots:
 
-  terrarium-renderer@0.1.0: {}
+  terrarium-renderer@0.1.1: {}
 
   '@babel/runtime@7.29.10': {}
 

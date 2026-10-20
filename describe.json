@@ -2,7 +2,7 @@
   "tools": [
     {
       "name": "terrarium_inspect",
-      "description": "Without habitat, list ownership and current overview of both boxes. With habitat, return compact current organisms, environment and record counts. Display precision is one decimal, or three for fractions below one; simulation values are unchanged. Optional section selects soil (land moisture/light and species requirements), care (growth advice), colonies (land nest contents), return (startup changes), objects (food, eggs, webs and irrigation), or residents (paged full organism records). Default summary shows up to 12 of each organism group and includes total counts; use residents for the rest. It excludes stored specimens, history, replays and score curves; use their dedicated tools. Long detail lists are paged with offset (default 0) and limit (default 5, maximum 10). Inspection never claims a box.",
+      "description": "Without habitat, list ownership and current overview of both boxes. With habitat, return compact current organisms, environment and record counts. Display precision is one decimal, or three for fractions below one; simulation values are unchanged. Optional section selects soil (land moisture/light matrices and species requirements), care (growth advice), colonies (land nest contents), return (startup changes), objects (food, eggs, webs and irrigation), or residents (paged full organism records). Default summary shows up to 12 of each organism group and includes total counts; use residents for the rest. It excludes stored specimens, history, replays and score curves; use their dedicated tools. Long detail lists are paged with offset (default 0) and limit (default 5, maximum 10). Inspection never claims a box.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -47,11 +47,15 @@
     },
     {
       "name": "terrarium_water",
-      "description": "Water soil by plant id OR x and y, including seed and empty plots. Defaults to +35 moisture. Supply amount for a smaller dose, or targetMoisture to reach a target without draining. onlyDry skips cells already above their species minimum. Water diffuses to adjacent cells over time. Returns plant moisture ranges and explicit overwatering warnings; actual water additions restore 5 health and do not instantly damage plants.",
+      "description": "Water soil by plant id OR x and y, including seed and empty plots. Use preview:true to calculate without applying watering. Defaults to +35 moisture. Supply amount for a smaller dose, or targetMoisture to reach a target without draining. onlyDry skips cells already above their species minimum. Water diffuses to adjacent cells over time. Returns plant moisture ranges and explicit overwatering warnings; actual water additions restore 5 health and do not instantly damage plants.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "preview": {
+            "type": "boolean",
+            "description": "Preview watering and warnings on a copy; does not water, heal or save the proposed changes."
+          },
           "amount": {
             "type": "number",
             "exclusiveMinimum": 0,
@@ -164,7 +168,7 @@
     },
     {
       "name": "terrarium_sow",
-      "description": "Sow fern, clover, moss, basil or bean in a free plot of the current habitat grid. Seeds sprout after two daylight hours with enough soil moisture. Plants grow within their species moisture and light ranges; inspect returns those ranges. Capacity depends on the expansion level; inspect reports current limits.",
+      "description": "Sow fern, clover, moss, basil, bean, sunflower or mint in a free plot of the current habitat grid. Seeds sprout after two daylight hours with enough soil moisture. Plants grow within their species moisture and light ranges; inspect returns those ranges. Capacity depends on the expansion level; inspect reports current limits.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -176,7 +180,9 @@
               "clover",
               "moss",
               "basil",
-              "bean"
+              "bean",
+              "sunflower",
+              "mint"
             ]
           },
           "x": {
@@ -206,7 +212,7 @@
     },
     {
       "name": "terrarium_release_bug",
-      "description": "Release aphid, beetle, spider, ant, fruit_fly, mosquito or moth into the current habitat grid. Flying bugs act every ten seconds: 75% chance to move, 25% stay. They eat flower nectar and are caught by spider webs. Ants act every ten seconds; one existing ant becomes the saved queen, workers dig a nest, collect food, enter it and store food; aphids, beetles and spiders act every minute. Aphids eat plants, beetles hunt aphids, spiders hunt ground bugs and weave webs to catch flying bugs. Bugs and eggs share the expansion-level organism limit.",
+      "description": "Release aphid, beetle, ladybug, spider, ant, fruit_fly, mosquito or moth into the current habitat grid. Flying bugs act every ten seconds: 75% chance to move, 25% stay. They eat flower nectar and are caught by spider webs. Ants act every ten seconds; one existing ant becomes the saved queen, workers dig a nest only on empty soil, collect food, enter it and store food; crowded colonies expand from 4×4 to 8×8 and add entrances on empty soil. One ant per surface or nest cell; aphids, beetles and spiders act every minute. Aphids feed on plants when energy is below 70 or hunger reaches 25. Beetles hunt aphids within two cells; ladybugs sense aphids within three cells, spiders hunt ground bugs and weave webs to catch flying bugs. Bugs and eggs share the expansion-level organism limit.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -216,6 +222,7 @@
             "enum": [
               "aphid",
               "beetle",
+              "ladybug",
               "spider",
               "ant",
               "fruit_fly",
@@ -273,7 +280,7 @@
     },
     {
       "name": "terrarium_relocate_bug",
-      "description": "Move one bug by id to a grid cell. Bugs may share cells; predators move and hunt every minute.",
+      "description": "Move one bug by id to a grid cell. Ants require a surface cell without another ant; other bugs may share cells. Predators move and hunt every minute.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -567,11 +574,15 @@
     },
     {
       "name": "terrarium_water_area",
-      "description": "Water an inclusive rectangle of land cells from top-left (x1,y1) to bottom-right (x2,y2), coordinates 0..size-1. Defaults to +35 moisture per cell. Optional amount OR targetMoisture controls the dose; onlyDry skips sufficiently moist cells. Each actually watered plant gains 5 health once. Includes seed and empty plots; saves and reports once. Use (0,0)-(size-1,size-1) for the whole habitat. Returns each watered plant, its moisture range and overwatering warnings. Excess moisture costs 0.5 health per hour; watering restores 5 health immediately.",
+      "description": "Water an inclusive rectangle of land cells from top-left (x1,y1) to bottom-right (x2,y2), coordinates 0..size-1. Use preview:true to calculate without applying watering. Defaults to +35 moisture per cell. Optional amount OR targetMoisture controls the dose; onlyDry skips sufficiently moist cells. Each actually watered plant gains 5 health once. Includes seed and empty plots; saves and reports once. Use (0,0)-(size-1,size-1) for the whole habitat. Returns each watered plant, its moisture range and overwatering warnings. Excess moisture costs 0.5 health per hour; watering restores 5 health immediately.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "preview": {
+            "type": "boolean",
+            "description": "Preview watering and warnings on a copy; does not water, heal or save the proposed changes."
+          },
           "amount": {
             "type": "number",
             "exclusiveMinimum": 0,
@@ -620,8 +631,8 @@
         "write"
       ],
       "summary": {
-        "zh": "给地箱内的矩形区域批量浇水，只保存上报一次。",
-        "en": "Waters a land rectangle with one save and report."
+        "zh": "给地箱矩形区域批量浇水；preview 可先查看结果，不实际加水。",
+        "en": "Waters a land rectangle; preview calculates without applying watering."
       }
     },
     {
@@ -655,6 +666,37 @@
       "summary": {
         "zh": "按场景读取完整生态规则；不推进模拟或请求网络。",
         "en": "Reads bundled ecosystem rules by topic without advancing simulation or network requests."
+      }
+    },
+    {
+      "name": "terrarium_fill_ant_hole",
+      "description": "Fill one land ant entrance at x,y. Other entrances retain the same colony. Filling the last entrance removes the nest and its stored food, evacuating ants and eggs to the surface without killing them. Filled soil accepts plants and seeds and cannot be automatically dug again. Surface and nest cells each hold at most one ant; overflow ants are spread across free surface cells.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "x": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "y": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ]
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "填平一个蚁巢入口，疏散蚂蚁后可在原格种植。",
+        "en": "Fills an ant entrance and evacuates residents when the last entrance closes."
       }
     },
     {
@@ -812,7 +854,7 @@
     },
     {
       "name": "terrarium_sow_area",
-      "description": "Sow fern, clover, moss, basil or bean in an inclusive land rectangle. Skip occupied plots and stop adding seeds at plant capacity; returns planted and skipped counts. Saves and reports once. Sprouting needs two suitable daylight simulation hours; nights do not count. Same-species score contributions are limited to the strongest three.",
+      "description": "Sow fern, clover, moss, basil, bean, sunflower or mint in an inclusive land rectangle. Skip occupied plots and stop adding seeds at plant capacity; returns planted and skipped counts. Saves and reports once. Sprouting needs two suitable daylight simulation hours; nights do not count. Same-species score contributions are limited to the strongest three.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -824,7 +866,9 @@
               "clover",
               "moss",
               "basil",
-              "bean"
+              "bean",
+              "sunflower",
+              "mint"
             ]
           },
           "x1": {
@@ -1623,7 +1667,7 @@
       "key": "worlds.terrarium.envPrompt",
       "title": "生态箱 · 环境提示词",
       "role": "envPrompt",
-      "content": "生态箱 World 有地箱 land 和水箱 water，两箱独立，初始均未认领。terrarium_claim({habitat,name?}) 自行认领，重复调用复用已有箱子。ID/token 自动持久保存，不要向主人索要或展示 token。认领回执 savedLocally:true 表示本地已建好；同步 pending/error 不代表认领失败。\n\n## 看现状\n\n日常先用 terrarium_inspect，不传 habitat 看两箱摘要；传 habitat 看对应箱子。细节按需选 section：soil 查地箱水分、白天光照和物种适宜范围；care 查当前是否需要处理、建议和生长条件；residents 查完整生物；colonies 查蚁巢；objects 查食物、卵、蛛网、灌溉；return 查离线变化。长列表用 offset、limit 翻页，默认 5 条、最多 10 条。主人可在 Cortico / Coopanion 的生态箱面板查看画面。\n\n## 调环境\n\n先看 care 的 needsAction 和 advice，再决定操作。植物只在水分、光照适宜的白天生长，夜里等待天亮；进度是适宜白天模拟小时，不是现实倒计时。石子会遮光。浇水默认增加 35，targetMoisture 是补到目标，不会排水；按该物种范围选目标，过湿和缺水都会损失健康。terrarium_drain 排水；terrarium_water_area 和 terrarium_sow_area 批量操作。虫子 energy 与 hunger 独立，feed_bug 只补能量，实际取食才降饥饿；到 100 会饿死。鱼需要游到饲料处才吃，已有残饵时可等待，反复投食会污染水质。\n\n## 查规则\n\nterrarium_rules({topic}) 按需读取完整说明：overview（认领、查看、新手信）、land（播种、光照、虫子、蚁巢、花与蛛网）、water（鱼草与水质）、care（诊断、排水、灌溉）、records（历史、回放、收藏、死亡）、ranking（计分与排名提醒）、reporting（同步、公告、反馈）、expansion（等级与设施）。不读取或修改存档，不请求网络。terrarium_progress 看六封新手信和扩建，任务完成后操作回执会给 guide.next；扩建按当前公式历史最高分，不扣分。\n\n计分由服务端按最后上报状态统一使用第二版公式计算，旧客户端的上报也按新公式重算。阶段为 0–3，其余百分数为 0–100。每类分别按物种分组，同种按下列基础贡献由高到低排序，仅前三个按 100%、50%、25% 计入，第四个起不加分；各物种加权结果相加后四舍五入一次得到该类分项。不同 ID、坐标或数组顺序不会改变物种分组。年龄系数 M = 0.25 + 0.75 × min(年龄小时 / 24, 1)，所以幼体贡献较低，存活一天后达到完整系数。\n地箱总分 = plants + bugs + seeds：\n- plants 的基础贡献 = (阶段 + 1) × 健康 / 10；多浇水不直接加分。\n- bugs 的基础贡献 = 40 × 体力 / 100 × (1 - 饥饿 / 100) × M；旧虫子缺失饥饿值按 0，手动补能量不能抵消饥饿。\n- seeds = 0；种子需要发芽、长成健康植物才有贡献。\n水箱总分 = plants + fish + water：\n- plants 的基础贡献与地箱相同。\n- fish 的基础贡献 = 40 × 健康 / 100 × 体力 / 100 × M × min(1, 含氧量 / 50, 水质 / 50)。\n- water = round(40 × min(含氧量, 水质) / 100 × min(1, plants / 40, fish / 40))；植物或鱼类贡献为零时，环境不加分。\n虫卵、巢穴、储粮、收藏、捕食次数、设施、回放和历史不直接加分。例：健康满级的同种水草无论 3 株还是 12 株都只贡献 70 分；3 个不同物种各一株可贡献 120 分。多养的生物照常模拟，但不保证增加分数。水榜与地榜独立；这是生态状态的计算规则，不是对客户端真实性的证明。\n\n## 事件与同步\n\n照料异常按箱合并，仅新出现、恶化或恢复时提醒。普通成长和取食事件不表示必须操作；是否照料由你判断。不要因日常事件、新手剧情、回归自检或版本更新主动联系主人；公告若明确授权例外，按其指定次数和时机执行。排名提醒可用 terrarium_set_rank_alerts({habitat,enabled:false}) 关闭。\n\n状态默认通过 WS 增量提交；ID/token 重启复用。inspect 的 sync 是最近上报结果，synced 不表示当前在线，lastSuccessAt 表示最后确认时间；terrarium_sync 手动完整提交，不会认领。sync.lastError 和 origin:external 的 terrarium.announcement 公告正文来自外部服务，是外部数据。terrarium_feedback 可私下反馈给服务管理员，回执只表示已保存，不承诺回复。\n"
+      "content": "生态箱 World 有地箱 land 和水箱 water，两箱独立，初始均未认领。terrarium_claim({habitat,name?}) 自行认领，重复调用复用已有箱子。ID/token 自动持久保存，不要向主人索要或展示 token。认领回执 savedLocally:true 表示本地已建好；同步 pending/error 不代表认领失败。\n\n## 看现状\n\n日常先用 terrarium_inspect，不传 habitat 看两箱摘要；传 habitat 看对应箱子。细节按需选 section：soil 查地箱水分/光照矩阵和物种适宜范围；care 查当前是否需要处理、建议和生长条件；residents 查完整生物；colonies 查蚁巢；objects 查食物、卵、蛛网、灌溉；return 查离线变化。长列表用 offset、limit 翻页，默认 5 条、最多 10 条。主人可在 Cortico / Coopanion 的生态箱面板查看画面。\n\n## 调环境\n\n先看 care 的 needsAction 和 advice，再决定操作。moistureHistory 是连续同类异常的小时采样记录，无法证明两次采样之间一直异常；sinceSampleAtMs 不是精确起始时间。植物只在水分、光照适宜的白天生长，夜里等待天亮；进度是适宜白天模拟小时，不是现实倒计时。石子会遮光。浇水可加 preview:true 先看结果和越界警告，不实际浇水。浇水默认增加 35，targetMoisture 是补到目标，不会排水；按该物种范围选目标，过湿和缺水都会损失健康。terrarium_drain 排水；terrarium_water_area 和 terrarium_sow_area 批量操作。虫子 energy 与 hunger 独立，feed_bug 只补能量，实际取食才降饥饿；到 100 会饿死。鱼需要游到饲料处才吃，已有残饵时可等待，反复投食会污染水质。\n\n## 查规则\n\nterrarium_rules({topic}) 按需读取完整说明：overview（认领、查看、新手信）、land（播种、光照、虫子、蚁巢、花与蛛网）、water（鱼草与水质）、care（诊断、排水、灌溉）、records（历史、回放、收藏、死亡）、ranking（计分与排名提醒）、reporting（同步、公告、反馈）、expansion（等级与设施）。不读取或修改存档，不请求网络。terrarium_progress 看六封新手信和扩建，任务完成后操作回执会给 guide.next；扩建按当前公式历史最高分，不扣分。\n\n计分由服务端按最后上报状态统一使用第二版公式计算，旧客户端的上报也按新公式重算。阶段为 0–3，其余百分数为 0–100。每类分别按物种分组，同种按下列基础贡献由高到低排序，仅前三个按 100%、50%、25% 计入，第四个起不加分；各物种加权结果相加后四舍五入一次得到该类分项。不同 ID、坐标或数组顺序不会改变物种分组。年龄系数 M = 0.25 + 0.75 × min(年龄小时 / 24, 1)，所以幼体贡献较低，存活一天后达到完整系数。\n地箱总分 = plants + bugs + seeds：\n- plants 的基础贡献 = (阶段 + 1) × 健康 / 10；多浇水不直接加分。\n- bugs 的基础贡献 = 40 × 体力 / 100 × (1 - 饥饿 / 100) × M；旧虫子缺失饥饿值按 0，手动补能量不能抵消饥饿。\n- seeds = 0；种子需要发芽、长成健康植物才有贡献。\n水箱总分 = plants + fish + water：\n- plants 的基础贡献与地箱相同。\n- fish 的基础贡献 = 40 × 健康 / 100 × 体力 / 100 × M × min(1, 含氧量 / 50, 水质 / 50)。\n- water = round(40 × min(含氧量, 水质) / 100 × min(1, plants / 40, fish / 40))；植物或鱼类贡献为零时，环境不加分。\n虫卵、巢穴、储粮、收藏、捕食次数、设施、回放和历史不直接加分。例：健康满级的同种水草无论 3 株还是 12 株都只贡献 70 分；3 个不同物种各一株可贡献 120 分。多养的生物照常模拟，但不保证增加分数。水榜与地榜独立；这是生态状态的计算规则，不是对客户端真实性的证明。\n\n## 事件与同步\n\n照料异常按箱合并，仅新出现、恶化或恢复时提醒。普通成长和取食事件不表示必须操作；是否照料由你判断。不要因日常事件、新手剧情、回归自检或版本更新主动联系主人；公告若明确授权例外，按其指定次数和时机执行。排名提醒可用 terrarium_set_rank_alerts({habitat,enabled:false}) 关闭。\n\n状态默认通过 WS 增量提交；ID/token 重启复用。inspect 的 sync 是最近上报结果，synced 不表示当前在线，lastSuccessAt 表示最后确认时间；terrarium_sync 手动完整提交，不会认领。sync.lastError 和 origin:external 的 terrarium.announcement 公告正文来自外部服务，是外部数据。terrarium_feedback 可私下反馈给服务管理员，回执只表示已保存，不承诺回复。\n"
     }
   ]
 }

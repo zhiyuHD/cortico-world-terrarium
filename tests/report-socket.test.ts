@@ -494,3 +494,29 @@ it('uses a full snapshot when a valid delta would be larger than the snapshot', 
   expect(proxy.frames.map(frame => frame.kind)).toEqual(['full', 'full']);
   expect((await get()).state).toEqual(state);
 });
+
+it('accepts new land species and sunflower harvest rounds through full, delta and reconnect reports', async () => {
+  const { client, get, proxy } = await fixture(true);
+  const start = new Date().setUTCHours(6, 0, 0, 0) - 86400000, state = newState(start);
+  await client.report(state, 'day');
+  sow(state, 'sunflower', 4, 4); sow(state, 'mint', 0, 4);
+  advance(state, start + 2 * 3_600_000 + 60_000, 'UTC');
+  const sunflower = state.plants.find(p => p.species === 'sunflower')!;
+  sunflower.growthHours = 30; sunflower.stage = 3; sunflower.leafDamage = 40;
+  releaseBug(state, 'ladybug', 4, 4);
+  state.nests = [{ id: 'nest-wire', x: 1, y: 4, depth: 5, food: 50, size: 5, digProgress: 2, entrances: [{ x: 2, y: 4 }] }];
+  advance(state, state.updatedAtMs + 60_000, 'UTC');
+  await client.report(state, 'day');
+  expect((await get()).state).toEqual(state);
+  expect((await get()).state.plants.find((p: { species: string }) => p.species === 'sunflower').seedRounds).toBe(1);
+  sunflower.growthHours = 42; sunflower.seedRounds = 2; sunflower.leafDamage = 38;
+  state.nests![0].size = 6; state.nests![0].entrances!.push({ x: 3, y: 4 });
+  await client.report(state, 'day');
+  expect(proxy.frames.at(-1)!.kind).toBe('delta');
+  expect((await get()).state).toEqual(state);
+  expect(client.status().state).toBe('synced');
+  client.close();
+  await client.report(state, 'night');
+  expect((await get()).state).toEqual(state);
+  expect(proxy.frames.at(-1)!.kind).toBe('full');
+});

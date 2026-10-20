@@ -8,7 +8,7 @@ import { advance, dropLandFood, loadState, migrateState, newState, releaseBug, r
 const start = Date.parse('2026-06-01T00:00:00Z'), hour = 3600000;
 function colony() {
   const state = newState(start); state.plants = [];
-  const queen = releaseBug(state, 'ant', 0, 0), worker = releaseBug(state, 'ant', 0, 0);
+  const queen = releaseBug(state, 'ant', 0, 0), worker = releaseBug(state, 'ant', 1, 0);
   queen.energy = worker.energy = 100; ensureQueen(state, () => 0);
   state.nests = [{ id: 'nest-fixture', x: 0, y: 0, depth: 5, food: 0 }];
   return { state, queen, worker, nest: state.nests[0] };
@@ -51,13 +51,13 @@ it('lets a lone mature queen lay in the nest and hatches eggs there on a fractio
   queen.ageHours = 23.75; nest.food = 100; enterNest(queen, nest);
   const changes = advance(state, start + hour / 2, 'UTC');
   expect(changes.filter(change => change.kind === 'egg')).toHaveLength(1);
-  expect(state.eggs).toHaveLength(2);
+  expect(state.eggs).toHaveLength(3);
   expect(state.eggs!.every(egg => egg.inside?.nestId === nest.id)).toBe(true);
-  expect(state.eggs!.every(egg => egg.laidAtMs === start + hour / 4 && egg.hatchesAtMs === start + 6.25 * hour)).toBe(true);
+  expect(state.eggs!.every(egg => egg.laidAtMs === start + hour / 4 && egg.hatchesAtMs === start + 1.25 * hour)).toBe(true);
   const hatchAt = state.eggs![0].hatchesAtMs;
   expect(advance(state, hatchAt - 1, 'UTC').filter(change => change.kind === 'birth')).toHaveLength(0);
-  expect(advance(state, hatchAt, 'UTC').filter(change => change.kind === 'birth')).toHaveLength(2);
-  expect(state.bugs.filter(bug => bug.role === 'worker' && bug.inside?.nestId === nest.id)).toHaveLength(2);
+  expect(advance(state, hatchAt, 'UTC').filter(change => change.kind === 'birth')).toHaveLength(3);
+  expect(state.bugs.filter(bug => bug.role === 'worker' && bug.inside?.nestId === nest.id)).toHaveLength(3);
   expect(validState(state)).toBe(true);
 });
 

@@ -23,7 +23,9 @@ var TERRARIUM_PLANT_REQUIREMENTS = {
   clover: { minMoisture: 20, maxMoisture: 80, minLight: 0.45, maxLight: 1 },
   moss: { minMoisture: 45, maxMoisture: 90, minLight: 0.15, maxLight: 0.4 },
   basil: { minMoisture: 30, maxMoisture: 75, minLight: 0.65, maxLight: 1 },
-  bean: { minMoisture: 25, maxMoisture: 70, minLight: 0.7, maxLight: 1 }
+  bean: { minMoisture: 25, maxMoisture: 70, minLight: 0.7, maxLight: 1 },
+  sunflower: { minMoisture: 25, maxMoisture: 70, minLight: 0.75, maxLight: 1 },
+  mint: { minMoisture: 35, maxMoisture: 85, minLight: 0.3, maxLight: 0.85 }
 };
 function daylight(habitat, x, y) {
   const shaded = habitat.items.some((item) => item.id === "pebble" && Math.abs(item.x - x) + Math.abs(item.y - y) <= 1);
@@ -32,10 +34,18 @@ function daylight(habitat, x, y) {
   if (nearFacility(habitat, "grow_light", x, y)) light = Math.max(0.75, light);
   return light;
 }
+var TERRARIUM_SUNFLOWER = { seedHours: 30, seedIntervalHours: 12, seedPortions: 3 };
+function sunflowerSeedRounds(growthHours) {
+  return Math.max(0, Math.floor((growthHours - TERRARIUM_SUNFLOWER.seedHours) / TERRARIUM_SUNFLOWER.seedIntervalHours) + 1);
+}
+function hasSeedHead(plant) {
+  return plant.species === "sunflower" && sunflowerSeedRounds(plant.growthHours ?? 0) > 0;
+}
 var TERRARIUM_FLOWER_BUD_HOURS = 12;
 var TERRARIUM_FLOWER_BLOOM_HOURS = 18;
 function flowerStage(plant) {
-  if (plant.species !== "clover" && plant.species !== "basil" && plant.species !== "bean") return;
+  if (plant.species !== "clover" && plant.species !== "basil" && plant.species !== "bean" && plant.species !== "sunflower" && plant.species !== "mint") return;
+  if (hasSeedHead(plant)) return;
   const needs = TERRARIUM_PLANT_REQUIREMENTS[plant.species];
   if (plant.health < TERRARIUM_PLANT_RECOVERED_HEALTH || plant.dry || plant.moisture < needs.minMoisture || plant.moisture > needs.maxMoisture) return;
   if ((plant.growthHours ?? 0) >= TERRARIUM_FLOWER_BLOOM_HOURS) return "bloom";
@@ -48,12 +58,12 @@ function isFlying(species) {
   return TERRARIUM_FLY_SPECIES.includes(species);
 }
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/terrarium-renderer@0.1.0/node_modules/terrarium-renderer/dist/types.js
+// ../../scratch/terrarium-0805/renderer-source/dist/types.js
 function sceneSize(scene) {
   return scene.gridSize ?? 5;
 }
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/terrarium-renderer@0.1.0/node_modules/terrarium-renderer/dist/geometry.js
+// ../../scratch/terrarium-0805/renderer-source/dist/geometry.js
 var LAND_SURFACE = { x: 84, y: 204, width: 632, height: 216 };
 var WATER_SURFACE = { x: 90, y: 128, width: 620, height: 286 };
 function cellPosition(surface, x, y, size) {
@@ -66,10 +76,236 @@ function residentScale(size) {
   return 5 / size;
 }
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/terrarium-renderer@0.1.0/node_modules/terrarium-renderer/dist/flowers.js
+// ../../scratch/terrarium-0805/renderer-source/dist/plant-appearance.js
+function blend(from, to, amount) {
+  const color = (hex, offset) => Number.parseInt(hex.slice(offset, offset + 2), 16);
+  return "#" + [1, 3, 5].map((offset) => Math.round(color(from, offset) * (1 - amount) + color(to, offset) * amount).toString(16).padStart(2, "0")).join("");
+}
+function plantAppearance(plant, night = false) {
+  const stress = 1 - (plant.health ?? 100) / 100;
+  const yellow = Math.min(1, stress / 0.65), brown = Math.max(0, (stress - 0.6) / 0.4);
+  const age = (healthy, faded) => blend(blend(healthy, faded, yellow), "#826345", brown);
+  return {
+    leaf: age(night ? "#527d59" : "#65a96a", night ? "#a49b55" : "#c6b258"),
+    youngLeaf: age(night ? "#65936a" : "#85bf7e", night ? "#b1a569" : "#d2c47d"),
+    stem: age(night ? "#456743" : "#417e4c", "#94834e"),
+    vein: age(night ? "#88aa7d" : "#c0d69b", "#e3d0a0"),
+    wilt: Math.min(1, (plant.dry ? 0.55 : 0) + stress * 0.5),
+    damage: plant.leafDamage ?? 0,
+    spots: stress > 0.2 ? Math.min(4, Math.ceil((stress - 0.2) * 5)) : 0
+  };
+}
+function drawLeaf(g, appearance, x, y, rx, ry, angle, index, shape = "oval") {
+  g.save();
+  g.translate(x, y);
+  g.rotate(angle);
+  const outline = () => {
+    g.beginPath();
+    if (shape === "oval")
+      g.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+    else {
+      g.moveTo(-rx, 0);
+      g.bezierCurveTo(-rx * 0.4, -ry * 1.4, rx * 0.65, -ry, rx, 0);
+      g.quadraticCurveTo(-rx * 0.1, ry * 1.45, -rx, 0);
+      g.closePath();
+    }
+  };
+  outline();
+  const holes = Math.max(0, Math.min(3, Math.ceil(appearance.damage / 30) - index % 3));
+  if (holes) {
+    g.clip();
+    outline();
+    for (let i = 0; i < holes; i++) {
+      const hx = rx * [-0.25, 0.22, 0.82][i], hy = ry * [0.16, -0.2, 0.25][i];
+      const radius = Math.min(rx, ry) * (0.2 + appearance.damage / 700);
+      g.moveTo(hx + radius, hy);
+      g.arc(hx, hy, radius, 0, Math.PI * 2);
+    }
+  }
+  g.fillStyle = index % 2 ? appearance.leaf : appearance.youngLeaf;
+  g.fill("evenodd");
+  if (holes || appearance.spots)
+    g.clip("evenodd");
+  g.strokeStyle = appearance.vein;
+  g.lineWidth = 0.8;
+  g.beginPath();
+  g.moveTo(-rx * 0.7, 0);
+  g.quadraticCurveTo(0, -ry * 0.12, rx * 0.65, 0);
+  g.stroke();
+  for (let i = 0; i < appearance.spots; i++) {
+    g.fillStyle = i % 2 ? "#8e794b" : "#d3bb68";
+    g.beginPath();
+    g.ellipse(rx * [-0.38, 0.35, -0.05, 0.5][i], ry * [0.35, -0.3, -0.45, 0.25][i], Math.max(1, rx * 0.12), Math.max(0.8, ry * 0.18), i * 0.7, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.restore();
+}
+
+// ../../scratch/terrarium-0805/renderer-source/dist/neighbors.js
+function drawNeighborPlant(g, plant, x, base, night, flowersOnly = false) {
+  if (plant.species !== "sunflower" && plant.species !== "mint")
+    return false;
+  const height = 13 + plant.stage * 20;
+  g.save();
+  g.translate(x, base);
+  g.lineCap = "round";
+  const appearance = plantAppearance(plant, night);
+  const stem = appearance.stem;
+  g.strokeStyle = stem;
+  g.lineWidth = 3 + plant.stage;
+  if (plant.species === "sunflower") {
+    if (!flowersOnly) {
+      g.beginPath();
+      g.moveTo(0, 0);
+      g.quadraticCurveTo(-4, -height * 0.5, 0, -height);
+      g.stroke();
+      for (let i = 0; i <= plant.stage; i++) {
+        const side = i % 2 ? -1 : 1, cy = -10 - i * 15;
+        drawLeaf(g, appearance, side * 17, cy - 5 + appearance.wilt * 5, 19, 11, -side * (0.35 - appearance.wilt * 0.7), i, "pointed");
+      }
+    }
+    if (plant.seedHead) {
+      g.save();
+      g.translate(3, -height + 2);
+      g.rotate(0.18);
+      g.fillStyle = "#ad8744";
+      g.beginPath();
+      g.arc(0, 0, 19, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = night ? "#544737" : "#6e5036";
+      g.beginPath();
+      g.arc(0, 0, 15, 0, Math.PI * 2);
+      g.fill();
+      for (let i = 0; i < 21; i++) {
+        const a = i * 2.39996, r = Math.sqrt(i / 21) * 12;
+        g.save();
+        g.translate(Math.cos(a) * r, Math.sin(a) * r);
+        g.rotate(a);
+        g.fillStyle = i % 3 ? "#d5bd80" : "#f0dca8";
+        g.beginPath();
+        g.ellipse(0, 0, 1.5, 2.3, 0, 0, Math.PI * 2);
+        g.fill();
+        g.restore();
+      }
+      g.restore();
+    } else if (plant.flower) {
+      g.save();
+      g.translate(0, -height);
+      if (plant.flower === "bud") {
+        g.fillStyle = "#82a44f";
+        g.beginPath();
+        g.ellipse(0, 0, 9, 12, -0.15, 0, Math.PI * 2);
+        g.fill();
+        g.strokeStyle = "#b5c878";
+        g.lineWidth = 1;
+        g.beginPath();
+        g.moveTo(0, 9);
+        g.lineTo(0, -10);
+        g.stroke();
+      } else {
+        for (let ring = 0; ring < 2; ring++)
+          for (let i = 0; i < 13; i++) {
+            const a = i * Math.PI * 2 / 13 + ring * 0.2;
+            g.fillStyle = night ? ["#bea552", "#d2b963"][ring] : ["#e7ab3b", "#f5ca59"][ring];
+            g.beginPath();
+            g.ellipse(Math.cos(a) * 17, Math.sin(a) * 17, 12 - ring * 2, 4.7, a, 0, Math.PI * 2);
+            g.fill();
+          }
+        g.fillStyle = "#705036";
+        g.beginPath();
+        g.arc(0, 0, 12, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = "#b58c50";
+        for (let i = 0; i < 13; i++) {
+          const a = i * 2.39996, r = Math.sqrt(i / 13) * 8;
+          g.beginPath();
+          g.arc(Math.cos(a) * r, Math.sin(a) * r, 1, 0, Math.PI * 2);
+          g.fill();
+        }
+      }
+      g.restore();
+    }
+  } else {
+    for (const side of plant.stage > 1 ? [-1, 0, 1] : [0]) {
+      const top = -height * (side ? 0.78 : 1), endX = side * 15;
+      if (!flowersOnly) {
+        g.strokeStyle = stem;
+        g.lineWidth = 2.5;
+        g.beginPath();
+        g.moveTo(0, 0);
+        g.quadraticCurveTo(endX, top * 0.4, endX, top);
+        g.stroke();
+        for (let level = 0; level <= plant.stage; level++)
+          for (const direction of [-1, 1]) {
+            const cy = -8 + top * (0.18 + level * 0.2), cx = endX * Math.min(1, cy / top * 1.3);
+            const tipX = cx + direction * (13 + plant.stage * 1.5), tipY = cy - 9;
+            drawLeaf(g, appearance, (cx + tipX) / 2, (cy + tipY) / 2 + appearance.wilt * 4, 10 + plant.stage, 6, -direction * (0.4 - appearance.wilt * 0.8), level + (side + 1) * 4 + (direction + 1) / 2, "pointed");
+          }
+      }
+      if (plant.flower)
+        for (let i = 0; i < 4; i++)
+          for (const direction of [-1, 1]) {
+            g.fillStyle = plant.flower === "bud" ? "#a79cc1" : night ? "#b8abc9" : "#d4bde5";
+            g.beginPath();
+            g.ellipse(endX + direction * 4, top - i * 5, 3, plant.flower === "bud" ? 3 : 2, direction * 0.4, 0, Math.PI * 2);
+            g.fill();
+          }
+    }
+  }
+  g.restore();
+  return true;
+}
+function drawLadybug(g, x, y, night) {
+  g.save();
+  g.translate(x, y);
+  g.strokeStyle = "#393c37";
+  g.lineWidth = 1.5;
+  g.lineCap = "round";
+  for (const side of [-1, 1])
+    for (const dy of [-5, 0, 5]) {
+      g.beginPath();
+      g.moveTo(side * 7, dy);
+      g.lineTo(side * 12, dy + 3);
+      g.stroke();
+    }
+  g.fillStyle = "#343d36";
+  g.beginPath();
+  g.ellipse(0, -7, 6, 5, 0, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = night ? "#b75642" : "#dc6551";
+  g.beginPath();
+  g.ellipse(0, 1, 10, 10, 0, 0, Math.PI * 2);
+  g.fill();
+  g.strokeStyle = "#813f35";
+  g.lineWidth = 1.3;
+  g.beginPath();
+  g.moveTo(0, -8);
+  g.lineTo(0, 10);
+  g.stroke();
+  g.fillStyle = "#343d36";
+  for (const [dx, dy, r] of [[-4, -2, 2], [4, -2, 2], [-5, 4, 2.2], [5, 4, 2.2], [0, 7, 1.6]]) {
+    g.beginPath();
+    g.arc(dx, dy, r, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.fillStyle = "#fff0d3";
+  g.beginPath();
+  g.ellipse(-4, -4, 2, 3, 0.6, 0, Math.PI * 2);
+  g.fill();
+  for (const dx of [-2.5, 2.5]) {
+    g.beginPath();
+    g.arc(dx, -9, 1.2, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.restore();
+}
+
+// ../../scratch/terrarium-0805/renderer-source/dist/flowers.js
 function drawPlantFlowers(g, plant, x, y, night) {
   const stage = plant.flower;
-  if (!stage)
+  if (!stage && !plant.seedHead)
+    return;
+  if (drawNeighborPlant(g, { ...plant, stage: 3, dry: false }, x, y + 73, night, true))
     return;
   g.save();
   g.translate(x, y);
@@ -152,7 +388,7 @@ function drawPlantFlowers(g, plant, x, y, night) {
   g.restore();
 }
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/terrarium-renderer@0.1.0/node_modules/terrarium-renderer/dist/nest-viewer.js
+// ../../scratch/terrarium-0805/renderer-source/dist/nest-viewer.js
 var NEST_SIZE = 4;
 var STYLE = `
 .tn-dialog{box-sizing:border-box;width:min(720px,calc(100vw - 24px));max-height:calc(100dvh - 32px);padding:0;border:1px solid #c0ac85;border-radius:24px;background:#f7f1e4;color:#473c2e;box-shadow:0 30px 120px #17170e55;font:14px/1.5 system-ui,sans-serif;overflow:auto}
@@ -160,8 +396,8 @@ var STYLE = `
 .tn-dialog{overscroll-behavior:contain}.tn-head{position:sticky;top:0;z-index:2;background:#f7f1e4}
 .tn-close,.tn-open{font:inherit;cursor:pointer;border:1px solid #b6aa88;border-radius:24px;background:#fffaf0;color:#4c573a;padding:8px 15px;transition:background .2s,transform .2s}.tn-close:hover,.tn-open:hover{background:#e8e4d1;transform:translateY(-1px)}.tn-toolbar{position:relative;display:flex;gap:6px;flex-wrap:wrap;z-index:1}.scene-wrap>.tn-toolbar{position:absolute;left:12px;bottom:10px}.tn-toolbar[hidden]{display:none}.tn-open{font-size:11px;padding:5px 11px;background:#fff9e8e8;backdrop-filter:blur(8px)}
 .tn-summary{display:flex;flex-wrap:wrap;gap:8px;padding:0 24px 16px}.tn-summary span{background:#e9e2cd;border-radius:8px;padding:6px 10px;font-size:12px;font-variant-numeric:tabular-nums}
-.tn-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;padding:18px;margin:0 24px;background:#796448;border:1px solid #6b593f;border-radius:18px;box-shadow:inset 0 3px 15px #3d2d2030}
-.tn-cell{position:relative;box-sizing:border-box;width:100%;min-width:0;min-height:94px;aspect-ratio:1;overflow:hidden;border:1px solid #c6ac78;border-radius:19% 28% 23% 26%;background:radial-gradient(ellipse at 40% 35%,#a68a5e,#967347);color:#fff2d2;cursor:pointer;box-shadow:inset 0 3px 10px #3f2b2030,0 2px 2px #30251d28;font:inherit;padding:8px;transition:background .2s,box-shadow .2s}
+.tn-grid{display:grid;grid-template-columns:repeat(var(--nest-size,4),minmax(80px,1fr));gap:9px;padding:18px;margin:0 24px;overflow-x:auto;background:#796448;border:1px solid #6b593f;border-radius:18px;box-shadow:inset 0 3px 15px #3d2d2030}
+.tn-cell{position:relative;box-sizing:border-box;width:100%;min-width:0;min-height:80px;aspect-ratio:1;overflow:hidden;border:1px solid #c6ac78;border-radius:19% 28% 23% 26%;background:radial-gradient(ellipse at 40% 35%,#a68a5e,#967347);color:#fff2d2;cursor:pointer;box-shadow:inset 0 3px 10px #3f2b2030,0 2px 2px #30251d28;font:inherit;padding:8px;transition:background .2s,box-shadow .2s}
 .tn-cell:hover,.tn-cell[aria-pressed=true]{background:radial-gradient(ellipse at 40% 35%,#b79b6a,#a7804c);box-shadow:inset 0 0 0 2px #f3dba5,0 2px 8px #30251d30}.tn-cell:focus-visible,.tn-close:focus-visible,.tn-open:focus-visible{outline:3px solid #9cbd9a;outline-offset:3px}
 .tn-cell-label{position:absolute;left:9px;top:6px;font-size:10px;color:#f6e7c3c9}.tn-occupants{position:absolute;inset:38px 5px 20px;display:flex;justify-content:center;align-items:center;gap:6px;overflow:hidden}.tn-ant{display:inline-flex;flex:0 1 auto;min-width:0;width:40px;height:30px;--ant-abdomen:#b77a50;--ant-head:#d7a171;--ant-chest:#c48a5c}.tn-ant svg{display:block;width:100%;height:100%;overflow:visible}.tn-ant.queen{width:46px;height:34px;--ant-abdomen:#c6984f;--ant-head:#e3b97e;--ant-chest:#d2a164}.tn-eggs{display:flex;flex:0 0 16px;flex-wrap:wrap;align-content:center;justify-content:center;gap:2px}.tn-egg{display:inline-block;width:6px;height:8px;border-radius:60% 50% 55% 45%;background:#fff1ce;box-shadow:inset -2px -1px 1px #d4bd91;transform:rotate(25deg)}.tn-food{flex:0 0 auto;white-space:nowrap;font-size:13px;color:#ffe2a1;font-variant-numeric:tabular-nums}.tn-cell-count{position:absolute;bottom:5px;right:8px;font-size:10px;color:#fff0ce}.tn-detail{padding:16px 24px 22px;min-height:65px}.tn-detail h3{font-size:13px;margin:0 0 5px}.tn-detail p{font-size:12px;margin:3px 0;color:#7b6a50;overflow-wrap:anywhere}.tn-note{padding:0 24px 18px;font-size:12px;color:#85755b}
 @media(max-width:480px){.tn-head{padding:16px 16px 12px}.tn-head h2{font-size:19px}.tn-grid{padding:10px;margin:0 12px;gap:6px}.tn-cell{padding:5px}.tn-cell-label{font-size:8px;left:5px}.tn-occupants{gap:3px;inset:38px 3px 18px}.tn-summary{padding:0 16px 12px;gap:5px}.tn-summary span{font-size:11px;padding:4px 7px}.tn-detail{padding:14px 16px}.tn-cell-count{font-size:8px;right:5px}.tn-ant{width:34px;height:26px}.tn-ant.queen{width:40px;height:30px}.tn-ant~.tn-ant{display:none}.tn-eggs{flex-basis:12px}.tn-egg{width:5px;height:7px}.tn-food{font-size:10px}}
@@ -223,7 +459,8 @@ function createNestViewer(canvas, language = "zh") {
   const head = el("div", "tn-head"), title = el("h2", "", text.title), close = el("button", "tn-close", text.close);
   close.type = "button";
   const heading = el("div", "");
-  heading.append(el("div", "tn-kicker", "COLONY / 4 \xD7 4"), title);
+  const kicker = el("div", "tn-kicker", "COLONY / 4 \xD7 4");
+  heading.append(kicker, title);
   head.append(heading, close);
   const summary = el("div", "tn-summary");
   summary.setAttribute("aria-live", "polite");
@@ -239,16 +476,16 @@ function createNestViewer(canvas, language = "zh") {
   let state = null, selectedId = null, cellIndex = 10, recordedAtMs;
   const triggers = /* @__PURE__ */ new Map();
   let returnView = null;
-  const cells = Array.from({ length: NEST_SIZE ** 2 }, (_, index) => {
+  const makeCell = (index) => {
     const cell = el("button", "tn-cell");
     cell.type = "button";
     cell.addEventListener("click", () => {
       cellIndex = index;
       render();
     });
-    grid.append(cell);
     return cell;
-  });
+  };
+  let cells = [];
   const roomName = (x, y) => x === 0 && y === 0 ? text.entrance : x === 3 && y === 0 ? text.storage : x === 2 && y === 2 ? text.nursery : text.room;
   const remainingTime = (hatchesAtMs) => {
     const minutes = Math.ceil((hatchesAtMs - (recordedAtMs ?? Date.now())) / 6e4);
@@ -265,14 +502,24 @@ function createNestViewer(canvas, language = "zh") {
         dialog.close();
       return;
     }
+    const size = nest.size ?? NEST_SIZE;
+    dialog.style.width = size > 5 ? "min(920px,calc(100vw - 24px))" : "min(720px,calc(100vw - 24px))";
+    if (cells.length !== size * size) {
+      cells = Array.from({ length: size * size }, (_, i) => makeCell(i));
+      grid.replaceChildren(...cells);
+    }
+    cellIndex = Math.min(cellIndex, size * size - 1);
+    grid.style.setProperty("--nest-size", String(size));
+    grid.setAttribute("aria-label", zh ? `${size}\xD7${size} \u8681\u5DE2\u683C\u5B50` : `${size} by ${size} nest cells`);
+    kicker.textContent = `COLONY / ${size} \xD7 ${size}`;
     const ants = state.bugs.filter((b) => b.species === "ant" && b.inside?.nestId === nest.id);
     const eggs = (state.eggs ?? []).filter((e) => e.species === "ant" && e.inside?.nestId === nest.id);
     const contents = { ants, eggs, queens: ants.filter((a) => a.role === "queen").length, food: nest.food };
     title.textContent = `${text.title} \xB7 ${nest.id}`;
-    summary.replaceChildren(...[`${text.ant} ${contents.ants.length}`, `${text.queen} ${contents.queens}`, `${text.egg} ${contents.eggs.length}`, `${text.food} ${contents.food}/${nest.foodCapacity ?? "\u2014"}`].map((label) => el("span", "", label)));
+    summary.replaceChildren(...[`${size}\xD7${size} \xB7 ${size * size} ${zh ? "\u683C" : "cells"}`, `${zh ? "\u5165\u53E3" : "Entrances"} ${1 + (nest.entrances?.length ?? 0)}`, `${text.ant} ${contents.ants.length}`, `${text.queen} ${contents.queens}`, `${text.egg} ${contents.eggs.length}`, `${text.food} ${contents.food}/${nest.foodCapacity ?? "\u2014"}`].map((label) => el("span", "", label)));
     note.hidden = state.bugs.some((bug) => bug.species === "ant" && bug.role !== void 0);
     for (const [index, cell] of cells.entries()) {
-      const x = index % NEST_SIZE, y = Math.floor(index / NEST_SIZE);
+      const x = index % size, y = Math.floor(index / size);
       const ants2 = contents.ants.filter((ant) => ant.inside.x === x && ant.inside.y === y), eggs2 = contents.eggs.filter((egg) => egg.inside.x === x && egg.inside.y === y);
       const hasQueen = ants2.some((ant) => ant.role === "queen");
       cell.classList.toggle("has-queen", hasQueen);
@@ -346,11 +593,11 @@ function createNestViewer(canvas, language = "zh") {
   const hit = (event) => {
     const bounds = canvas.getBoundingClientRect();
     const rx = Math.max(24, 30 * bounds.width / canvas.width), ry = Math.max(24, 20 * bounds.height / canvas.height);
-    const targets = (state?.nests ?? []).map((nest2) => ({
+    const targets = (state?.nests ?? []).flatMap((nest2) => [nest2, ...nest2.entrances ?? []].map((entrance) => ({
       nest: nest2,
-      dx: event.clientX - bounds.left - plotPosition(nest2.x, nest2.y, sceneSize(state)).x * bounds.width / canvas.width,
-      dy: event.clientY - bounds.top - plotPosition(nest2.x, nest2.y, sceneSize(state)).y * bounds.height / canvas.height
-    })).filter(({ dx, dy }) => Math.abs(dx) <= rx && Math.abs(dy) <= ry);
+      dx: event.clientX - bounds.left - plotPosition(entrance.x, entrance.y, sceneSize(state)).x * bounds.width / canvas.width,
+      dy: event.clientY - bounds.top - plotPosition(entrance.x, entrance.y, sceneSize(state)).y * bounds.height / canvas.height
+    }))).filter(({ dx, dy }) => Math.abs(dx) <= rx && Math.abs(dy) <= ry);
     targets.sort((a, b) => a.dx ** 2 + a.dy ** 2 - b.dx ** 2 - b.dy ** 2);
     const nest = targets[0]?.nest;
     if (nest)
@@ -408,7 +655,7 @@ function createNestViewer(canvas, language = "zh") {
   };
 }
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/terrarium-renderer@0.1.0/node_modules/terrarium-renderer/dist/nest-scene.js
+// ../../scratch/terrarium-0805/renderer-source/dist/nest-scene.js
 function drawAntNest(g, x, y, night) {
   g.save();
   g.fillStyle = "rgba(35,25,18,.2)";
@@ -444,7 +691,7 @@ function drawAntNest(g, x, y, night) {
   g.restore();
 }
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/terrarium-renderer@0.1.0/node_modules/terrarium-renderer/dist/scene.js
+// ../../scratch/terrarium-0805/renderer-source/dist/scene.js
 function bugPositions(bugs, positions = /* @__PURE__ */ new Map(), size = 5) {
   const groups = /* @__PURE__ */ new Map();
   for (const bug of bugs) {
@@ -529,10 +776,11 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
       g.rect(left, top, cellWidth, cellHeight);
       g.stroke();
     }
-  for (const nest of state.nests ?? []) {
-    const { x, y } = plot(nest.x, nest.y);
-    drawAntNest(g, x, y, night);
-  }
+  for (const colony of state.nests ?? [])
+    for (const nest of [colony, ...colony.entrances ?? []]) {
+      const { x, y } = plot(nest.x, nest.y);
+      drawAntNest(g, x, y, night);
+    }
   for (const web of state.webs ?? []) {
     const { x, y } = plot(web.x, web.y);
     g.save();
@@ -564,9 +812,24 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
     const { x, y } = plot(food.x, food.y);
     g.fillStyle = "#e4b66c";
     for (let i = 0; i < Math.min(6, food.portions); i++) {
-      g.beginPath();
-      g.arc(x - 8 + i % 3 * 6, y + Math.floor(i / 3) * 5, 2.5, 0, Math.PI * 2);
-      g.fill();
+      const fx = x - 8 + i % 3 * 7, fy = y + Math.floor(i / 3) * 6;
+      if (food.kind === "sunflower_seed") {
+        g.fillStyle = "#645345";
+        g.beginPath();
+        g.ellipse(fx, fy, 2.5, 4, -0.4, 0, Math.PI * 2);
+        g.fill();
+        g.strokeStyle = "#dfd1ad";
+        g.lineWidth = 1;
+        g.beginPath();
+        g.moveTo(fx - 1, fy - 2);
+        g.lineTo(fx + 1, fy + 2);
+        g.stroke();
+      } else {
+        g.fillStyle = "#e4b66c";
+        g.beginPath();
+        g.arc(fx, fy, 2.5, 0, Math.PI * 2);
+        g.fill();
+      }
     }
   }
   for (const [index, egg] of (state.eggs ?? []).filter((egg2) => !egg2.inside).entries()) {
@@ -582,9 +845,20 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
     g.translate(x, base);
     g.scale(scale, scale);
     g.translate(-x, -base);
+    const appearance = plantAppearance(plant, night);
+    if (appearance.wilt > 0) {
+      g.translate(x, base);
+      g.rotate(appearance.wilt * 0.16);
+      g.scale(1, 1 - appearance.wilt * 0.12);
+      g.translate(-x, -base);
+    }
+    if (drawNeighborPlant(g, plant, x, base, night)) {
+      g.restore();
+      continue;
+    }
     const height = 13 + plant.stage * 20;
     const leaves = 1 + plant.stage * 2;
-    g.strokeStyle = plant.dry ? "#87926a" : "#417e4c";
+    g.strokeStyle = appearance.stem;
     g.lineWidth = 4 + plant.stage;
     g.lineCap = "round";
     g.beginPath();
@@ -594,18 +868,11 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
     for (let i = 0; i < leaves; i++) {
       const side = i % 2 ? -1 : 1;
       const y = base - height * (0.35 + 0.6 * i / Math.max(1, leaves - 1));
-      g.fillStyle = plant.dry ? "#a4ad77" : i % 2 ? "#64aa6d" : "#7abb77";
-      g.beginPath();
-      g.ellipse(x + side * (9 + plant.stage * 3), y - 7, 11 + plant.stage * 3, plant.species === "fern" ? 7 : 11, -side * 0.45, 0, Math.PI * 2);
-      g.fill();
+      drawLeaf(g, appearance, x + side * (9 + plant.stage * 3), y - 7 + appearance.wilt * 6, 11 + plant.stage * 3, plant.species === "fern" ? 7 : 11, -side * (0.45 - appearance.wilt * 0.8), i);
     }
     if (plant.species === "clover" && plant.stage > 1) {
-      g.fillStyle = plant.dry ? "#a4ad77" : "#74b878";
-      for (const dx of [-8, 0, 8]) {
-        g.beginPath();
-        g.arc(x + dx, base - height, 9, 0, Math.PI * 2);
-        g.fill();
-      }
+      for (const [i, dx] of [-8, 0, 8].entries())
+        drawLeaf(g, appearance, x + dx, base - height, 9, 9, 0, i);
     }
     drawPlantFlowers(g, plant, x, base - height, night);
     g.restore();
@@ -698,7 +965,9 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
   const locations = bugPositions(surfaceBugs, positions, sceneSize(state));
   for (const bug of surfaceBugs) {
     const location = locations.get(bug.id);
-    const x = location.x, y = location.y - (bug.flying ? 30 * scale : 0);
+    const host = bug.species === "aphid" || bug.species === "ladybug" ? state.plants.find((p) => p.x === bug.x && p.y === bug.y) : void 0;
+    const onLeaf = host ? (13 + host.stage * 20) * 0.6 * scale : 0;
+    const x = location.x, y = location.y - (bug.flying ? 30 * scale : onLeaf);
     g.save();
     g.translate(x, y);
     g.scale(scale, scale);
@@ -783,6 +1052,8 @@ function drawScene(canvas, state, positions = /* @__PURE__ */ new Map(), hits = 
         g.arc(x + 13, y, 3, 0, Math.PI * 2);
         g.fill();
       }
+    } else if (bug.species === "ladybug") {
+      drawLadybug(g, x, y, night);
     } else if (bug.species === "beetle") {
       g.fillStyle = "#684337";
       g.beginPath();
@@ -880,7 +1151,7 @@ function createLandRenderer(canvas) {
       if (disposed)
         return;
       const now = performance.now();
-      const removed = state ? state.bugs.filter((bug) => !next.bugs.some((current) => current.id === bug.id) && next.bugs.some((hunter) => hunter.x === bug.x && hunter.y === bug.y && (hunter.species === "spider" ? bug.species !== "spider" : hunter.species === "beetle" && bug.species === "aphid"))).map((bug) => ({ x: bug.x, y: bug.y })) : [];
+      const removed = state ? state.bugs.filter((bug) => !next.bugs.some((current) => current.id === bug.id) && next.bugs.some((hunter) => hunter.x === bug.x && hunter.y === bug.y && (hunter.species === "spider" ? bug.species !== "spider" : ["beetle", "ladybug"].includes(hunter.species) && bug.species === "aphid"))).map((bug) => ({ x: bug.x, y: bug.y })) : [];
       if (removed.length) {
         hits = removed;
         hitAt = now;
@@ -919,7 +1190,7 @@ function createScene(canvas, language = "zh") {
   };
 }
 
-// ../../../packages/cortico-world-terrarium/node_modules/.pnpm/terrarium-renderer@0.1.0/node_modules/terrarium-renderer/dist/water-scene.js
+// ../../scratch/terrarium-0805/renderer-source/dist/water-scene.js
 function createWaterScene(canvas) {
   let state;
   let old = /* @__PURE__ */ new Map();
@@ -969,16 +1240,20 @@ function createWaterScene(canvas) {
         g.translate(p.x, p.y);
         g.scale(scale, scale);
         g.translate(-p.x, -p.y);
-        g.strokeStyle = plant.species === "algae" ? "#506f37" : "#236e46";
+        const appearance = plantAppearance(plant, night);
+        g.strokeStyle = appearance.stem;
         g.lineWidth = 5;
         for (let strand = -1; strand <= 1; strand++) {
           g.beginPath();
           g.moveTo(p.x + strand * 10, p.y + 22);
-          g.quadraticCurveTo(p.x + strand * 18 + Math.sin(now / 1e3) * 2, p.y, p.x + strand * 12, p.y + 22 - h);
+          g.quadraticCurveTo(p.x + strand * 18 + Math.sin(now / 1e3) * 2, p.y, p.x + strand * 12, p.y + 22 - h * (1 - appearance.wilt * 0.35));
           g.stroke();
+          if (plant.species !== "algae")
+            for (let i = 0; i < 2; i++)
+              drawLeaf(g, appearance, p.x + strand * 12 + (i % 2 ? -5 : 5), p.y + 12 - h * (0.25 + i * 0.28), 9, 4, (i % 2 ? -0.5 : 0.5) + appearance.wilt * 0.5, i);
         }
         if (plant.species === "waterlily") {
-          g.fillStyle = "#e7b8cf";
+          g.fillStyle = (plant.health ?? 100) > 35 ? "#e7b8cf" : appearance.leaf;
           g.beginPath();
           g.ellipse(p.x, p.y - h + 22, 13, 6, 0, 0, Math.PI * 2);
           g.fill();
@@ -1515,7 +1790,7 @@ function createPublicReplayControls(container, createRenderer, language = "zh") 
 
 // webui/scene.ts
 function landScene(state) {
-  return { phase: state.phase, gridSize: capacity(state).size, facilities: state.facilities, eggs: state.eggs, nests: state.nests?.map((n) => ({ ...n, foodCapacity: n.depth * 20 })), food: state.food, webs: state.webs, seeds: state.seeds, items: state.items, soil: state.soil?.map((cell) => ({ ...cell, daylight: daylight(state, cell.x, cell.y) })), plants: state.plants.map((p) => ({ ...p, flower: flowerStage(p) })), bugs: state.bugs.map((b) => ({ ...b, flying: isFlying(b.species) })) };
+  return { phase: state.phase, gridSize: capacity(state).size, facilities: state.facilities, eggs: state.eggs, nests: state.nests?.map((n) => ({ ...n, foodCapacity: n.depth * 20 })), food: state.food, webs: state.webs, seeds: state.seeds, items: state.items, soil: state.soil?.map((cell) => ({ ...cell, daylight: daylight(state, cell.x, cell.y) })), plants: state.plants.map((p) => ({ ...p, flower: flowerStage(p), seedHead: hasSeedHead(p) })), bugs: state.bugs.map((b) => ({ ...b, flying: isFlying(b.species) })) };
 }
 function drawScene2(canvas, state, positions, hits) {
   drawScene(canvas, landScene(state), positions, hits);

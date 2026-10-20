@@ -1,5 +1,5 @@
 import { capacity } from './progression.ts';
-import { daylight, flowerStage, plantCareAdvice, TERRARIUM_GROWTH_STAGE_HOURS, TERRARIUM_PLANT_REQUIREMENTS } from './habitat.ts';
+import { daylight, flowerStage, hasSeedHead, plantCareAdvice, TERRARIUM_GROWTH_STAGE_HOURS, TERRARIUM_PLANT_REQUIREMENTS } from './habitat.ts';
 import { phase, type TerrariumState } from './state.ts';
 import { advanceAquarium, type AquariumState } from './aquarium.ts';
 
@@ -22,13 +22,26 @@ export function landCare(state: TerrariumState, nowMs: number, timezone: string)
     const needs = TERRARIUM_PLANT_REQUIREMENTS[plant.species], light = daylight(state, plant.x, plant.y);
     const moistureShortfall = Math.max(0, needs.minMoisture - plant.moisture), moistureExcess = Math.max(0, plant.moisture - needs.maxMoisture);
     const lightShortfall = Math.max(0, needs.minLight - light), lightExcess = Math.max(0, light - needs.maxLight);
+    const moistureCondition = (moisture: number) => moisture < needs.minMoisture ? 'dry' : moisture > needs.maxMoisture ? 'wet' : 'suitable';
+    const condition = moistureCondition(plant.moisture);
+    let sinceSampleAtMs: number | null = null, matchingSamples = 0;
+    if (condition !== 'suitable') for (const sample of [...state.history].reverse()) {
+      const previous = sample.plants.find(p => p.id === plant.id);
+      if (!previous || moistureCondition(previous.moisture) !== condition) break;
+      sinceSampleAtMs = sample.recordedAtMs; matchingSamples++;
+    }
+    const moistureHistory = { condition, sinceSampleAtMs, matchingSamples };
+    const aphids = state.bugs.filter(b => b.species === 'aphid' && b.x === plant.x && b.y === plant.y).length;
+    const needsProtection = (plant.leafDamage ?? 0) > 0 && state.soil[plant.y * capacity(state).size + plant.x].allowAntForaging !== false;
     const advice = [
       ...(moistureShortfall || moistureExcess ? [plantCareAdvice(plant)] : []),
       ...(lightShortfall ? ['白天光照不足；检查石子或遮阴棚的位置，或调整植物位置。'] : []),
       ...(lightExcess ? ['白天光照过强；可调整植物或石子、遮阴棚的位置。'] : []),
+      ...((plant.leafDamage ?? 0) > 0 ? [needsProtection ? '叶片有采食损伤；可禁止该格蚂蚁采集或补充巢粮，条件适宜时新叶逐渐替换受损叶片。' : '该格已禁止蚂蚁采集；叶片损伤需等待适宜白天的新叶生长，不必为补洞反复浇水。'] : []),
+      ...(aphids ? [`该株有 ${aphids} 只蚜虫；可引入瓢虫捕食，或移走部分蚜虫，避免过密。`] : []),
       ...(plant.health <= 40 ? ['健康偏低；检查取食损伤与当前环境。'] : []),
     ];
-    return { id: plant.id, species: plant.species, x: plant.x, y: plant.y, moisture: plant.moisture, daylight: light, suitable: needs, needsAction: !!(moistureShortfall || moistureExcess || lightShortfall || lightExcess || plant.health <= 40), advice: advice.length ? advice.join(' ') : timing.phase === 'night' ? '当前条件适宜，等待天亮；无需追加浇水。' : '当前条件适宜，无需处理。', ...progress(plant.stage, plant.growthHours), waitForDaylight: timing.phase === 'night', moistureShortfall, moistureExcess, lightShortfall, lightExcess, canGrowNow: timing.phase === 'day' && !moistureShortfall && !moistureExcess && !lightShortfall && !lightExcess, remainingDaylightGrowthUpperBoundHours: timing.phase === 'day' ? timing.hoursUntilChange * 1.1 : 0 };
+    return { moistureHistory, id: plant.id, species: plant.species, leafDamage: plant.leafDamage, aphids, flower: flowerStage(plant), seedHead: hasSeedHead(plant), x: plant.x, y: plant.y, moisture: plant.moisture, daylight: light, suitable: needs, needsAction: !!(moistureShortfall || moistureExcess || lightShortfall || lightExcess || plant.health <= 40 || aphids > 0 || needsProtection), advice: advice.length ? advice.join(' ') : timing.phase === 'night' ? '当前条件适宜，等待天亮；无需追加浇水。' : '当前条件适宜，无需处理。', ...progress(plant.stage, plant.growthHours), waitForDaylight: timing.phase === 'night', moistureShortfall, moistureExcess, lightShortfall, lightExcess, canGrowNow: timing.phase === 'day' && !moistureShortfall && !moistureExcess && !lightShortfall && !lightExcess, remainingDaylightGrowthUpperBoundHours: timing.phase === 'day' ? timing.hoursUntilChange * 1.1 : 0 };
   });
   const seeds = state.seeds.map(seed => {
     const moisture = state.soil[seed.y * capacity(state).size + seed.x].moisture;
