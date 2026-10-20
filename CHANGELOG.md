@@ -4,7 +4,7 @@ Versions marked unreleased were local development versions and were not publishe
 
 ## 0.8.6 · 闲看生机
 
-- Public service: display a theme wordmark with leaves, a fish and warm sunlight, adapting to dark mode, mobile screens and reduced motion. Deployed separately from the npm package.
+- Public service: display a bold theme wordmark with leaves, water ripples and a fish integrated into letter strokes, adapting to dark mode, mobile screens and reduced motion. Deployed separately from the npm package.
 
 - Move detailed rules into an on-demand topic tool; retain daily care, score formulas and contact policy in the startup prompt.
 - Return actionable care advice for moisture, shading, seed germination and aquatic plant water quality, including at night.
