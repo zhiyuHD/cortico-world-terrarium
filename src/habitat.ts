@@ -1,6 +1,6 @@
 export type PlantSpecies = 'fern' | 'clover' | 'moss' | 'basil' | 'bean';
 export interface PlantRequirements { minMoisture: number; maxMoisture: number; minLight: number; maxLight: number }
-export interface SoilCell { x: number; y: number; moisture: number }
+export interface SoilCell { x: number; y: number; moisture: number; allowAntForaging?: boolean }
 export const TERRARIUM_PLANT_LOW_HEALTH = 20;
 export const TERRARIUM_PLANT_RECOVERED_HEALTH = 35;
 export interface Habitat { items: ReadonlyArray<{ id: string; x: number; y: number }> }
@@ -36,8 +36,15 @@ export function daylight(habitat: Habitat, x: number, y: number): number {
 
 export interface HistorySample {
   recordedAtMs: number;
+  score?: number;
   soilMoisture: number[];
   plants: Array<{ id: string; species: PlantSpecies; moisture: number; health: number; stage: number; growthHours: number }>;
+}
+export function plantCareAdvice(plant: { species: PlantSpecies; moisture: number }): string {
+  const needs = TERRARIUM_PLANT_REQUIREMENTS[plant.species];
+  if (plant.moisture > needs.maxMoisture) return `先停止浇水，可用 terrarium_drain 排水至 ${needs.maxMoisture} 以下；当前超出上限 ${(plant.moisture - needs.maxMoisture).toFixed(1)}。`;
+  if (plant.moisture < needs.minMoisture) return `建议用 terrarium_water 补至目标水分 ${(needs.minMoisture + needs.maxMoisture) / 2}，避免超过 ${needs.maxMoisture}。`;
+  return '当前水分适宜，无需为回血反复浇水；检查取食损伤，必要时禁止该格蚂蚁采集。';
 }
 export const TERRARIUM_MAX_HISTORY = 168;
 

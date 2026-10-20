@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { expect, it } from 'vitest';
-import { drawHistory, historyPaths } from '../webui/history.ts';
+import { drawHistory, drawScoreHistory, historyPaths } from '../webui/history.ts';
 import { newState } from '../src/state.ts';
 
 it('uses elapsed time on the chart and breaks lines where plants are absent', () => {
@@ -18,4 +18,11 @@ it('renders soil history and keeps plant stage units visible', () => {
   const soil = drawHistory(history, 'soil:0', labels, 'en');
   expect(soil.querySelectorAll('path')).toHaveLength(1);
   expect(soil.textContent).not.toContain('Stage (0–3)');
+});
+
+it('renders actual score samples and preserves gaps in unrecorded score history', () => {
+  const chart = drawScoreHistory([{ recordedAtMs: 0, score: 10 }, { recordedAtMs: 1000, score: null }, { recordedAtMs: 2000, score: 20 }], true, 'zh');
+  expect(chart.textContent).toContain('最近 24 小时');
+  expect(chart.querySelectorAll('path')).toHaveLength(2);
+  expect(chart.querySelector('svg')!.getAttribute('aria-label')).toContain('本地模拟');
 });

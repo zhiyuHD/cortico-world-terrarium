@@ -1,4 +1,6 @@
 import { validCollection, type CollectionItem } from './collection.ts';
+import { score } from './scoring.ts';
+import { plantCareAdvice } from './habitat.ts';
 import { validateWatering, waterAdded, type WateringOptions } from './habitat.ts';
 import { isFlying, flightDraw, TERRARIUM_FLY_ACTION_INTERVAL_MS, TERRARIUM_FLY_MOVE_PROBABILITY, type FlyingSpecies } from './flight.ts';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
@@ -10,7 +12,7 @@ import { captureFrame, TERRARIUM_MAX_REPLAYS, TERRARIUM_REPLAY_RETENTION_MS, typ
 
 export type PlantId = string;
 export type ItemId = 'coin' | 'pebble';
-export type SeedSpecies = 'moss' | 'basil' | 'bean';
+export type SeedSpecies = PlantSpecies;
 export type BugSpecies = 'aphid' | 'beetle' | 'spider' | 'ant' | FlyingSpecies;
 export interface PlantState { id: PlantId; species: PlantSpecies; x: number; y: number; moisture: number; growthHours: number; stage: number; dry: boolean; health: number; healthWarning?: boolean }
 export interface SeedState { id: string; species: SeedSpecies; x: number; y: number; ageHours: number }
@@ -21,7 +23,7 @@ export interface SpiderWeb { id: string; spiderId: string; x: number; y: number;
 export interface LandFood { id: string; x: number; y: number; portions: number; droppedAtMs: number }
 export interface ItemState { id: ItemId; x: number; y: number }
 export interface TerrariumState { collection?: CollectionItem[]; irrigation?: Array<{ x: number; y: number; targetMoisture: number; intervalMinutes: number; lastWateredAtMs: number }>; version: 3; name?: string; webs?: SpiderWeb[]; eggs?: EggState[]; nests?: NestState[]; food?: LandFood[]; replays?: HuntReplay[]; soil: SoilCell[]; history: HistorySample[]; updatedAtMs: number; nextId: number; plants: PlantState[]; seeds: SeedState[]; bugs: BugState[]; items: ItemState[] }
-export interface Change { kind: 'stage' | 'dry' | 'health' | 'phase' | 'sprout' | 'hunt' | 'death' | 'birth' | 'hungry' | 'egg' | 'nest' | 'web'; text: string }
+export interface Change { kind: 'stage' | 'dry' | 'health' | 'phase' | 'sprout' | 'hunt' | 'death' | 'birth' | 'hungry' | 'egg' | 'nest' | 'web' | 'irrigation'; text: string }
 
 export const TERRARIUM_MAX_NAME_LENGTH = 64;
 
@@ -47,7 +49,7 @@ export const TERRARIUM_BUG_FORAGE_HUNGER = 25;
 export const TERRARIUM_WEB_LIFETIME_MS = 6 * 60 * 60_000;
 export const TERRARIUM_WEBS_PER_SPIDER = 3;
 const HOUR_MS = 60 * 60_000;
-const MAX_CATCHUP_MS = 30 * 24 * HOUR_MS;
+export const TERRARIUM_MAX_CATCHUP_MS = 30 * 24 * HOUR_MS;
 
 export function newState(nowMs: number): TerrariumState {
   const state: TerrariumState = { version: 3, soil: Array.from({ length: 25 }, (_, i) => ({ x: i % 5, y: Math.floor(i / 5), moisture: 50 })), history: [], updatedAtMs: nowMs, nextId: 1, plants: [
@@ -62,7 +64,7 @@ export function newState(nowMs: number): TerrariumState {
 const inGrid = (x: number, y: number): boolean => Number.isInteger(x) && Number.isInteger(y) && x >= 0 && x < 5 && y >= 0 && y < 5;
 
 export function sow(state: TerrariumState, species: SeedSpecies, x: number, y: number): SeedState {
-  if (!['moss', 'basil', 'bean'].includes(species)) throw new Error('Unknown seed species');
+  if (!Object.hasOwn(TERRARIUM_PLANT_REQUIREMENTS, species)) throw new Error('Unknown seed species');
   if (!inGrid(x, y)) throw new Error('Position must be in the 5×5 grid');
   if (state.plants.length + state.seeds.length >= 12) throw new Error('Plant capacity reached');
   if ([...state.plants, ...state.seeds].some(p => p.x === x && p.y === y)) throw new Error('That plot is occupied');
@@ -128,6 +130,7 @@ function nearest<T extends { id: string; x: number; y: number }>(bug: BugState, 
   return [...values].sort((a, b) => Math.abs(a.x - bug.x) + Math.abs(a.y - bug.y) - Math.abs(b.x - bug.x) - Math.abs(b.y - bug.y) || a.id.localeCompare(b.id))[0];
 }
 type PlantDamage = (plant: PlantState, amount: number, cause: string) => void;
+const label = (value: { id: string; species: string; x: number; y: number }): string => `${value.id}（${value.species}），位置 (${value.x},${value.y})`;
 
 function actAnt(state: TerrariumState, bug: BugState, changes: Change[], damage: PlantDamage): void {
   const nests = state.nests ??= [];
@@ -135,10 +138,12 @@ function actAnt(state: TerrariumState, bug: BugState, changes: Change[], damage:
   if (!nest) {
     nest = { id: `nest-${state.nextId++}`, x: bug.x, y: bug.y, depth: 1, food: 0 };
     nests.push(nest);
-    changes.push({ kind: 'nest', text: `${bug.id} 在 (${nest.x},${nest.y}) 挖出蚁巢 ${nest.id}。` });
+    changes.push({ kind: 'nest', text: `${label(bug)} 在 (${nest.x},${nest.y}) 挖出蚁巢 ${nest.id}。` });
     enterNest(bug, nest);
     return;
   }
+  const availableFood = (state.food?.length ?? 0) > 0 || state.plants.some(p => p.health > 40 && state.soil[p.y * 5 + p.x].allowAntForaging !== false);
+  const forageAlone = availableFood && bug.role === 'queen' && !state.bugs.some(other => other.species === 'ant' && other.role === 'worker') && nest.food <= 0 && (bug.energy < 70 || (bug.hunger ?? 0) >= TERRARIUM_BUG_FORAGE_HUNGER);
   if (bug.inside) {
     nest = nests.find(nest => nest.id === bug.inside!.nestId)!;
     if (bug.carrying) {
@@ -146,7 +151,10 @@ function actAnt(state: TerrariumState, bug: BugState, changes: Change[], damage:
       return;
     }
     if ((bug.energy < 70 || (bug.hunger ?? 0) >= TERRARIUM_BUG_FORAGE_HUNGER) && nest.food > 0) { nest.food--; bug.energy = Math.min(100, bug.energy + 20); bug.hunger = Math.max(0, (bug.hunger ?? 0) - 40); return; }
-    if (bug.role === 'queen') { walkInside(bug.inside, TERRARIUM_NEST_NURSERY); return; }
+    if (bug.role === 'queen') {
+      if (walkInside(bug.inside, forageAlone ? TERRARIUM_NEST_ENTRANCE : TERRARIUM_NEST_NURSERY) && forageAlone) delete bug.inside;
+      return;
+    }
     if (nest.depth < 5) {
       nest.depth++;
       if (nest.depth === 5) changes.push({ kind: 'nest', text: `${nest.id} 挖至 5 层，可储存 100 份食物。` });
@@ -155,7 +163,7 @@ function actAnt(state: TerrariumState, bug: BugState, changes: Change[], damage:
     if (walkInside(bug.inside, TERRARIUM_NEST_ENTRANCE)) delete bug.inside;
     return;
   }
-  if (bug.role === 'queen') { if (approach(bug, nest)) enterNest(bug, nest); return; }
+  if (bug.role === 'queen' && !forageAlone) { if (approach(bug, nest)) enterNest(bug, nest); return; }
   if (bug.carrying) {
     if (approach(bug, nest)) enterNest(bug, nest);
     return;
@@ -164,18 +172,27 @@ function actAnt(state: TerrariumState, bug: BugState, changes: Change[], damage:
     if (approach(bug, nest)) enterNest(bug, nest);
     return;
   }
-  if (bug.x === nest.x && bug.y === nest.y && nest.depth < 5) {
+  if (bug.role !== 'queen' && bug.x === nest.x && bug.y === nest.y && nest.depth < 5) {
     enterNest(bug, nest);
     return;
   }
   if (nest.food >= Math.min(nest.depth * 20, Math.max(3, state.bugs.filter(b => b.species === 'ant').length * 2))) { if (approach(bug, nest)) enterNest(bug, nest); return; }
   const food = nearest(bug, state.food ?? []);
   if (food) {
-    if (approach(bug, food)) { food.portions--; bug.carrying = 1; if (!food.portions) state.food!.splice(state.food!.indexOf(food), 1); }
+    if (approach(bug, food)) {
+      food.portions--;
+      if (forageAlone) { bug.energy = Math.min(100, bug.energy + 20); bug.hunger = Math.max(0, (bug.hunger ?? 0) - 40); }
+      else bug.carrying = 1;
+      if (!food.portions) state.food!.splice(state.food!.indexOf(food), 1);
+    }
     return;
   }
-  const plant = nearest(bug, state.plants.filter(plant => plant.health > 40));
-  if (plant && approach(bug, plant)) { damage(plant, 1, '蚂蚁采集'); bug.carrying = 1; }
+  const plant = nearest(bug, state.plants.filter(plant => plant.health > 40 && state.soil[plant.y * 5 + plant.x].allowAntForaging !== false));
+  if (plant && approach(bug, plant)) {
+    damage(plant, 1, '蚂蚁采集');
+    if (forageAlone) { bug.energy = Math.min(100, bug.energy + 20); bug.hunger = Math.max(0, (bug.hunger ?? 0) - 40); }
+    else bug.carrying = 1;
+  }
 }
 
 function actBug(state: TerrariumState, bug: BugState, changes: Change[], recordedAtMs: number, currentPhase: 'day' | 'night', damage: PlantDamage): void {
@@ -210,7 +227,7 @@ function actBug(state: TerrariumState, bug: BugState, changes: Change[], recorde
         bug.hunger = Math.max(0, (bug.hunger ?? 0) - 60);
         const replay: HuntReplay = { id: `hunt-${recordedAtMs}-${bug.id}-${target.id}`, recordedAtMs, hunterId: bug.id, preyId: target.id, frames: [before!, contact, captureFrame(state, currentPhase)] };
         state.replays = [...(state.replays ?? []), replay].slice(-TERRARIUM_MAX_REPLAYS);
-        changes.push({ kind: 'hunt', text: `${bug.id} 捕食了 ${target.id}。回放 ID：${replay.id}` });
+        changes.push({ kind: 'hunt', text: `${label(bug)} 捕食了 ${label(target)}。回放 ID：${replay.id}` });
       }
     }
   } else {
@@ -228,7 +245,7 @@ function weave(state: TerrariumState, spider: BugState, atMs: number, changes: C
   const web: SpiderWeb = { id: `web-${state.nextId++}`, spiderId: spider.id, x: spider.x, y: spider.y, createdAtMs: atMs };
   if (owned.length >= TERRARIUM_WEBS_PER_SPIDER) state.webs = state.webs!.filter(value => value.id !== owned[0].id);
   (state.webs ??= []).push(web);
-  changes.push({ kind: 'web', text: `${spider.id} 在 (${web.x},${web.y}) 织出蛛网 ${web.id}，飞虫触网会被捕食。` });
+  changes.push({ kind: 'web', text: `${label(spider)} 在 (${web.x},${web.y}) 织出蛛网 ${web.id}，飞虫触网会被捕食。` });
 }
 
 function trapFly(state: TerrariumState, fly: BugState, atMs: number, currentPhase: 'day' | 'night', changes: Change[], before = captureFrame(state, currentPhase)): boolean {
@@ -242,7 +259,7 @@ function trapFly(state: TerrariumState, fly: BugState, atMs: number, currentPhas
   spider.hunger = Math.max(0, (spider.hunger ?? 0) - 60);
   const replay: HuntReplay = { id: `hunt-${atMs}-${spider.id}-${fly.id}`, recordedAtMs: atMs, hunterId: spider.id, preyId: fly.id, frames: [before, contact, captureFrame(state, currentPhase)] };
   state.replays = [...(state.replays ?? []), replay].slice(-TERRARIUM_MAX_REPLAYS);
-  changes.push({ kind: 'hunt', text: `${fly.id} 飞入 ${web!.id}，被 ${spider.id} 捕食。回放 ID：${replay.id}` });
+  changes.push({ kind: 'hunt', text: `${label(fly)} 飞入 ${web!.id}，被 ${label(spider)} 捕食。回放 ID：${replay.id}` });
   return true;
 }
 
@@ -276,7 +293,7 @@ export function phase(atMs: number, timezone: string): 'day' | 'night' {
 }
 
 function recordHistory(state: TerrariumState, recordedAtMs: number): void {
-  state.history.push({ recordedAtMs, soilMoisture: state.soil.map(cell => cell.moisture), plants: state.plants.map(({ id, species, moisture, health, stage, growthHours }) => ({ id, species, moisture, health, stage, growthHours })) });
+  state.history.push({ recordedAtMs, score: score(state), soilMoisture: state.soil.map(cell => cell.moisture), plants: state.plants.map(({ id, species, moisture, health, stage, growthHours }) => ({ id, species, moisture, health, stage, growthHours })) });
   state.history = state.history.filter(sample => sample.recordedAtMs >= recordedAtMs - TERRARIUM_MAX_HISTORY * HOUR_MS).slice(-TERRARIUM_MAX_HISTORY);
 }
 
@@ -320,23 +337,37 @@ export function advance(state: TerrariumState, nowMs: number, timezone: string):
   };
   // The simulation catches up after downtime while keeping a finite work bound.
   const stepMs = state.bugs.some(bug => bug.species === 'ant' || isFlying(bug.species)) || state.eggs?.length ? TERRARIUM_ANT_ACTION_INTERVAL_MS : TERRARIUM_BUG_ACTION_INTERVAL_MS;
-  const from = Math.max(state.updatedAtMs, nowMs - MAX_CATCHUP_MS);
-  for (let start = from; start < nowMs; start = Math.min(nowMs, (Math.floor(start / stepMs) + 1) * stepMs)) {
+  const from = Math.max(state.updatedAtMs, nowMs - TERRARIUM_MAX_CATCHUP_MS);
+  const irrigated = new Map<string, { count: number; added: number }>();
+  for (let start = from; start < nowMs;) {
     ensureQueen(state);
-    const end = Math.min(nowMs, (Math.floor(start / stepMs) + 1) * stepMs);
+    const due = (state.irrigation ?? []).map(s => Math.max(s.lastWateredAtMs, nowMs - TERRARIUM_MAX_CATCHUP_MS) + s.intervalMinutes * 60_000).filter(at => at > start);
+    const end = Math.min(nowMs, (Math.floor(start / stepMs) + 1) * stepMs, ...due);
     if (state.webs) state.webs = state.webs.filter(web => end - web.createdAtMs < TERRARIUM_WEB_LIFETIME_MS && state.bugs.some(bug => bug.id === web.spiderId && bug.species === 'spider'));
     const hours = (end - start) / HOUR_MS;
     const before = phase(start, timezone);
     const after = phase(end, timezone);
     if (before !== after) changes.push({ kind: 'phase', text: after === 'day' ? '生态箱天亮了。' : '生态箱天黑了。' });
     advanceSoil(state, hours, before === 'day');
+    for (const schedule of state.irrigation ?? []) {
+      const intervalMs = schedule.intervalMinutes * 60_000;
+      // Intervals older than the simulation bound are not replayed.
+      const base = Math.max(schedule.lastWateredAtMs, nowMs - TERRARIUM_MAX_CATCHUP_MS);
+      const count = Math.floor((end - base) / intervalMs);
+      if (count < 1) continue;
+      const cell = state.soil[schedule.y * 5 + schedule.x], previous = cell.moisture;
+      waterSoil(state, schedule.x, schedule.y, { targetMoisture: schedule.targetMoisture });
+      schedule.lastWateredAtMs = base + count * intervalMs;
+      const key = `${schedule.x},${schedule.y}`, total = irrigated.get(key) ?? { count: 0, added: 0 };
+      total.count += count; total.added += cell.moisture - previous; irrigated.set(key, total);
+    }
     for (const seed of [...state.seeds]) {
       const moisture = state.soil[seed.y * 5 + seed.x].moisture;
       if (before === 'day' && moisture >= TERRARIUM_PLANT_REQUIREMENTS[seed.species].minMoisture) seed.ageHours += hours;
       if (seed.ageHours >= 2) {
         state.seeds.splice(state.seeds.indexOf(seed), 1);
         state.plants.push({ id: seed.id, species: seed.species, x: seed.x, y: seed.y, moisture, growthHours: 0, stage: 0, dry: false, health: 100 });
-        changes.push({ kind: 'sprout', text: `${seed.id} 发芽了。` });
+        changes.push({ kind: 'sprout', text: `${label(seed)} 发芽了。` });
       }
     }
     for (const plant of state.plants) {
@@ -350,14 +381,14 @@ export function advance(state: TerrariumState, nowMs: number, timezone: string):
       const stage = STAGES.reduce((n, threshold, index) => plant.growthHours >= threshold ? index : n, 0);
       if (stage !== plant.stage) {
         plant.stage = stage;
-        changes.push({ kind: 'stage', text: `${plant.id === 'fern' ? '蕨草' : plant.id === 'clover' ? '三叶草' : plant.id}长到了第 ${stage} 阶段。` });
+        changes.push({ kind: 'stage', text: `${label(plant)} 长到了第 ${stage} 阶段。` });
       }
       if (!plant.dry && plant.moisture < needs.minMoisture) {
         plant.dry = true;
-        changes.push({ kind: 'dry', text: `${plant.id === 'fern' ? '蕨草' : plant.id === 'clover' ? '三叶草' : plant.id}的土壤变干了（水分 ${plant.moisture.toFixed(1)}，生长下限 ${needs.minMoisture}）。` });
+        changes.push({ kind: 'dry', text: `${label(plant)} 的土壤变干了（水分 ${plant.moisture.toFixed(1)}，生长下限 ${needs.minMoisture}）。${plantCareAdvice(plant)}` });
       }
       plant.dry = plant.moisture < needs.minMoisture;
-      if (flowerStage(plant) === 'bloom' && previousFlower !== 'bloom') changes.push({ kind: 'stage', text: `${plant.id}（${plant.species}）开花了。` });
+      if (flowerStage(plant) === 'bloom' && previousFlower !== 'bloom') changes.push({ kind: 'stage', text: `${label(plant)} 开花了。` });
     }
     if (state.food) state.food = state.food.filter(food => food.droppedAtMs + 48 * HOUR_MS > end);
     const hourlyStep = Math.floor(start / HOUR_MS) !== Math.floor(end / HOUR_MS);
@@ -394,7 +425,7 @@ export function advance(state: TerrariumState, nowMs: number, timezone: string):
       if (bug.hunger >= 100 - 1e-9) {
         state.bugs.splice(state.bugs.indexOf(bug), 1);
         if (state.webs) state.webs = state.webs.filter(web => web.spiderId !== bug.id);
-        changes.push({ kind: 'death', text: `${bug.id}（${bug.species}）因饥饿死亡：饥饿值达到 100。` });
+        changes.push({ kind: 'death', text: `${label(bug)} 因饥饿死亡：饥饿值达到 100。` });
         continue;
       }
       bug.ageHours += hours; bug.energy = Math.max(0, bug.energy - hours * 2);
@@ -415,8 +446,8 @@ export function advance(state: TerrariumState, nowMs: number, timezone: string):
           changes.push({ kind: 'egg', text: `蚁后 ${bug.id} 在蚁巢 ${bug.inside.nestId} 产下 ${count} 枚卵，6 小时后孵化。` });
         }
       }
-      if (bug.ageHours >= 120) { state.bugs.splice(state.bugs.indexOf(bug), 1); if (state.webs) state.webs = state.webs.filter(web => web.spiderId !== bug.id); changes.push({ kind: 'death', text: `${bug.id} 死亡了。` }); }
-      else if (previousHunger < TERRARIUM_BUG_HUNGER_WARNING && bug.hunger >= TERRARIUM_BUG_HUNGER_WARNING) changes.push({ kind: 'hungry', text: `${bug.id}（${bug.species}）饥饿值 ${bug.hunger.toFixed(1)}/100，达到 100 会饿死。需要实际取食；terrarium_feed_bug 只补能量，不能降低饥饿值。` });
+      if (bug.ageHours >= 120) { state.bugs.splice(state.bugs.indexOf(bug), 1); if (state.webs) state.webs = state.webs.filter(web => web.spiderId !== bug.id); changes.push({ kind: 'death', text: `${label(bug)} 因寿命达到 120 小时死亡。` }); }
+      else if (previousHunger < TERRARIUM_BUG_HUNGER_WARNING && bug.hunger >= TERRARIUM_BUG_HUNGER_WARNING) changes.push({ kind: 'hungry', text: `${label(bug)} 饥饿值 ${bug.hunger.toFixed(1)}/100，达到 100 会饿死。需要实际取食；terrarium_feed_bug 只补能量，不能降低饥饿值。` });
       else if (previousEnergy > 20 && bug.energy <= 20) changes.push({ kind: 'hungry', text: `${bug.id}（${bug.species}）体力低于 20，位置 (${bug.x},${bug.y})。` });
     }
     for (const egg of [...(state.eggs ?? [])]) if (egg.hatchesAtMs <= end && state.bugs.length < 12) {
@@ -427,24 +458,26 @@ export function advance(state: TerrariumState, nowMs: number, timezone: string):
       changes.push({ kind: 'birth', text: `${egg.id} 孵化为幼虫 ${child.id}（${child.species}），位置 (${child.x},${child.y})。` });
     }
     for (const plant of [...state.plants]) {
-      if (plant.health <= 0) { state.plants.splice(state.plants.indexOf(plant), 1); changes.push({ kind: 'death', text: `${plant.id} 枯死了。${damageText(plant)}` }); }
+      if (plant.health <= 0) { state.plants.splice(state.plants.indexOf(plant), 1); changes.push({ kind: 'death', text: `${label(plant)} 枯死了。水分 ${plant.moisture.toFixed(1)}。${damageText(plant)}` }); }
       else if (plant.health <= TERRARIUM_PLANT_LOW_HEALTH && !plant.healthWarning) {
         plant.healthWarning = true;
         const needs = TERRARIUM_PLANT_REQUIREMENTS[plant.species];
-        changes.push({ kind: 'health', text: `${plant.id}（${plant.species}）濒危：健康 ${plant.health.toFixed(1)}/100，位置 (${plant.x},${plant.y})，土壤水分 ${plant.moisture.toFixed(1)}（适宜 ${needs.minMoisture}–${needs.maxMoisture}）。${damageText(plant)}浇水恢复 5 健康，先检查水分是否已超出适宜范围。` });
+        changes.push({ kind: 'health', text: `${plant.id}（${plant.species}）濒危：健康 ${plant.health.toFixed(1)}/100，位置 (${plant.x},${plant.y})，土壤水分 ${plant.moisture.toFixed(1)}（适宜 ${needs.minMoisture}–${needs.maxMoisture}）。${damageText(plant)}${plantCareAdvice(plant)}` });
       } else if (plant.health >= TERRARIUM_PLANT_RECOVERED_HEALTH) delete plant.healthWarning;
     }
     if (state.webs) state.webs = state.webs.filter(web => end - web.createdAtMs < TERRARIUM_WEB_LIFETIME_MS && state.bugs.some(bug => bug.id === web.spiderId && bug.species === 'spider'));
     if (hourlyStep) recordHistory(state, end);
+    start = end;
   }
   for (const plant of state.plants) {
     const previous = initialHealth.get(plant.id);
     if (previous !== undefined && plant.health > TERRARIUM_PLANT_LOW_HEALTH && [75, 50, 40].some(threshold => previous > threshold && plant.health <= threshold)) {
-      changes.push({ kind: 'health', text: `${plant.id}（${plant.species}）健康下降：${previous.toFixed(1)} → ${plant.health.toFixed(1)}/100，位置 (${plant.x},${plant.y})。${damageText(plant)}` });
+      changes.push({ kind: 'health', text: `${plant.id}（${plant.species}）健康下降：${previous.toFixed(1)} → ${plant.health.toFixed(1)}/100，位置 (${plant.x},${plant.y})。${damageText(plant)}${plantCareAdvice(plant)}` });
     }
   }
   if (state.replays) state.replays = state.replays.filter(replay => replay.recordedAtMs >= nowMs - TERRARIUM_REPLAY_RETENTION_MS);
   state.updatedAtMs = nowMs;
+  for (const [cell, total] of irrigated) changes.push({ kind: 'irrigation', text: `定时补水 (${cell})：执行 ${total.count} 次，合计补充 ${total.added.toFixed(1)} 水分，按模拟时间结算。` });
   return changes;
 }
 
@@ -541,8 +574,8 @@ function initializeHabitat(state: TerrariumState): void {
 
 function validHabitat(state: Partial<TerrariumState>): boolean {
   const percent = (value: number): boolean => Number.isFinite(value) && value >= 0 && value <= 100;
-  return Array.isArray(state.soil) && state.soil.length === 25 && state.soil.every((cell, i) => cell && cell.x === i % 5 && cell.y === Math.floor(i / 5) && percent(cell.moisture)) &&
-    Array.isArray(state.history) && state.history.length <= TERRARIUM_MAX_HISTORY && state.history.every((sample, i) => sample && Number.isFinite(sample.recordedAtMs) && sample.recordedAtMs <= state.updatedAtMs! && (i === 0 || sample.recordedAtMs > state.history![i - 1].recordedAtMs) &&
+  return Array.isArray(state.soil) && state.soil.length === 25 && state.soil.every((cell, i) => cell && cell.x === i % 5 && cell.y === Math.floor(i / 5) && percent(cell.moisture) && (cell.allowAntForaging === undefined || typeof cell.allowAntForaging === 'boolean')) &&
+    Array.isArray(state.history) && state.history.length <= TERRARIUM_MAX_HISTORY && state.history.every((sample, i) => sample && Number.isFinite(sample.recordedAtMs) && (sample.score === undefined || Number.isSafeInteger(sample.score) && sample.score >= 0) && sample.recordedAtMs <= state.updatedAtMs! && (i === 0 || sample.recordedAtMs > state.history![i - 1].recordedAtMs) &&
       Array.isArray(sample.soilMoisture) && sample.soilMoisture.length === 25 && sample.soilMoisture.every(percent) && Array.isArray(sample.plants) && sample.plants.length <= 12 &&
       sample.plants.every(p => p && typeof p.id === 'string' && p.id.length <= 32 && Object.hasOwn(TERRARIUM_PLANT_REQUIREMENTS, p.species) && percent(p.moisture) && percent(p.health) && Number.isInteger(p.stage) && p.stage >= 0 && p.stage <= 3 && Number.isFinite(p.growthHours) && p.growthHours >= 0));
 }
@@ -565,7 +598,7 @@ export function validState(value: unknown): value is TerrariumState {
   return state.version === 3 && (state.name === undefined || validName(state.name)) && validHabitat(state) && validReplays(state) && Number.isFinite(state.updatedAtMs) && Number.isSafeInteger(state.nextId) && state.nextId! >= 1 &&
     Array.isArray(state.plants) && state.plants.length <= 12 &&
     state.plants.every(p => p && typeof p.id === 'string' && p.id.length <= 32 && ['fern', 'clover', 'moss', 'basil', 'bean'].includes(p.species) && inGrid(p.x, p.y) && Number.isFinite(p.moisture) && p.moisture >= 0 && p.moisture <= 100 && Number.isFinite(p.growthHours) && p.growthHours >= 0 && Number.isInteger(p.stage) && p.stage >= 0 && p.stage <= 3 && typeof p.dry === 'boolean' && Number.isFinite(p.health) && p.health >= 0 && p.health <= 100 && (p.healthWarning === undefined || typeof p.healthWarning === 'boolean')) &&
-    Array.isArray(state.seeds) && state.seeds.length <= 12 && state.plants.length + state.seeds.length <= 12 && state.seeds.every(s => s && typeof s.id === 'string' && ['moss', 'basil', 'bean'].includes(s.species) && inGrid(s.x, s.y) && Number.isFinite(s.ageHours) && s.ageHours >= 0) &&
+    Array.isArray(state.seeds) && state.seeds.length <= 12 && state.plants.length + state.seeds.length <= 12 && state.seeds.every(s => s && typeof s.id === 'string' && Object.hasOwn(TERRARIUM_PLANT_REQUIREMENTS, s.species) && inGrid(s.x, s.y) && Number.isFinite(s.ageHours) && s.ageHours >= 0) &&
     Array.isArray(state.bugs) && state.bugs.length <= 12 && state.bugs.every(b => b && typeof b.id === 'string' && (['aphid', 'beetle', 'spider', 'ant'].includes(b.species) || isFlying(b.species)) && inGrid(b.x, b.y) && Number.isFinite(b.energy) && b.energy >= 0 && b.energy <= 100 && (b.hunger === undefined || (Number.isFinite(b.hunger) && b.hunger >= 0 && b.hunger <= 100)) && (b.carrying === undefined || (b.species === 'ant' && Number.isInteger(b.carrying) && b.carrying >= 0 && b.carrying <= 5)) && Number.isFinite(b.ageHours) && b.ageHours >= 0) &&
     (state.eggs === undefined || (Array.isArray(state.eggs) && state.eggs.length <= 12 && state.eggs.every(egg => egg && typeof egg.id === 'string' && egg.id.length <= 32 && (['beetle', 'spider', 'ant'].includes(egg.species) || isFlying(egg.species)) && inGrid(egg.x, egg.y) && Number.isFinite(egg.laidAtMs) && egg.laidAtMs <= state.updatedAtMs! && Number.isFinite(egg.hatchesAtMs) && egg.hatchesAtMs > egg.laidAtMs && egg.hatchesAtMs <= egg.laidAtMs + 6 * HOUR_MS))) &&
     state.bugs.length + (state.eggs?.length ?? 0) <= 12 &&

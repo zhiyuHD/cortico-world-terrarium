@@ -106,6 +106,7 @@ it('delivers birth and hunger events so the bot can inspect the changed state', 
       { id: 'bug-3', species: 'ant', role: 'queen', x: 4, y: 4, ageHours: 0, energy: 21 },
     );
     state.nextId = 4;
+    for (const cell of state.soil) cell.allowAntForaging = false;
     await saveState(file, state);
     const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: '' }, timezone: 'Asia/Shanghai', stateFile: file, now: () => now });
     await world.start(host);
@@ -292,7 +293,8 @@ it('runs a newly claimed ant without reads and saves its unsynchronized state on
     expect(stopped.updatedAtMs).toBe(start + 30_000);
     expect(stopped.nests).toMatchObject([{ x: 2, y: 2, depth: 1 }]);
     const queen = stopped.bugs.find(bug => bug.id === released.bug.id)!;
-    expect(queen).toMatchObject({ role: 'queen', inside: { nestId: stopped.nests![0].id, x: 1, y: 0 } });
+    expect(queen).toMatchObject({ role: 'queen', x: 2, y: 2 });
+    expect(queen.inside).toBeUndefined();
     expect(reports).toBe(initialReports);
     expect(vi.getTimerCount()).toBe(0);
     await vi.advanceTimersByTimeAsync(5_000);
@@ -300,7 +302,8 @@ it('runs a newly claimed ant without reads and saves its unsynchronized state on
     expect(reports).toBe(initialReports);
     await world.start(host);
     const restarted = await world.webUi().invoke!('garden', 'state', []) as { state: ReturnType<typeof newState> };
-    expect(restarted.state.bugs.find(bug => bug.id === queen.id)).toMatchObject({ role: 'queen', inside: queen.inside });
+    expect(restarted.state.bugs.find(bug => bug.id === queen.id)).toMatchObject({ role: 'queen', x: queen.x, y: queen.y });
+    expect(restarted.state.bugs.find(bug => bug.id === queen.id)!.inside).toEqual(queen.inside);
     expect(restarted.state.nests).toEqual(stopped.nests);
     expect(events.filter(event => event.type === 'terrarium.nest')).toHaveLength(1);
     expect(warnings).toEqual([]);

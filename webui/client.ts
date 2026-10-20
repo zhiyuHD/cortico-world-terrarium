@@ -1,4 +1,5 @@
-import { careText, createCareControls } from './care.ts';
+import { careText, returnReportText, createCareControls } from './care.ts';
+import type { ReturnReport } from '../src/return-report.ts';
 import type { landCare } from '../src/care.ts';
 import type { TerrariumState } from '../src/state.ts';
 import { createWateringControls } from './watering.ts';
@@ -10,7 +11,7 @@ import type { WebUiClientBundle, WebUiPanelContext } from 'cortico/web/shared/cl
 import { pick } from 'cortico/core/language.ts';
 import { createScene, createReplayControls, type SceneState } from './scene.ts';
 import { flowerStage, daylight, TERRARIUM_PLANT_LOW_HEALTH, TERRARIUM_PLANT_REQUIREMENTS, type PlantSpecies } from '../src/habitat.ts';
-import { drawHistory } from './history.ts';
+import { drawHistory, drawScoreHistory } from './history.ts';
 import './style.css';
 
 function mount(ctx: WebUiPanelContext): void {
@@ -46,6 +47,7 @@ function mount(ctx: WebUiPanelContext): void {
   select.className = 'terrarium-select';
   select.setAttribute('aria-label', copy.history);
   const chart = ctx.ui.h('div', '');
+  const scoreChart = ctx.ui.h('div', '');
   let selected = 'soil:0';
   let current: (SceneState & TerrariumState) | undefined;
   const renderHistory = (): void => {
@@ -60,16 +62,16 @@ function mount(ctx: WebUiPanelContext): void {
     chart.replaceChildren(drawHistory(current.history, selected, copy, ctx.language));
   };
   select.addEventListener('change', () => { selected = select.value; renderHistory(); });
-  card.body.append(name, status, sync.el, canvas, replayContainer, details, diagnosis, habitat, careControls.el, historyTitle, select, chart, refresh, createFeedbackControls(ctx));
+  card.body.append(name, status, sync.el, canvas, replayContainer, details, diagnosis, habitat, careControls.el, historyTitle, select, chart, scoreChart, refresh, createFeedbackControls(ctx));
   ctx.root.appendChild(card.el);
   const load = async (): Promise<void> => {
     try {
-      const response = await ctx.invoke<{ sync: TerrariumSyncStatus; claimed: boolean; id?: string; state?: SceneState & TerrariumState & { care: ReturnType<typeof landCare> } }>('state');
+      const response = await ctx.invoke<{ sync: TerrariumSyncStatus; claimed: boolean; id?: string; state?: SceneState & TerrariumState & { care: ReturnType<typeof landCare>; returnReport?: ReturnReport; scoreHistory: { recordedAtMs: number; score: number | null }[] } }>('state');
       if (ctx.signal.aborted) return;
       sync.update(response.sync, response.claimed);
       watering.update(response.claimed);
       const state = response.state;
-      for (const el of [canvas, replayContainer, details, diagnosis, habitat, careControls.el, historyTitle, select, chart]) el.hidden = !response.claimed;
+      for (const el of [canvas, replayContainer, details, diagnosis, habitat, careControls.el, historyTitle, select, chart, scoreChart]) el.hidden = !response.claimed;
       if (!response.claimed || !state) { status.textContent = pick(ctx.language, { zh: '未认领 · 先通过 terrarium_claim 认领地箱，再检查每格水分和光照后播种。', en: 'Unclaimed · Use terrarium_claim, inspect moisture and light, then sow.' }); return; }
       if (ctx.signal.aborted) return;
       name.textContent = state.name ?? pick(ctx.language, { zh: '生态箱', en: 'Terrarium' });
@@ -78,7 +80,8 @@ function mount(ctx: WebUiPanelContext): void {
       scene.setState(state);
       replay.setReplays(state.replays ?? []);
       current = state;
-      diagnosis.replaceChildren(...careText(state.care, ctx.language.startsWith('zh')).map(text => ctx.ui.h('div', '', text)));
+      scoreChart.replaceChildren(drawScoreHistory(state.scoreHistory, ctx.language.startsWith('zh'), ctx.language));
+      diagnosis.replaceChildren(...[...returnReportText(state.returnReport, ctx.language.startsWith('zh')), ...careText(state.care, ctx.language.startsWith('zh'))].map(text => ctx.ui.h('div', '', text)));
       const cells = state.soil.map((cell, index) => {
         const light = state.phase === 'day' ? daylight(state, cell.x, cell.y) : 0;
         const label = `(${cell.x},${cell.y}) · ${copy.moisture} ${cell.moisture.toFixed(1)} · ${copy.light} ${light.toFixed(2)}`;

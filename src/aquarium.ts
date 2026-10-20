@@ -1,5 +1,6 @@
 import { validCollection, type CollectionItem } from './collection.ts';
-import { TERRARIUM_MAX_NAME_LENGTH } from './state.ts';
+import { score } from './scoring.ts';
+import { TERRARIUM_MAX_NAME_LENGTH, TERRARIUM_MAX_CATCHUP_MS } from './state.ts';
 import { phase } from './state.ts';
 import { TERRARIUM_MAX_REPLAYS, TERRARIUM_REPLAY_RETENTION_MS } from './replay.ts';
 
@@ -10,7 +11,7 @@ export interface AquaticPlantState { id: string; species: AquaticPlantSpecies; x
 export interface FishFood { id: string; x: number; y: number; portions: number; droppedAtMs: number }
 export interface AquariumFrame { kind: 'water'; phase: 'day' | 'night'; oxygen: number; cleanliness: number; fish: FishState[]; plants: AquaticPlantState[]; food: FishFood[] }
 export interface AquariumReplay { id: string; recordedAtMs: number; hunterId: string; preyId: string; frames: [AquariumFrame, AquariumFrame, AquariumFrame] }
-export interface AquariumHistory { recordedAtMs: number; oxygen: number; cleanliness: number; fish: FishState[] }
+export interface AquariumHistory { recordedAtMs: number; score?: number; oxygen: number; cleanliness: number; fish: FishState[] }
 export interface AquariumState { collection?: CollectionItem[]; oxygenWarning?: boolean; version: 1; kind: 'water'; name?: string; updatedAtMs: number; nextId: number; oxygen: number; cleanliness: number; fish: FishState[]; plants: AquaticPlantState[]; food: FishFood[]; history: AquariumHistory[]; replays: AquariumReplay[] }
 export interface AquariumChange { kind: 'hunt' | 'hungry' | 'ecosystem' | 'oxygen'; text: string }
 const HOUR_MS = 3_600_000;
@@ -70,10 +71,12 @@ function frame(state: AquariumState, atMs: number, timezone: string): AquariumFr
   return structuredClone({ kind: 'water', phase: phase(atMs, timezone), oxygen: state.oxygen, cleanliness: state.cleanliness, fish: state.fish, plants: state.plants, food: state.food });
 }
 function recordHistory(state: AquariumState, recordedAtMs: number): void {
-  state.history.push({ recordedAtMs, oxygen: state.oxygen, cleanliness: state.cleanliness, fish: structuredClone(state.fish) });
+  state.history.push({ recordedAtMs, score: score(state), oxygen: state.oxygen, cleanliness: state.cleanliness, fish: structuredClone(state.fish) });
   state.history = state.history.filter(sample => sample.recordedAtMs >= recordedAtMs - 168 * HOUR_MS).slice(-168);
 }
-function actFish(state: AquariumState, fish: FishState, atMs: number, timezone: string, changes: AquariumChange[]): void {
+type PlantDamage = (plant: AquaticPlantState, amount: number, cause: string) => void;
+const label = (value: { id: string; species: string; x: number; y: number }): string => `${value.id}（${value.species}），位置 (${value.x},${value.y})`;
+function actFish(state: AquariumState, fish: FishState, atMs: number, timezone: string, changes: AquariumChange[], damage: PlantDamage): void {
   const prey = fish.species === 'perch' ? state.fish.filter(other => other.species === 'guppy') : [];
   const targets = prey.length ? prey : state.food.length ? state.food : fish.species === 'goldfish' && fish.energy < 70 ? state.plants.filter(plant => plant.species === 'algae' && plant.health > 30) : [];
   const target = [...targets].sort((a, b) => Math.abs(a.x - fish.x) + Math.abs(a.y - fish.y) - Math.abs(b.x - fish.x) - Math.abs(b.y - fish.y) || a.id.localeCompare(b.id))[0];
@@ -92,16 +95,23 @@ function actFish(state: AquariumState, fish: FishState, atMs: number, timezone: 
     state.fish.splice(state.fish.indexOf(target as FishState), 1); fish.energy = clamp(fish.energy + 30);
     const replay: AquariumReplay = { id: `hunt-${atMs}-${fish.id}-${target.id}`, recordedAtMs: atMs, hunterId: fish.id, preyId: target.id, frames: [before!, contact, frame(state, atMs, timezone)] };
     state.replays.push(replay); state.replays = state.replays.slice(-TERRARIUM_MAX_REPLAYS);
-    changes.push({ kind: 'hunt', text: `${fish.id} 捕食了 ${target.id}。回放 ID：${replay.id}` });
+    changes.push({ kind: 'hunt', text: `${label(fish)} 捕食了 ${label(target as FishState)}。回放 ID：${replay.id}` });
   } else if (state.food.includes(target as FishFood)) {
     fish.lastMeal = { atMs, kind: 'food', id: target.id };
     const food = target as FishFood; food.portions--; fish.energy = clamp(fish.energy + 20);
     if (!food.portions) state.food.splice(state.food.indexOf(food), 1);
-  } else { fish.lastMeal = { atMs, kind: 'algae', id: target.id }; const plant = target as AquaticPlantState; plant.health = clamp(plant.health - 2); fish.energy = clamp(fish.energy + 5); }
+  } else { fish.lastMeal = { atMs, kind: 'algae', id: target.id }; damage(target as AquaticPlantState, 2, `${fish.id} 啃食`); fish.energy = clamp(fish.energy + 5); }
 }
 export function advanceAquarium(state: AquariumState, nowMs: number, timezone: string): AquariumChange[] {
   const changes: AquariumChange[] = [];
-  for (let start = Math.max(state.updatedAtMs, nowMs - 30 * 24 * HOUR_MS); start < nowMs;) {
+  const losses = new Map<string, Map<string, number>>();
+  const damage: PlantDamage = (plant, amount, cause) => {
+    const loss = Math.min(plant.health, amount); plant.health -= loss;
+    if (loss <= 0) return;
+    const causes = losses.get(plant.id) ?? new Map<string, number>();
+    causes.set(cause, (causes.get(cause) ?? 0) + loss); losses.set(plant.id, causes);
+  };
+  for (let start = Math.max(state.updatedAtMs, nowMs - TERRARIUM_MAX_CATCHUP_MS); start < nowMs;) {
     const end = Math.min(nowMs, (Math.floor(start / TERRARIUM_FISH_ACTION_INTERVAL_MS) + 1) * TERRARIUM_FISH_ACTION_INTERVAL_MS);
     const hours = (end - start) / HOUR_MS;
     const day = phase(start, timezone) === 'day';
@@ -111,20 +121,28 @@ export function advanceAquarium(state: AquariumState, nowMs: number, timezone: s
     for (const plant of state.plants) {
       if (day && state.cleanliness >= 40) plant.growthHours += hours;
       if (day && state.cleanliness >= 60 && state.oxygen >= 40) plant.health = clamp(plant.health + hours * .5);
-      if (state.cleanliness < 30) plant.health = clamp(plant.health - hours * .5);
+      if (state.cleanliness < 30) damage(plant, hours * .5, '水质低于 30');
       plant.stage = [0, 2, 6, 12].reduce((stage, threshold, index) => plant.growthHours >= threshold ? index : stage, 0);
     }
     for (const fish of [...state.fish]) {
       if (!state.fish.includes(fish)) continue;
       const energy = fish.energy; fish.energy = clamp(fish.energy - (state.oxygen >= 70 && state.cleanliness >= 70 && fish.energy < 70 ? 1 : 2) * hours); fish.ageHours += hours;
       if (state.oxygen < 25 || state.cleanliness < 30) fish.health = clamp(fish.health - 2 * hours);
-      if (Math.floor(start / TERRARIUM_FISH_ACTION_INTERVAL_MS) !== Math.floor(end / TERRARIUM_FISH_ACTION_INTERVAL_MS)) actFish(state, fish, end, timezone, changes);
-      if (fish.health <= 0 || fish.energy <= 0) { state.fish.splice(state.fish.indexOf(fish), 1); changes.push({ kind: 'ecosystem', text: `${fish.id} 死亡了。` }); }
-      else if (energy > 20 && fish.energy <= 20) changes.push({ kind: 'hungry', text: `${fish.id} 体力低于 20。` });
+      if (Math.floor(start / TERRARIUM_FISH_ACTION_INTERVAL_MS) !== Math.floor(end / TERRARIUM_FISH_ACTION_INTERVAL_MS)) actFish(state, fish, end, timezone, changes, damage);
+      if (fish.health <= 0 || fish.energy <= 0) {
+        state.fish.splice(state.fish.indexOf(fish), 1);
+        const causes = fish.energy <= 0 ? '能量耗尽' : [state.oxygen < 25 ? '氧气低于 25' : '', state.cleanliness < 30 ? '水质低于 30' : ''].filter(Boolean).join('、') || '健康已耗尽';
+        changes.push({ kind: 'ecosystem', text: `${label(fish)} 死亡了：${causes}；健康 ${fish.health.toFixed(1)}，能量 ${fish.energy.toFixed(1)}，含氧 ${state.oxygen.toFixed(1)}，水质 ${state.cleanliness.toFixed(1)}。` });
+      }
+      else if (energy > 20 && fish.energy <= 20) changes.push({ kind: 'hungry', text: `${label(fish)} 体力低于 20。` });
     }
     if (state.oxygen <= 40 && !state.oxygenWarning) { state.oxygenWarning = true; changes.push({ kind: 'oxygen', text: `含氧量降至 ${state.oxygen.toFixed(1)}/100，低于 25 会损害鱼类健康。可以换水并检查鱼草数量；本提醒恢复到 50 后才会再次触发。` }); }
     else if (state.oxygen >= 50) delete state.oxygenWarning;
-    for (const plant of [...state.plants]) if (plant.health <= 0) { state.plants.splice(state.plants.indexOf(plant), 1); changes.push({ kind: 'ecosystem', text: `${plant.id} 枯死了。` }); }
+    for (const plant of [...state.plants]) if (plant.health <= 0) {
+      state.plants.splice(state.plants.indexOf(plant), 1);
+      const causes = [...(losses.get(plant.id) ?? [])].map(([cause, loss]) => `${cause} -${loss.toFixed(2)} 健康`).join('；') || '结算开始时健康已耗尽';
+      changes.push({ kind: 'ecosystem', text: `${label(plant)} 枯死了。本次结算损伤：${causes}。当时含氧 ${state.oxygen.toFixed(1)}，水质 ${state.cleanliness.toFixed(1)}，${day ? '白天' : '夜晚'}；水质低于 30 会损害水草健康，缺氧不会直接损害水草。` });
+    }
     if (Math.floor(start / HOUR_MS) !== Math.floor(end / HOUR_MS)) recordHistory(state, end);
     start = end;
   }
@@ -146,7 +164,7 @@ export function validAquarium(value: unknown): value is AquariumState {
   if (!value || typeof value !== 'object') return false;
   const s = value as AquariumState;
   return validCollection(s.collection, 'water') && (s.oxygenWarning === undefined || typeof s.oxygenWarning === 'boolean') && s.version === 1 && Number.isFinite(s.updatedAtMs) && Number.isSafeInteger(s.nextId) && s.nextId >= 1 && (s.name === undefined || (typeof s.name === 'string' && s.name === s.name.trim() && Array.from(s.name).length >= 1 && Array.from(s.name).length <= TERRARIUM_MAX_NAME_LENGTH && !/[\u0000-\u001f\u007f-\u009f]/.test(s.name))) && validFrame({ ...s, phase: 'day' }, s.updatedAtMs) && new Set([...s.fish, ...s.plants, ...s.food, ...(s.collection ?? []).map(e => e.specimen)].map(e => e.id)).size === s.fish.length + s.plants.length + s.food.length + (s.collection?.length ?? 0) &&
-    Array.isArray(s.history) && s.history.length <= 168 && s.history.every((h, i) => h && Number.isFinite(h.recordedAtMs) && h.recordedAtMs <= s.updatedAtMs && (i === 0 || h.recordedAtMs > s.history[i - 1].recordedAtMs) && percent(h.oxygen) && percent(h.cleanliness) && validFrame({ kind: 'water', phase: 'day', oxygen: h.oxygen, cleanliness: h.cleanliness, fish: h.fish, plants: [], food: [] }, h.recordedAtMs)) &&
+    Array.isArray(s.history) && s.history.length <= 168 && s.history.every((h, i) => h && Number.isFinite(h.recordedAtMs) && (h.score === undefined || Number.isSafeInteger(h.score) && h.score >= 0) && h.recordedAtMs <= s.updatedAtMs && (i === 0 || h.recordedAtMs > s.history[i - 1].recordedAtMs) && percent(h.oxygen) && percent(h.cleanliness) && validFrame({ kind: 'water', phase: 'day', oxygen: h.oxygen, cleanliness: h.cleanliness, fish: h.fish, plants: [], food: [] }, h.recordedAtMs)) &&
     Array.isArray(s.replays) && s.replays.length <= TERRARIUM_MAX_REPLAYS && new Set(s.replays.map(r => r?.id)).size === s.replays.length && s.replays.every((r, i) => {
       if (!r || typeof r.id !== 'string' || r.id.length > 160 || !Number.isFinite(r.recordedAtMs) || r.recordedAtMs > s.updatedAtMs || (i > 0 && r.recordedAtMs < s.replays[i - 1].recordedAtMs) || !Array.isArray(r.frames) || r.frames.length !== 3 || !r.frames.every(f => validFrame(f, r.recordedAtMs))) return false;
       const [before, contact, after] = r.frames;

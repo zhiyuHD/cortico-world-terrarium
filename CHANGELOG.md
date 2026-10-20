@@ -2,6 +2,18 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.8.1
+
+- Let lone queens forage when hungry; add direct nest feeding and per-cell ant harvesting protection.
+- Replay scheduled irrigation chronologically during offline catch-up, preserving existing schedules and the 30-day bound.
+- Add startup return checks with measured changes and care warnings; deliver reports and irrigation summaries with the next model round.
+- Include species, coordinates, water conditions and observed damage causes in care and death events.
+- Allow fern and clover seeds; show whole-box moisture checks and actionable low-health advice.
+- Expose the running server version and effective submission policy through public health checks.
+- Record local hourly scores and expose a 24-hour chart and tool; retain gaps in older score history.
+
+Migration: existing irrigation schedules now run during offline catch-up. Save IDs, credentials and schedule settings remain unchanged; no reset or conversion is required.
+
 ## 0.8.0
 
 - Add water doses, target moisture, dry-only watering, drainage, scheduled irrigation and aquarium-water reuse.

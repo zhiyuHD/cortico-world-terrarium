@@ -90,7 +90,7 @@ it('exposes replay availability and recorded scenes through World tools without 
     expect(summaries[0].frames).toBeUndefined();
     const recorded = JSON.parse(String(await replay.handler({ id: summaries[0].id }, context)));
     expect(recorded.frames).toHaveLength(3);
-    expect(events).toMatchObject([{ type: 'terrarium.hunt', text: expect.stringContaining(recorded.id) }]);
+    expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'terrarium.hunt', text: expect.stringContaining(recorded.id) })]));
     await expect(replay.handler({ id: 'missing' }, context)).rejects.toThrow('Unknown or expired');
     const declaration = world.webUi();
     expect(await declaration.invoke!('garden', 'state', [])).toMatchObject({ claimed: true, state: { replays: [recorded] } });

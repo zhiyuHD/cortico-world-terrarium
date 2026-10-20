@@ -1,4 +1,4 @@
-import { daylight, flowerStage, TERRARIUM_GROWTH_STAGE_HOURS, TERRARIUM_PLANT_REQUIREMENTS } from './habitat.ts';
+import { daylight, flowerStage, plantCareAdvice, TERRARIUM_GROWTH_STAGE_HOURS, TERRARIUM_PLANT_REQUIREMENTS } from './habitat.ts';
 import { phase, type TerrariumState } from './state.ts';
 import { advanceAquarium, type AquariumState } from './aquarium.ts';
 
@@ -21,11 +21,11 @@ export function landCare(state: TerrariumState, nowMs: number, timezone: string)
     const needs = TERRARIUM_PLANT_REQUIREMENTS[plant.species], light = daylight(state, plant.x, plant.y);
     const moistureShortfall = Math.max(0, needs.minMoisture - plant.moisture), moistureExcess = Math.max(0, plant.moisture - needs.maxMoisture);
     const lightShortfall = Math.max(0, needs.minLight - light), lightExcess = Math.max(0, light - needs.maxLight);
-    return { id: plant.id, ...progress(plant.stage, plant.growthHours), waitForDaylight: timing.phase === 'night', moistureShortfall, moistureExcess, lightShortfall, lightExcess, canGrowNow: timing.phase === 'day' && !moistureShortfall && !moistureExcess && !lightShortfall && !lightExcess, remainingDaylightGrowthUpperBoundHours: timing.phase === 'day' ? timing.hoursUntilChange * 1.1 : 0 };
+    return { id: plant.id, species: plant.species, x: plant.x, y: plant.y, advice: plant.health <= 40 ? plantCareAdvice(plant) : undefined, ...progress(plant.stage, plant.growthHours), waitForDaylight: timing.phase === 'night', moistureShortfall, moistureExcess, lightShortfall, lightExcess, canGrowNow: timing.phase === 'day' && !moistureShortfall && !moistureExcess && !lightShortfall && !lightExcess, remainingDaylightGrowthUpperBoundHours: timing.phase === 'day' ? timing.hoursUntilChange * 1.1 : 0 };
   });
   const seeds = state.seeds.map(seed => ({ id: seed.id, suitableDaylightHoursRemaining: Math.max(0, 2 - seed.ageHours), waitForDaylight: timing.phase === 'night', moistureShortfall: Math.max(0, TERRARIUM_PLANT_REQUIREMENTS[seed.species].minMoisture - state.soil[seed.y * 5 + seed.x].moisture) }));
   const species = new Set(state.plants.filter(p => p.health >= 60).map(p => p.species));
-  return { ...timing, plants, seeds, goals: [{ id: 'healthy-diversity', current: species.size, target: 5 }, { id: 'three-blooms', current: state.plants.filter(p => flowerStage(p) === 'bloom').length, target: 3 }, { id: 'stocked-colony', current: Math.max(0, ...(state.nests ?? []).map(n => n.food)), target: 10 }], nextSteps: state.plants.length + state.seeds.length < 3 ? ['选择空格播种；按物种水分和光照需求选位置。', '可用 targetMoisture 精确浇水，先少量放虫并观察食物来源。'] : [] };
+  return { ...timing, summary: { minMoisture: Math.min(...state.soil.map(c => c.moisture)), maxMoisture: Math.max(...state.soil.map(c => c.moisture)), dryPlants: plants.filter(p => p.moistureShortfall > 0).length, wetPlants: plants.filter(p => p.moistureExcess > 0).length, lowHealth: state.plants.filter(p => p.health <= 40).length }, plants, seeds, goals: [{ id: 'healthy-diversity', current: species.size, target: 5 }, { id: 'three-blooms', current: state.plants.filter(p => flowerStage(p) === 'bloom').length, target: 3 }, { id: 'stocked-colony', current: Math.max(0, ...(state.nests ?? []).map(n => n.food)), target: 10 }], nextSteps: state.plants.length + state.seeds.length < 3 ? ['选择空格播种；按物种水分和光照需求选位置。', '可用 targetMoisture 精确浇水，先少量放虫并观察食物来源。'] : [] };
 }
 export function waterCare(state: AquariumState, nowMs: number, timezone: string) {
   const timing = phaseTiming(nowMs, timezone);

@@ -1,4 +1,5 @@
 import { collect, restoreCollected } from './collection.ts';
+import { captureConditions, createReturnReport, recentScores, type ReturnReport } from './return-report.ts';
 import { landCare, waterCare } from './care.ts';
 import type { Announcement } from './announcements.ts';
 import { colonySnapshot } from './colony.ts';
@@ -26,7 +27,7 @@ export const TERRARIUM_TOOL_DECLS: ReadonlyArray<Omit<ToolDef, 'handler'>> = [
   { name: 'terrarium_inspect', description: 'Without habitat, list claimed/unclaimed land and water boxes with their server IDs and names. Supply habitat to inspect that box: land has soil, light, plants, bugs and colonies (4x4 cells, resident ants/eggs, queen and stored food); water has oxygen, cleanliness, fish, aquatic plants and food. Includes care diagnostics, growth progress and conditional oxygen forecast. Without habitat returns both box summaries and actionable warnings. Inspection never claims a box.', tags: ['read'], parameters: { type: 'object', additionalProperties: false, properties: { habitat: { type: 'string', enum: ['land', 'water'] } } } },
   { name: 'terrarium_water', description: 'Water soil by plant id OR x and y, including seed and empty plots. Defaults to +35 moisture. Supply amount for a smaller dose, or targetMoisture to reach a target without draining. onlyDry skips cells already above their species minimum. Water diffuses to adjacent cells over time. Returns plant moisture ranges and explicit overwatering warnings; actual water additions restore 5 health and do not instantly damage plants.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { ...wateringProperties, plant: { type: 'string' }, x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 } }, oneOf: [{ required: ['plant'], not: { anyOf: [{ required: ['x'] }, { required: ['y'] }] } }, { required: ['x', 'y'], not: { required: ['plant'] } }] } },
   { name: 'terrarium_move', description: 'Move the coin or pebble on the 5×5 grid. The pebble shades its cell and orthogonal neighbors, reducing daylight to 35% and slowing daytime evaporation. x and y are 0..4.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { item: { type: 'string', enum: ['coin', 'pebble'] }, x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 } }, required: ['item', 'x', 'y'] } },
-  { name: 'terrarium_sow', description: 'Sow moss, basil or bean in a free plot of the 5×5 grid. Seeds sprout after two daylight hours with enough soil moisture. Plants grow within their species moisture and light ranges; inspect returns those ranges. At most 12 plants and seeds.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { species: { type: 'string', enum: ['moss', 'basil', 'bean'] }, x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 } }, required: ['species', 'x', 'y'] } },
+  { name: 'terrarium_sow', description: 'Sow fern, clover, moss, basil or bean in a free plot of the 5×5 grid. Seeds sprout after two daylight hours with enough soil moisture. Plants grow within their species moisture and light ranges; inspect returns those ranges. At most 12 plants and seeds.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { species: { type: 'string', enum: ['fern', 'clover', 'moss', 'basil', 'bean'] }, x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 } }, required: ['species', 'x', 'y'] } },
   { name: 'terrarium_release_bug', description: 'Release aphid, beetle, spider, ant, fruit_fly, mosquito or moth into the 5×5 grid. Flying bugs act every ten seconds: 75% chance to move, 25% stay. They eat flower nectar and are caught by spider webs. Ants act every ten seconds; one existing ant becomes the saved queen, workers dig a nest, collect food, enter it and store food; aphids, beetles and spiders act every minute. Aphids eat plants, beetles hunt aphids, spiders hunt ground bugs and weave webs to catch flying bugs. At most 12 bugs and eggs combined.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { species: { type: 'string', enum: ['aphid', 'beetle', 'spider', 'ant', 'fruit_fly', 'mosquito', 'moth'] }, x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 } }, required: ['species', 'x', 'y'] } },
   { name: 'terrarium_feed_bug', description: 'Restore 35 energy (maximum 100) to one bug. Does not reduce hunger or prevent starvation; bugs must eat plants, prey or stored ant food.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { bug: { type: 'string' } }, required: ['bug'] } },
   { name: 'terrarium_relocate_bug', description: 'Move one bug by id to a grid cell. Bugs may share cells; predators move and hunt every minute.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { bug: { type: 'string' }, x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 } }, required: ['bug', 'x', 'y'] } },
@@ -45,9 +46,12 @@ const SYNC_TOOL: Omit<ToolDef, 'handler'> = { name: 'terrarium_sync', descriptio
 const positionProperties = { x: { type: 'integer', minimum: 0, maximum: 4 }, y: { type: 'integer', minimum: 0, maximum: 4 } };
 const careProperties = { habitat: { type: 'string', enum: ['land', 'water'] }, ...positionProperties, id: { type: 'string' }, x1: { type: 'integer', minimum: 0, maximum: 4 }, y1: { type: 'integer', minimum: 0, maximum: 4 }, x2: { type: 'integer', minimum: 0, maximum: 4 }, y2: { type: 'integer', minimum: 0, maximum: 4 } };
 const CARE_TOOLS: ReadonlyArray<Omit<ToolDef, 'handler'>> = [
+  { name: 'terrarium_score_history', description: 'Read your own local score samples for the last 24 hours, default habitat land. Earlier samples without a recorded score are null; the public leaderboard can lag behind local simulation.', tags: ['read'], parameters: { type: 'object', additionalProperties: false, properties: { habitat: { type: 'string', enum: ['land', 'water'] } } } },
+  { name: 'terrarium_set_ant_foraging', description: 'Allow or forbid ant harvesting of plants in one land cell x,y. enabled:false protects that cell; food piles remain accessible. Does not block aphids.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { ...positionProperties, enabled: { type: 'boolean' } }, required: ['x', 'y', 'enabled'] } },
+  { name: 'terrarium_feed_nest', description: 'Place 1..100 portions directly into an existing ant nest by id. Clamps to nest capacity and returns the actual amount added. Queen and workers can eat the stored food.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { id: { type: 'string' }, portions: { type: 'integer', minimum: 1, maximum: 100 } }, required: ['id', 'portions'] } },
   { name: 'terrarium_collection', description: 'List frozen collected organisms, collect an active plant, seed, bug or fish by id, or restore one to x,y within normal habitat capacity. Default habitat land. Collection holds 48 per box; collected organisms do not simulate or score. Ants return without their former queen role or nest location.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { ...careProperties, action: { type: 'string', enum: ['list', 'collect', 'restore'] } }, required: ['action'] } },
   { name: 'terrarium_drain', description: 'Drain amount moisture (1..100) from one land cell x,y without healing plants. Use to correct overwatering.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { ...positionProperties, amount: { type: 'number', minimum: 1, maximum: 100 } }, required: ['x', 'y', 'amount'] } },
-  { name: 'terrarium_set_irrigation', description: 'Enable/replace or disable scheduled watering for one land cell x,y. targetMoisture 0..100, intervalMinutes 1..1440 (default 60). Only adds water up to target while this World is running; no offline catch-up. Does not call a model.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { ...positionProperties, enabled: { type: 'boolean' }, targetMoisture: { type: 'number', minimum: 0, maximum: 100 }, intervalMinutes: { type: 'number', minimum: 1, maximum: 1440 } }, required: ['x', 'y', 'enabled'] } },
+  { name: 'terrarium_set_irrigation', description: 'Enable/replace or disable scheduled watering for one land cell x,y. targetMoisture 0..100, intervalMinutes 1..1440 (default 60). Adds water up to target in chronological simulation order, including offline catch-up up to 30 days. Does not call a model.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { ...positionProperties, enabled: { type: 'boolean' }, targetMoisture: { type: 'number', minimum: 0, maximum: 100 }, intervalMinutes: { type: 'number', minimum: 1, maximum: 1440 } }, required: ['x', 'y', 'enabled'] } },
   { name: 'terrarium_plant_aquatic_area', description: 'Plant one aquatic species in every free cell of an inclusive rectangle, skipping occupied cells. Refuses the entire operation if it would exceed 12 aquatic plants.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { ...careProperties, species: { type: 'string', enum: ['waterweed', 'waterlily', 'algae'] } }, required: ['species', 'x1', 'y1', 'x2', 'y2'] } },
   { name: 'terrarium_reuse_water', description: 'Change percent (1..100) aquarium water and reuse the replaced water on a land rectangle. Both boxes must be claimed. Total moisture points are percent*5 divided among selected cells, capped at 100 per cell. Uses the normal freshwater refill and watering rules.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { ...careProperties, percent: { type: 'number', minimum: 1, maximum: 100 } }, required: ['percent', 'x1', 'y1', 'x2', 'y2'] } },
 ];
@@ -71,6 +75,7 @@ export interface TerrariumWorldOptions { cfg: TerrariumConfigSection; timezone: 
 export class TerrariumWorld implements World {
   readonly id = 'terrarium';
   private state: TerrariumState | null = null;
+  private returnReports: Partial<Record<'land' | 'water', ReturnReport>> = {};
   private waterState: AquariumState | null = null;
   private readonly waterLeaderboard: LeaderboardClient;
   private readonly waterFile: string;
@@ -257,8 +262,18 @@ export class TerrariumWorld implements World {
     await this.rankAlerts.land.restore(); await this.rankAlerts.water.restore();
     this.lastRankCheck.land = this.lastRankCheck.water = -Infinity;
     this.host = host;
-    try { await this.serial(() => this.synchronize()); }
-    catch (error) { this.leaderboard.close(); this.waterLeaderboard.close(); this.host = null; this.state = null; this.waterState = null; throw error; }
+    this.returnReports = {};
+    const beforeLand = this.state ? captureConditions(this.state) : null;
+    const beforeWater = this.waterState ? captureConditions(this.waterState) : null;
+    try {
+      await this.serial(() => this.synchronize());
+      for (const habitat of ['land', 'water'] as const) {
+        const before = habitat === 'land' ? beforeLand : beforeWater, state = habitat === 'land' ? this.state : this.waterState;
+        if (!before || !state || state.updatedAtMs - before.atMs < 60_000) continue;
+        const report = this.returnReports[habitat] = createReturnReport(before, state);
+        await host.pushEvent({ type: 'terrarium.return', source: this.id, senderKey: habitat === 'land' ? this.id : 'terrarium.water', origin: 'internal', ts: nowIso(this.opts.timezone), text: `生态箱·${habitat === 'land' ? '地' : '水'}回归自检：距存档 ${report.elapsedHours.toFixed(1)} 小时，按规则补算 ${report.simulatedHours.toFixed(1)} 小时。变化 ${JSON.stringify(report.changes.filter(c => ['score', 'meanMoisture', 'oxygen', 'cleanliness', 'plants', 'bugs', 'seeds', 'fish'].includes(c.metric)))}；已不在箱内 ${JSON.stringify(report.removed)}。${report.warnings.slice(0, 3).join(' ')}${habitat === 'land' ? report.moistureExplanation : ''}可用 terrarium_inspect 查看 returnReport；无需为此主动联系主人。` }, { trigger: 'piggyback' });
+      }
+    } catch (error) { this.leaderboard.close(); this.waterLeaderboard.close(); this.host = null; this.state = null; this.waterState = null; throw error; }
     this.nextCheckAtMs = this.now() + this.opts.cfg.tickIntervalMs;
     this.nextMaintenanceAtMs = this.now() + this.opts.cfg.tickIntervalMs / 2;
     this.schedule();
@@ -342,7 +357,7 @@ export class TerrariumWorld implements World {
   private view(habitat: 'land' | 'water') {
     const status = this.ownership(habitat);
     if (!status.claimed) return { ...status, claimed: false as const };
-    return { ...status, claimed: true as const, state: habitat === 'land' ? this.snapshot() : { ...structuredClone(this.currentWater()), care: waterCare(this.currentWater(), this.now(), this.opts.timezone), habitat: 'water' as const, phase: phase(this.now(), this.opts.timezone) } };
+    return { ...status, claimed: true as const, state: { ...(habitat === 'land' ? this.snapshot() : { ...structuredClone(this.currentWater()), care: waterCare(this.currentWater(), this.now(), this.opts.timezone), habitat: 'water' as const, phase: phase(this.now(), this.opts.timezone) }), returnReport: this.returnReports[habitat], scoreHistory: recentScores(habitat === 'land' ? this.current() : this.currentWater(), this.now()) } };
   }
   private async waterRectangle(value: unknown) {
     if (!value || typeof value !== 'object') throw new Error('Supply rectangle coordinates');
@@ -363,6 +378,20 @@ export class TerrariumWorld implements World {
   private async careTool(name: string, args: Record<string, unknown>): Promise<unknown> {
     await this.update();
     const habitat = this.habitat(args.habitat ?? 'land');
+    if (name === 'terrarium_score_history') return { habitat, hours: 24, samples: recentScores(habitat === 'land' ? this.current() : this.currentWater(), this.now()), source: 'Local simulation score; public leaderboard uses the last accepted upload. Older samples without recorded scores are null.' };
+    if (name === 'terrarium_set_ant_foraging') {
+      const state = this.current(), { x, y, enabled } = args;
+      if (typeof enabled !== 'boolean' || ![x, y].every(n => typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < 5)) throw new Error('Supply x,y in 0..4 and boolean enabled');
+      const cell = state.soil[Number(y) * 5 + Number(x)]; cell.allowAntForaging = enabled;
+      await this.persist(); return { soil: cell };
+    }
+    if (name === 'terrarium_feed_nest') {
+      const state = this.current(), nest = state.nests?.find(n => n.id === args.id), portions = args.portions;
+      if (!nest) throw new Error('Unknown ant nest');
+      if (typeof portions !== 'number' || !Number.isInteger(portions) || portions < 1 || portions > 100) throw new Error('Supply portions 1..100');
+      const added = Math.min(portions, nest.depth * 20 - nest.food); nest.food += added;
+      await this.persist(); return { nest, added };
+    }
     if (name === 'terrarium_cleanup_food') {
       const state = this.currentWater();
       if (!state.food.some(f => f.id === args.id)) throw new Error('Unknown food pile');
@@ -524,15 +553,12 @@ export class TerrariumWorld implements World {
     if (this.state) {
       const state = this.state;
       const changes = advance(state, this.now(), this.opts.timezone);
-      for (const schedule of state.irrigation ?? []) if (this.now() - schedule.lastWateredAtMs >= schedule.intervalMinutes * 60_000) {
-        waterSoil(state, schedule.x, schedule.y, { targetMoisture: schedule.targetMoisture }); schedule.lastWateredAtMs = this.now();
-      }
       const host = this.host;
       if (!host) return;
       for (const change of changes) await host.pushEvent({
-        type: change.kind === 'egg' ? 'terrarium.egg' : change.kind === 'nest' ? 'terrarium.nest' : change.kind === 'phase' ? 'terrarium.phase' : change.kind === 'web' || change.kind === 'stage' || change.kind === 'dry' || change.kind === 'health' ? 'terrarium.plant' : change.kind === 'hunt' ? 'terrarium.hunt' : change.kind === 'birth' ? 'terrarium.birth' : change.kind === 'hungry' ? 'terrarium.hungry' : 'terrarium.ecosystem',
+        type: change.kind === 'irrigation' ? 'terrarium.irrigation' : change.kind === 'egg' ? 'terrarium.egg' : change.kind === 'nest' ? 'terrarium.nest' : change.kind === 'phase' ? 'terrarium.phase' : change.kind === 'web' || change.kind === 'stage' || change.kind === 'dry' || change.kind === 'health' ? 'terrarium.plant' : change.kind === 'hunt' ? 'terrarium.hunt' : change.kind === 'birth' ? 'terrarium.birth' : change.kind === 'hungry' ? 'terrarium.hungry' : 'terrarium.ecosystem',
         source: this.id, senderKey: this.id, origin: 'internal', ts: nowIso(this.opts.timezone), text: `生态箱·地：${change.text}`,
-      }, { trigger: change.kind === 'phase' ? 'piggyback' : 'debounce' });
+      }, { trigger: change.kind === 'phase' || change.kind === 'irrigation' ? 'piggyback' : 'debounce' });
     }
   }
 

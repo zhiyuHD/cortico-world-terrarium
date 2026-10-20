@@ -1,4 +1,6 @@
-import { careText, createCareControls } from './care.ts';
+import type { ReturnReport } from '../src/return-report.ts';
+import { drawScoreHistory } from './history.ts';
+import { careText, returnReportText, createCareControls } from './care.ts';
 import type { waterCare } from '../src/care.ts';
 import { createFeedbackControls } from './feedback.ts';
 import { createSyncControls } from './sync.ts';
@@ -21,22 +23,24 @@ export function mountWater(ctx: WebUiPanelContext): void {
   let selected = { x: 2, y: 2 };
   const replayContainer = ctx.ui.h('div', 'terrarium-replays');
   const history = ctx.ui.h('div', '');
+  const scoreChart = ctx.ui.h('div', '');
   const scene = createWaterScene(canvas), replay = createWaterReplayControls(replayContainer, zh ? 'zh' : 'en');
   ctx.signal.addEventListener('abort', () => { scene.dispose(); replay.dispose(); }, { once: true });
   const sync = createSyncControls(ctx, () => load());
   const refresh = ctx.ui.button(zh ? '刷新' : 'Refresh', { size: 'sm', onClick: () => { void load(); } });
-  card.body.append(title, status, sync.el, canvas, details, diagnosis, grid, careControls.el, replayContainer, history, refresh, createFeedbackControls(ctx)); ctx.root.append(card.el);
+  card.body.append(title, status, sync.el, canvas, details, diagnosis, grid, careControls.el, replayContainer, history, scoreChart, refresh, createFeedbackControls(ctx)); ctx.root.append(card.el);
   const load = async (): Promise<void> => {
     try {
-      const response = await ctx.invoke<{ sync: TerrariumSyncStatus; claimed: boolean; id?: string; state?: AquariumState & AquariumFrame & { care: ReturnType<typeof waterCare> } }>('state');
+      const response = await ctx.invoke<{ sync: TerrariumSyncStatus; claimed: boolean; id?: string; state?: AquariumState & AquariumFrame & { care: ReturnType<typeof waterCare>; returnReport?: ReturnReport; scoreHistory: { recordedAtMs: number; score: number | null }[] } }>('state');
       if (ctx.signal.aborted) return;
       sync.update(response.sync, response.claimed);
-      for (const el of [canvas, details, diagnosis, grid, careControls.el, replayContainer, history]) el.hidden = !response.claimed;
+      for (const el of [canvas, details, diagnosis, grid, careControls.el, replayContainer, history, scoreChart]) el.hidden = !response.claimed;
       if (!response.claimed || !response.state) { status.textContent = zh ? '未认领 · 用 terrarium_claim 认领水箱，先种少量水草、放少量鱼。夜间水草等天亮再生长。' : 'Unclaimed · Use terrarium_claim. Start with a few plants and fish; plants wait for daylight.'; return; }
       const state = response.state;
+      scoreChart.replaceChildren(drawScoreHistory(state.scoreHistory, zh, ctx.language));
       title.textContent = state.name ?? (zh ? '生态箱·水' : 'Terrarium · Water');
       status.textContent = `${state.phase === 'day' ? (zh ? '白天' : 'Day') : (zh ? '夜晚' : 'Night')}${response.id ? ` · ID ${response.id}` : ''} · ${zh ? '含氧量' : 'Oxygen'} ${state.oxygen.toFixed(1)} · ${zh ? '水质' : 'Cleanliness'} ${state.cleanliness.toFixed(1)}`;
-      diagnosis.replaceChildren(...careText(state.care, zh).map(text => ctx.ui.h('div', '', text)));
+      diagnosis.replaceChildren(...[...returnReportText(state.returnReport, zh), ...careText(state.care, zh)].map(text => ctx.ui.h('div', '', text)));
       careControls.update(state, selected);
       grid.replaceChildren(...Array.from({ length: 25 }, (_, i) => { const cell = { x: i % 5, y: Math.floor(i / 5) }; const button = ctx.ui.button(`(${cell.x},${cell.y})`, { size: 'sm', onClick: () => { selected = cell; careControls.update(state, selected); for (const b of grid.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b === button)); } }); button.setAttribute('aria-pressed', String(selected.x === cell.x && selected.y === cell.y)); return button; }));
       scene.setState(state); replay.setReplays(state.replays);

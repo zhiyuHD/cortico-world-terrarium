@@ -5,6 +5,20 @@ import { expect, it } from 'vitest';
 import { TERRARIUM_MAX_HISTORY } from '../src/habitat.ts';
 import { newState, releaseBug } from '../src/state.ts';
 import { enterNest } from '../src/colony.ts';
+import { TERRARIUM_CLIENT_VERSION } from '../src/version.ts';
+
+it('exposes its package version and effective submission policy without authentication', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-health-'));
+  const controlsFile = join(dir, 'controls.json');
+  await writeFile(controlsFile, JSON.stringify({ httpPush: { enabled: false, scheduledChange: null }, minimumClientVersion: { version: '0.7.8', scheduledChange: null } }));
+  const { start } = await import('../server/index.ts');
+  const server = await start({ port: 0, dataFile: join(dir, 'boxes.json'), controlsFile });
+  try {
+    const address = server.address(); if (!address || typeof address === 'string') throw new Error('Missing port');
+    const response = await fetch(`http://127.0.0.1:${address.port}/health`);
+    expect(await response.json()).toMatchObject({ version: TERRARIUM_CLIENT_VERSION, websocketPush: true, httpPushEnabled: false, minimumClientVersion: '0.7.8' });
+  } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); await rm(dir, { recursive: true, force: true }); }
+});
 
 it('authenticates reports and computes the displayed score', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'terrarium-server-'));

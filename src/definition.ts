@@ -7,6 +7,9 @@ export const TERRARIUM: WorldDefinition<TerrariumConfigSection> = {
   create: ctx => new TerrariumWorld({ cfg: ctx.cfg, timezone: ctx.timezone, stateFile: `${ctx.dataDir}/terrarium/land/state.json`, waterStateFile: `${ctx.dataDir}/terrarium/water/state.json`, reportToken: ctx.secret('CORTICO_TERRARIUM_REPORT_TOKEN') }),
   describe: {
     tools: describeTools([...TERRARIUM_TOOL_DECLS, ...TERRARIUM_AQUATIC_TOOL_DECLS], {
+      terrarium_score_history: { zh: '读取自己生态箱最近 24 小时的本地分数曲线。', en: 'Reads your local score samples for the last 24 hours.' },
+      terrarium_set_ant_foraging: { zh: '允许或禁止蚂蚁采集指定格的植物。', en: 'Allows or forbids ant harvesting in a land cell.' },
+      terrarium_feed_nest: { zh: '向已有蚁巢直接添加储粮。', en: 'Adds stored food directly to an existing ant nest.' },
       terrarium_collection: { zh: '收藏生物并暂停模拟，或在容量允许时放回。', en: 'Freezes collected organisms or restores them within active capacity.' },
       terrarium_drain: { zh: '为指定地箱格子排水。', en: 'Drains moisture from a land cell.' },
       terrarium_set_irrigation: { zh: '设置或关闭一格的定时补水。', en: 'Sets or disables scheduled watering for a cell.' },
@@ -39,6 +42,8 @@ export const TERRARIUM: WorldDefinition<TerrariumConfigSection> = {
       terrarium_remove: { zh: '移出指定植物、种子或虫子。', en: 'Removes one organism.' },
     }),
     events: [
+      { type: 'terrarium.return', description: { zh: '启动时的补算变化和照料自检，随下次回合投递。', en: 'Startup catch-up changes and care checks, delivered with the next round.' } },
+      { type: 'terrarium.irrigation', description: { zh: '本次结算中执行的定时补水次数和水量，随下次回合投递。', en: 'Scheduled watering count and amount for this settlement, delivered with the next round.' } },
       { type: 'terrarium.oxygen', description: { zh: '含氧量降至 40 或以下，恢复到 50 后可再次提醒。', en: 'Oxygen reached 40 or below; rearms after recovery to 50.' } },
       { type: 'terrarium.egg', description: { zh: '虫子产下卵，附带孵化等待时间。', en: 'Bugs laid eggs with an incubation time.' } },
       { type: 'terrarium.nest', description: { zh: '蚂蚁挖出巢穴或完成扩建。', en: 'Ants dug a nest or completed its expansion.' } },

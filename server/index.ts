@@ -1,4 +1,5 @@
 import { FeedbackStore, FeedbackError } from './feedback.ts';
+import packageMetadata from '../package.json' with { type: 'json' };
 import { ProtocolNotices } from './protocol-notices.ts';
 import { AnnouncementStore } from './announcements.ts';
 import { ControlStore, ControlError, meetsMinimumVersion } from './controls.ts';
@@ -170,7 +171,10 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
       if (req.method === 'GET' && path === '/scene.js') {
         res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); res.end(sceneScript); return;
       }
-      if (req.method === 'GET' && path === '/health') { reply(200, { ok: true, ...(process.env.CORTICO_TERRARIUM_RELEASE_ID ? { releaseId: process.env.CORTICO_TERRARIUM_RELEASE_ID } : {}) }); return; }
+      if (req.method === 'GET' && path === '/health') {
+        const control = controls.get();
+        reply(200, { ok: true, version: packageMetadata.version, websocketPush: true, httpPushEnabled: control.httpPush.enabled, minimumClientVersion: control.minimumClientVersion.version, ...(process.env.CORTICO_TERRARIUM_RELEASE_ID ? { releaseId: process.env.CORTICO_TERRARIUM_RELEASE_ID } : {}) }); return;
+      }
       if (path === '/api/admin/controls' || path === '/api/admin/controls/http-push' || path === '/api/admin/controls/minimum-client-version') {
         if (!equal(req.headers.authorization?.replace(/^Bearer /, '') ?? '', adminToken)) { reply(401, { error: 'Unauthorized' }); return; }
         if (path === '/api/admin/controls' && req.method === 'GET') { reply(200, controls.get()); return; }

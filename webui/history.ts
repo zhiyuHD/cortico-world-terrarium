@@ -2,6 +2,24 @@ import type { HistorySample } from '../src/habitat.ts';
 
 export interface HistoryPoint { recordedAtMs: number; value: number | null }
 
+export function drawScoreHistory(samples: { recordedAtMs: number; score: number | null }[], zh: boolean, language: string): HTMLElement {
+  const el = document.createElement('div'), title = document.createElement('h3');
+  title.textContent = zh ? '自己的分数 · 最近 24 小时（本地模拟）' : 'Your score · Last 24 hours (local simulation)';
+  const ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 800 205'); svg.classList.add('terrarium-history'); svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', title.textContent);
+  const add = (tag: string, attrs: Record<string, string>, text?: string) => { const node = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v); if (text !== undefined) node.textContent = text; svg.append(node); };
+  const maximum = Math.max(10, ...samples.map(s => s.score ?? 0));
+  for (const value of [0, maximum / 2, maximum]) {
+    const y = String(164 - value / maximum * 140);
+    add('line', { x1: '44', x2: '740', y1: y, y2: y, stroke: 'currentColor', opacity: '.15' });
+    add('text', { x: '36', y, 'text-anchor': 'end', fill: 'currentColor', 'font-size': '12' }, value.toFixed(0));
+  }
+  for (const d of historyPaths(samples.map(s => ({ recordedAtMs: s.recordedAtMs, value: s.score })), maximum)) add('path', { d, fill: 'none', stroke: '#398db0', 'stroke-width': '2.5' });
+  if (samples.filter(s => s.score !== null).length < 2) add('text', { x: '400', y: '90', 'text-anchor': 'middle', fill: 'currentColor' }, zh ? '等待新的小时样本；旧记录未保存分数的部分留空。' : 'Waiting for hourly samples; older unrecorded scores remain blank.');
+  for (const [sample, x, anchor] of [[samples[0], '44', 'start'], [samples.at(-1), '740', 'end']] as const) if (sample) add('text', { x, y: '190', 'text-anchor': anchor, fill: 'currentColor', 'font-size': '12' }, new Date(sample.recordedAtMs).toLocaleString(language));
+  el.append(title, svg); return el;
+}
+
 /** Missing organisms interrupt a line rather than connecting across their absence. */
 export function historyPaths(points: HistoryPoint[], maxValue: number): string[] {
   const first = points[0]?.recordedAtMs ?? 0;
