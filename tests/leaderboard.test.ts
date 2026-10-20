@@ -425,3 +425,23 @@ it('checks water ranks when no land box is owned', async () => {
     await expect(access(join(dir, 'land', 'state.json'))).rejects.toMatchObject({ code: 'ENOENT' });
   } finally { await world.stop(); vi.useRealTimers(); }
 });
+
+it('rejects an ignored HTTP success response instead of recording an accepted snapshot', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-ignored-')); dirs.push(dir);
+  const server = createServer((req, res) => {
+    req.resume(); res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/api/registrations') { res.writeHead(201); res.end(JSON.stringify({ id: 'box-fixture', token: 'a'.repeat(64) })); }
+    else res.end(JSON.stringify({ accepted: false, ignored: true, upgradeRequired: true }));
+  });
+  server.on('upgrade', (_req, socket) => socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'));
+  servers.push(server);
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address(); if (!address || typeof address === 'string') throw new Error('Missing port');
+  const client = new LeaderboardClient({ url: `http://127.0.0.1:${address.port}`, id: '', credentialsFile: join(dir, 'credentials.json') });
+  try {
+    await expect(client.report(newState(Date.now()), 'day')).rejects.toThrow('not accepted');
+    expect(client.status()).toMatchObject({ state: 'error', consecutiveFailures: 1 });
+    expect(client.status().lastSuccessAt).toBeUndefined();
+    expect(client.status().lastSuccessStateAt).toBeUndefined();
+  } finally { client.close(); }
+});

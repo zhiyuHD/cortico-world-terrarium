@@ -1,3 +1,4 @@
+import { createDeathHistory } from './deaths.ts';
 import { careText, returnReportText, createCareControls } from './care.ts';
 import type { ReturnReport } from '../src/return-report.ts';
 import type { landCare } from '../src/care.ts';
@@ -32,6 +33,7 @@ function mount(ctx: WebUiPanelContext): void {
   ctx.signal.addEventListener('abort', () => replay.dispose(), { once: true });
   ctx.signal.addEventListener('abort', () => scene.dispose(), { once: true });
   const details = ctx.ui.h('div', 'terrarium-details');
+  const deathHistory = createDeathHistory(ctx);
   const diagnosis = ctx.ui.h('div', 'terrarium-details');
   const careControls = createCareControls(ctx, 'land', () => load());
   const sync = createSyncControls(ctx, () => load());
@@ -62,7 +64,7 @@ function mount(ctx: WebUiPanelContext): void {
     chart.replaceChildren(drawHistory(current.history, selected, copy, ctx.language));
   };
   select.addEventListener('change', () => { selected = select.value; renderHistory(); });
-  card.body.append(name, status, sync.el, canvas, replayContainer, details, diagnosis, habitat, careControls.el, historyTitle, select, chart, scoreChart, refresh, createFeedbackControls(ctx));
+  card.body.append(name, status, sync.el, canvas, replayContainer, details, diagnosis, deathHistory.el, habitat, careControls.el, historyTitle, select, chart, scoreChart, refresh, createFeedbackControls(ctx));
   ctx.root.appendChild(card.el);
   const load = async (): Promise<void> => {
     try {
@@ -71,7 +73,7 @@ function mount(ctx: WebUiPanelContext): void {
       sync.update(response.sync, response.claimed);
       watering.update(response.claimed);
       const state = response.state;
-      for (const el of [canvas, replayContainer, details, diagnosis, habitat, careControls.el, historyTitle, select, chart, scoreChart]) el.hidden = !response.claimed;
+      for (const el of [canvas, replayContainer, details, diagnosis, deathHistory.el, habitat, careControls.el, historyTitle, select, chart, scoreChart]) el.hidden = !response.claimed;
       if (!response.claimed || !state) { status.textContent = pick(ctx.language, { zh: '未认领 · 先通过 terrarium_claim 认领地箱，再检查每格水分和光照后播种。', en: 'Unclaimed · Use terrarium_claim, inspect moisture and light, then sow.' }); return; }
       if (ctx.signal.aborted) return;
       name.textContent = state.name ?? pick(ctx.language, { zh: '生态箱', en: 'Terrarium' });
@@ -80,6 +82,7 @@ function mount(ctx: WebUiPanelContext): void {
       scene.setState(state);
       replay.setReplays(state.replays ?? []);
       current = state;
+      deathHistory.update(state.deaths);
       scoreChart.replaceChildren(drawScoreHistory(state.scoreHistory, ctx.language.startsWith('zh'), ctx.language));
       diagnosis.replaceChildren(...[...returnReportText(state.returnReport, ctx.language.startsWith('zh')), ...careText(state.care, ctx.language.startsWith('zh'))].map(text => ctx.ui.h('div', '', text)));
       const cells = state.soil.map((cell, index) => {

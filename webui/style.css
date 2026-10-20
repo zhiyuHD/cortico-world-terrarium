@@ -52,3 +52,11 @@
 :root[data-color-mode="dark"] .terrarium-plant-critical { color: #eea18b; }
 
 .terrarium-watering-buttons button[aria-pressed=true],.terrarium-grid button[aria-pressed=true]{outline:2px solid var(--accent,#408f75);transform:translateY(-1px)}.terrarium-care button{transition:transform .15s ease,background-color .15s ease}.terrarium-care button:hover{transform:translateY(-2px)}.terrarium-cell{font-size:11px}
+
+.terrarium-deaths { margin-block: 12px; }
+.terrarium-death-list { display: grid; gap: 8px; margin-top: 8px; max-height: 360px; overflow: auto; }
+.terrarium-death-list[hidden] { display: none; }
+.terrarium-death { padding: 10px 12px; border: 1px solid color-mix(in srgb, currentColor 18%, transparent); border-radius: 10px; overflow-wrap: anywhere; animation: terrarium-death-appear 180ms ease-out; }
+.terrarium-death div { margin-top: 4px; font-size: .88em; }
+@keyframes terrarium-death-appear { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .terrarium-death { animation: none; } }

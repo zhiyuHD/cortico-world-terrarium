@@ -212,7 +212,7 @@ it('requires authenticated upgrades, client versions and a full first snapshot; 
 
 it('tracks acknowledged uploads and failures independently of reads, and full sync preserves incremental mode', async () => {
   const { client, proxy, get, credentials } = await fixture(true);
-  expect(client.status()).toEqual({ state: 'idle', mode: 'incremental', consecutiveFailures: 0 });
+  expect(client.status()).toMatchObject({ state: 'idle', mode: 'incremental', consecutiveFailures: 0 });
   const state = newState(Date.now());
   await client.report(state, 'day');
   const success = client.status();
@@ -249,7 +249,7 @@ it('tracks acknowledged uploads and failures independently of reads, and full sy
 it('keeps reporting disabled during manual full sync without creating credentials', async () => {
   const client = new LeaderboardClient({ url: '', id: '', credentialsFile: 'unused' });
   await client.report(newState(Date.now()), 'day', true);
-  expect(client.status()).toEqual({ state: 'disabled', mode: 'full', consecutiveFailures: 0 });
+  expect(client.status()).toMatchObject({ state: 'disabled', mode: 'full', consecutiveFailures: 0 });
   expect(client.id).toBeUndefined();
 });
 
@@ -380,4 +380,19 @@ it.each(['land', 'water'] as const)('keeps %s checksums identical across 30 roun
     expect(proxy.frames.at(-1)?.kind).toBe('delta');
   }
   expect(proxy.replies.some(reply => reply.kind === 'resync')).toBe(false);
+});
+
+it('keeps the accepted simulation time unchanged after an ignored acknowledgement', async () => {
+  const { client, proxy } = await fixture(true);
+  const state = newState(Date.now() - 60_000);
+  await client.report(state, 'day');
+  const before = client.status();
+  expect(before.clientVersion).toBe(TERRARIUM_CLIENT_VERSION);
+  expect(before.lastSuccessStateAt).toBe(new Date(state.updatedAtMs).toISOString());
+  state.updatedAtMs += 60_000;
+  proxy.rewriteNextReply(reply => ({ ...reply, accepted: false, ignored: true }));
+  await expect(client.report(state, 'day')).rejects.toThrow('not accepted');
+  expect(client.status()).toMatchObject({ state: 'error', lastSuccessStateAt: before.lastSuccessStateAt, lastSuccessAt: before.lastSuccessAt });
+  await client.report(state, 'day', true);
+  expect(client.status()).toMatchObject({ state: 'synced', lastSuccessStateAt: new Date(state.updatedAtMs).toISOString() });
 });

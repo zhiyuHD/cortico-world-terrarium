@@ -7,6 +7,7 @@ export const TERRARIUM: WorldDefinition<TerrariumConfigSection> = {
   create: ctx => new TerrariumWorld({ cfg: ctx.cfg, timezone: ctx.timezone, stateFile: `${ctx.dataDir}/terrarium/land/state.json`, waterStateFile: `${ctx.dataDir}/terrarium/water/state.json`, reportToken: ctx.secret('CORTICO_TERRARIUM_REPORT_TOKEN') }),
   describe: {
     tools: describeTools([...TERRARIUM_TOOL_DECLS, ...TERRARIUM_AQUATIC_TOOL_DECLS], {
+      terrarium_deaths: { zh: '查看持久保存的死亡原因、最终状态和环境记录。', en: 'Reads persisted death causes, final states and environment.' },
       terrarium_score_history: { zh: '读取自己生态箱最近 24 小时的本地分数曲线。', en: 'Reads your local score samples for the last 24 hours.' },
       terrarium_set_ant_foraging: { zh: '允许或禁止蚂蚁采集指定格的植物。', en: 'Allows or forbids ant harvesting in a land cell.' },
       terrarium_feed_nest: { zh: '向已有蚁巢直接添加储粮。', en: 'Adds stored food directly to an existing ant nest.' },
@@ -31,7 +32,7 @@ export const TERRARIUM: WorldDefinition<TerrariumConfigSection> = {
       terrarium_water_history: { zh: '查询水质和鱼的小时历史。', en: 'Reads hourly water quality and fish history.' },
       terrarium_replay: { zh: '查看捕食记录与现场回放。', en: 'Reads hunt records and scene replays.' },
       terrarium_rename: { zh: '修改生态箱名称，保留原有 ID 和凭据。', en: 'Renames the terrarium while keeping its ID and credentials.' },
-      terrarium_inspect: { zh: '查看地箱、水箱的认领状态或指定生态箱的生物和环境。', en: 'Lists land and water ownership or inspects a selected ecosystem.' },
+      terrarium_inspect: { zh: '查看两箱概况或指定箱的紧凑现状，按分项读取细节。', en: 'Reads box overviews or compact current state, with detail sections.' },
       terrarium_history: { zh: '查询一株植物或一格土壤的小时历史。', en: 'Reads hourly history for one plant or soil cell.' },
       terrarium_water: { zh: '按植物 ID 或格子坐标给土壤浇水。', en: 'Waters soil by plant ID or grid coordinates.' },
       terrarium_move: { zh: '移动生态箱里的硬币或石子。', en: 'Moves the coin or pebble.' },
@@ -42,19 +43,18 @@ export const TERRARIUM: WorldDefinition<TerrariumConfigSection> = {
       terrarium_remove: { zh: '移出指定植物、种子或虫子。', en: 'Removes one organism.' },
     }),
     events: [
+      { type: 'terrarium.care', description: { zh: '同一生态箱的照料异常合并投递，仅在新出现、恶化或恢复时提醒。', en: 'Combined care conditions for a habitat, emitted on onset, worsening or recovery.' } },
       { type: 'terrarium.return', description: { zh: '启动时的补算变化和照料自检，随下次回合投递。', en: 'Startup catch-up changes and care checks, delivered with the next round.' } },
       { type: 'terrarium.irrigation', description: { zh: '本次结算中执行的定时补水次数和水量，随下次回合投递。', en: 'Scheduled watering count and amount for this settlement, delivered with the next round.' } },
-      { type: 'terrarium.oxygen', description: { zh: '含氧量降至 40 或以下，恢复到 50 后可再次提醒。', en: 'Oxygen reached 40 or below; rearms after recovery to 50.' } },
       { type: 'terrarium.egg', description: { zh: '虫子产下卵，附带孵化等待时间。', en: 'Bugs laid eggs with an incubation time.' } },
       { type: 'terrarium.nest', description: { zh: '蚂蚁挖出巢穴或完成扩建。', en: 'Ants dug a nest or completed its expansion.' } },
       { type: 'terrarium.announcement', description: { zh: '服务端向所有客户端或本客户端发布的外部公告。', en: 'An external service announcement for all clients or this client.' } },
       { type: 'terrarium.overtaken', description: { zh: '自己的地榜或水榜名次下降，附带关闭提醒的工具用法。', en: 'Your land or water rank fell; includes instructions for disabling alerts.' } },
       { type: 'terrarium.phase', description: { zh: '生态箱昼夜切换。', en: 'The terrarium changed between day and night.' } },
-      { type: 'terrarium.plant', description: { zh: '植物长出新阶段、开花、土壤变干、健康降至濒危或蜘蛛织网。', en: 'A plant grew, flowered, became dry or reached critical health, or a spider wove a web.' } },
+      { type: 'terrarium.plant', description: { zh: '植物长出新阶段、开花或蜘蛛织网。', en: 'A plant grew or flowered, or a spider wove a web.' } },
       { type: 'terrarium.ecosystem', description: { zh: '种子发芽、陆生或水生生物死亡。', en: 'A seed sprouted or an organism died.' } },
       { type: 'terrarium.hunt', description: { zh: '虫子或鱼捕食了猎物。', en: 'A bug or fish hunted its prey.' } },
       { type: 'terrarium.birth', description: { zh: '幼虫出生或虫卵孵化。', en: 'Young bugs were born or eggs hatched.' } },
-      { type: 'terrarium.hungry', description: { zh: '虫子饥饿值升高，或虫子、鱼体力降至低位。', en: 'A bug became hungry or a bug or fish reached low energy.' } },
     ],
   },
 };

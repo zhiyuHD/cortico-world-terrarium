@@ -50,7 +50,7 @@ export function validCollection(value: unknown, habitat: 'land' | 'water'): bool
       return validAquarium(base);
     }
     const base = newState(0); base.plants = []; base.bugs = []; base.seeds = [];
-    if (entry.kind === 'plant') base.plants = [entry.specimen]; else if (entry.kind === 'seed') base.seeds = [entry.specimen]; else if (entry.kind === 'bug') base.bugs = [entry.specimen]; else return false;
+    if (entry.kind === 'plant') base.plants = [entry.specimen]; else if (entry.kind === 'seed') base.seeds = [entry.specimen]; else if (entry.kind === 'bug') { base.bugs = [entry.specimen]; base.updatedAtMs = entry.specimen.lastMeal?.atMs ?? 0; } else return false;
     return validState(base);
   });
 }

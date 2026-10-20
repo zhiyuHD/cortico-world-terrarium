@@ -47,8 +47,8 @@ it('reports elapsed changes and keeps tool edits across restarts', async () => {
     const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: '' }, timezone: 'Asia/Shanghai', stateFile: file, now: () => now });
     await world.start(host);
     expect(events.some(({ event }) => event.type === 'terrarium.phase')).toBe(true);
-    expect(events.filter(({ event }) => event.type === 'terrarium.plant' && event.text.includes('变干'))).toHaveLength(2);
-    expect(events.filter(({ event, options }) => event.type === 'terrarium.plant' && event.text.includes('变干') && options?.trigger === 'debounce')).toHaveLength(2);
+    expect(events.filter(({ event }) => event.type === 'terrarium.care' && event.text.includes('缺水'))).toHaveLength(1);
+    expect(events.filter(({ event, options }) => event.type === 'terrarium.care' && event.text.includes('缺水') && options?.trigger === 'debounce')).toHaveLength(1);
     const tools = world.tools();
     const inspect = tools.find(tool => tool.name === 'terrarium_inspect')!;
     const water = tools.find(tool => tool.name === 'terrarium_water')!;
@@ -114,24 +114,26 @@ it('delivers birth and hunger events so the bot can inspect the changed state', 
     const inspect = world.tools().find(tool => tool.name === 'terrarium_inspect')!;
     const observed = JSON.parse(String(await inspect.handler({ habitat: 'land' }, {} as ToolCallContext)));
     expect(observed.bugs).toHaveLength(4);
-    expect(observed.soil).toHaveLength(25);
-    expect(observed.soil[0].light).toBe(observed.soil[0].daylight);
-    expect(observed.requirements.moss.maxLight).toBeLessThan(observed.requirements.basil.minLight);
+    const soil = JSON.parse(String(await inspect.handler({ habitat: 'land', section: 'soil' }, {} as ToolCallContext)));
+    expect(soil.soil).toHaveLength(25);
+    expect(soil.soil[0].light).toBe(soil.soil[0].daylight);
+    expect(soil.requirements.moss.maxLight).toBeLessThan(soil.requirements.basil.minLight);
     expect(observed.history.samples).toBe(2);
     const history = world.tools().find(tool => tool.name === 'terrarium_history')!;
     const cellHistory = JSON.parse(String(await history.handler({ x: 0, y: 0, limit: 1 }, {} as ToolCallContext)));
-    expect(cellHistory).toEqual([{ recordedAtMs: now, x: 0, y: 0, moisture: observed.soil[0].moisture }]);
+    expect(cellHistory.samples).toEqual([{ recordedAtMs: now, x: 0, y: 0, moisture: expect.closeTo(soil.soil[0].moisture, 1) }]);
     await expect(history.handler({ plant: 'fern', x: 0, y: 0 }, {} as ToolCallContext)).rejects.toThrow('OR');
     await expect(history.handler({ x: 9, y: 0 }, {} as ToolCallContext)).rejects.toThrow('5×5');
     await expect(history.handler({ plant: 'fern', limit: TERRARIUM_MAX_HISTORY + 1 }, {} as ToolCallContext)).rejects.toThrow('limit');
     const remove = world.tools().find(tool => tool.name === 'terrarium_remove')!;
     await remove.handler({ id: 'fern' }, {} as ToolCallContext);
     now += 60 * 60_000;
-    const plantHistory = JSON.parse(String(await history.handler({ plant: 'fern' }, {} as ToolCallContext)));
+    const plantHistory = JSON.parse(String(await history.handler({ plant: 'fern' }, {} as ToolCallContext))).samples;
     expect(plantHistory[0].plant.id).toBe('fern');
     expect(plantHistory.at(-1)).toEqual({ recordedAtMs: now, plant: null });
-    expect(events.filter(({ event }) => event.type === 'terrarium.birth' || event.type === 'terrarium.hungry')).toHaveLength(2);
-    expect(events.filter(({ event }) => event.type === 'terrarium.birth' || event.type === 'terrarium.hungry').every(({ options }) => options?.trigger === 'debounce')).toBe(true);
+    expect(events.filter(({ event }) => event.type === 'terrarium.birth')).toHaveLength(1);
+    expect(events.some(({ event }) => event.type === 'terrarium.care' && event.text.includes('能量'))).toBe(true);
+    expect(events.filter(({ event }) => event.type === 'terrarium.birth' || event.type === 'terrarium.care').every(({ options }) => options?.trigger === 'debounce')).toBe(true);
     await world.stop();
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
@@ -362,12 +364,12 @@ it('delivers critical plant events once across a restart and keeps unclaimed wat
     const state = newState(start); state.plants[0].health = 10;
     await saveState(file, state); now += 60_000;
     await world.start(host);
-    const critical = events.filter(({ event }) => event.type === 'terrarium.plant' && event.text.includes('濒危'));
+    const critical = events.filter(({ event }) => event.type === 'terrarium.care' && event.text.includes('健康'));
     expect(critical).toHaveLength(1);
     expect(critical[0]).toMatchObject({ event: { source: 'terrarium', origin: 'internal', senderKey: 'terrarium' }, options: { trigger: 'debounce' } });
     await world.stop(); now += 60_000;
     await world.start(host);
-    expect(events.filter(({ event }) => event.text.includes('濒危'))).toHaveLength(1);
+    expect(events.filter(({ event }) => event.type === 'terrarium.care' && event.text.includes('健康'))).toHaveLength(1);
     await area.handler({ x1: 0, y1: 0, x2: 4, y2: 4 }, context);
     expect((await loadState(file, now)).plants[0].healthWarning).toBe(true);
   } finally { await world.stop(); await rm(dir, { recursive: true, force: true }); }
@@ -388,13 +390,61 @@ it('persists care settings and collections, waters once after offline catch-up a
     await world.stop(); now += 3_600_000;
     world = new TerrariumWorld(options); await world.start(host);
     const observed = await invoke('terrarium_inspect', { habitat: 'land' });
-    expect(observed.collection[0].specimen.id).toBe('fern'); expect(observed.irrigation[0].lastWateredAtMs).toBe(now);
-    expect(observed.soil[12].moisture).toBe(60);
+    expect(observed.collection.count).toBe(1);
+    expect((await invoke('terrarium_collection', { action: 'list' })).collection[0].specimen.id).toBe('fern');
+    expect((await invoke('terrarium_inspect', { habitat: 'land', section: 'objects' })).irrigation.items[0].lastWateredAtMs).toBe(now);
+    expect(observed.soil.moistureRows[2][2]).toBe(60);
     await invoke('terrarium_collection', { action: 'restore', id: 'fern', x: 1, y: 1 });
     const drained = await invoke('terrarium_drain', { x: 2, y: 2, amount: 10 }); expect(drained.soil.moisture).toBe(50);
     const reused = await invoke('terrarium_reuse_water', { percent: 10, x1: 2, y1: 2, x2: 2, y2: 2 }); expect(reused.soil[0].moisture).toBe(100);
     await invoke('terrarium_set_irrigation', { x: 2, y: 2, enabled: false });
     await world.stop(); const saved = await loadState(file, now);
     expect(saved.irrigation).toEqual([]); expect(saved.collection).toEqual([]); expect(saved.plants.some(p => p.id === 'fern')).toBe(true);
+  } finally { await world.stop(); await rm(dir, { recursive: true, force: true }); }
+});
+
+it('exposes retained deaths through a read tool and keeps inspect bounded across restart', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-death-world-')), file = join(dir, 'state.json');
+  const start = Date.parse('2026-06-01T06:00:00Z'); let now = start + 60_000;
+  const s = newState(start); s.plants = [];
+  s.bugs = [{ id: 'bug-fixture', species: 'beetle', x: 2, y: 2, ageHours: 5, energy: 40, hunger: 99.99 }];
+  const host = { log: { warn() {} }, async pushEvent(event: Omit<EventEnvelope, 'cursor'>) { return { ...event, cursor: 1 }; } } as unknown as WorldHost;
+  const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: '' }, timezone: 'UTC', stateFile: file, now: () => now });
+  const call = async (name: string, args: Record<string, unknown> = {}) => JSON.parse(String(await world.tools().find(t => t.name === name)!.handler(args, {} as ToolCallContext)));
+  try {
+    await saveState(file, s); await world.start(host);
+    const result = await call('terrarium_deaths');
+    expect(result).toMatchObject({ habitat: 'land', records: [{ organism: { id: 'bug-fixture' }, cause: '饥饿值达到 100' }] });
+    expect((await call('terrarium_inspect', { habitat: 'land' })).deaths).toMatchObject({ count: 1, tool: 'terrarium_deaths' });
+    const view = await world.webUi().invoke!('garden', 'state', []) as { state: { deaths: unknown[] } };
+    expect(view.state.deaths).toEqual(result.records);
+    await expect(call('terrarium_deaths', { limit: 49 })).rejects.toThrow('limit');
+    await expect(call('terrarium_deaths', { habitat: 'water' })).rejects.toThrow('not claimed');
+    await world.stop(); now += 60_000; await world.start(host);
+    expect(await call('terrarium_deaths')).toEqual(result);
+  } finally { await world.stop(); await rm(dir, { recursive: true, force: true }); }
+});
+
+it('returns changed IDs for collection operations and pages listings without returning frozen state', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-receipts-')), file = join(dir, 'state.json');
+  const now = Date.parse('2026-06-01T06:00:00Z'), s = newState(now);
+  s.collection = Array.from({ length: 47 }, (_, i) => ({ kind: 'plant', specimen: { ...s.plants[0], id: `stored-${i}` } }));
+  const host = { log: { warn() {} }, async pushEvent(event: object) { return { ...event, cursor: 1 }; } } as unknown as WorldHost;
+  const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: '' }, timezone: 'UTC', stateFile: file, now: () => now });
+  const call = async (name: string, args: Record<string, unknown>) => JSON.parse(String(await world.tools().find(t => t.name === name)!.handler(args, {} as ToolCallContext)));
+  try {
+    await saveState(file, s); await world.start(host);
+    const collected = await call('terrarium_collection', { action: 'collect', id: 'fern' });
+    expect(collected).toEqual({ habitat: 'land', action: 'collect', id: 'fern', collectionCount: 48 });
+    expect(JSON.stringify(collected).length).toBeLessThan(200);
+    const page = await call('terrarium_collection', { action: 'list' });
+    expect(page.total).toBe(48); expect(page.collection).toHaveLength(5); expect(page.nextOffset).toBe(5);
+    expect(page.collection[0].specimen.health).toBeUndefined();
+    expect((await call('terrarium_collection', { action: 'list', id: 'fern' })).entry.specimen.health).toBe(100);
+    expect(await call('terrarium_collection', { action: 'restore', id: 'fern', x: 0, y: 0 })).toMatchObject({ collectionCount: 47, id: 'fern' });
+    const noop = await call('terrarium_water_area', { x1: 0, y1: 0, x2: 4, y2: 4, targetMoisture: 0 });
+    expect(noop.soil).toEqual([]); expect(noop.plants).toEqual([]);
+    const view = await world.webUi().invoke!('garden', 'state', []) as { state: { collection: unknown[] } };
+    expect(view.state.collection).toHaveLength(47);
   } finally { await world.stop(); await rm(dir, { recursive: true, force: true }); }
 });

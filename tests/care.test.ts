@@ -83,3 +83,12 @@ it('rejects archived IDs that collide with active organisms and refreshes moistu
   collect(state, plant.id); state.soil[6].moisture = 0; restoreCollected(state, plant.id, 1, 1);
   expect(state.plants.find(p => p.id === plant.id)).toMatchObject({ moisture: 0, dry: true });
 });
+
+it('accepts frozen land bugs with actual meal timestamps and preserves them when restored', () => {
+  const s = newState(start);
+  s.bugs.push({ id: 'bug-meal', species: 'aphid', x: 0, y: 0, energy: 60, hunger: 30, ageHours: 2, lastMeal: { atMs: start, kind: 'foraging' } });
+  collect(s, 'bug-meal');
+  expect(validState(JSON.parse(JSON.stringify(s)))).toBe(true);
+  restoreCollected(s, 'bug-meal', 1, 1);
+  expect(s.bugs[0].lastMeal?.atMs).toBe(start);
+});

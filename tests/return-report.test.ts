@@ -95,14 +95,15 @@ it('exposes startup care checks, nest feeding and cell protection through the Wo
   try {
     await world.start(host);
     const result = await call('terrarium_inspect', { habitat: 'land' });
-    expect(result.returnReport.elapsedHours).toBe(1); expect(result.scoreHistory.at(-1).score).toBeDefined();
+    expect(result.returnReport.elapsedHours).toBe(1); expect(result.score).toBeDefined();
+    expect(result.scoreHistory).toBeUndefined();
     expect(events.filter(e => e.type === 'terrarium.return')).toHaveLength(1);
     expect((await call('terrarium_feed_nest', { id: 'nest-1', portions: 100 })).added).toBe(state.nests[0].depth * 20);
     await call('terrarium_set_ant_foraging', { x: 0, y: 0, enabled: false });
     await expect(call('terrarium_set_ant_foraging', { x: 8, y: 0, enabled: false })).rejects.toThrow();
     const scores = await call('terrarium_score_history', {}); expect(scores.samples.at(-1).score).toBeDefined();
     await world.stop(); await world.start(host);
-    expect((await call('terrarium_inspect', { habitat: 'land' })).soil[0].allowAntForaging).toBe(false);
+    expect((await call('terrarium_inspect', { habitat: 'land', section: 'soil' })).soil[0].allowAntForaging).toBe(false);
     expect(events.filter(e => e.type === 'terrarium.return')).toHaveLength(1);
   } finally { await world.stop(); await rm(dir, { recursive: true, force: true }); }
 });

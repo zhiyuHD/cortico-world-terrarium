@@ -60,7 +60,7 @@ it('registers each claimed habitat once across repeated tool calls and World res
     const waterReplay = await call('terrarium_replay', { habitat: 'water', id: waterReplays[0].id });
     expect(waterReplay.frames[1].fish.map((f: { id: string }) => f.id)).toContain(fish.id);
     expect(waterReplay.frames[2].fish.map((f: { id: string }) => f.id)).not.toContain(fish.id);
-    expect((await call('terrarium_water_history')).length).toBeGreaterThan(0);
+    expect((await call('terrarium_water_history')).samples.length).toBeGreaterThan(0);
     const savedLand = await readFile(options.stateFile, 'utf8'), savedWater = await readFile(options.waterStateFile, 'utf8');
     const synced = await call('terrarium_sync');
     expect(synced).toMatchObject({ id: land.id, sync: { state: 'synced', transport: 'ws', consecutiveFailures: 0 } });

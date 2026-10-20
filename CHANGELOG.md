@@ -2,6 +2,16 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.8.2
+
+- Return compact model-facing inspection, with paged detail sections and display rounding; keep browser snapshots complete and simulation precision unchanged.
+- Page history and collection queries, filter water history by fish or metric, and return only changed data from collection, irrigation and batch watering operations.
+- Accept frozen land bugs with recorded meal timestamps when validating collections.
+- Persist up to 48 death records with final organism values, recorded meals, simulation time, cause and environment; add a read tool and panel history.
+- Combine care warnings per habitat and notify only on onset, worsening or recovery; preserve warning levels across restarts.
+- Show client version, accepted snapshot simulation time and retry time in sync status; reject ignored HTTP and WebSocket acknowledgements.
+- Preserve existing saves, box IDs and credentials; older deaths and missing meal history cannot be reconstructed.
+
 ## 0.8.1
 
 - Let lone queens forage when hungry; add direct nest feeding and per-cell ant harvesting protection.

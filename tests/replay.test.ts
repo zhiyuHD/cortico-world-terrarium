@@ -86,7 +86,7 @@ it('exposes replay availability and recorded scenes through World tools without 
     const inspect = JSON.parse(String(await world.tools().find(tool => tool.name === 'terrarium_inspect')!.handler({ habitat: 'land' }, context)));
     const replay = world.tools().find(tool => tool.name === 'terrarium_replay')!;
     const summaries = JSON.parse(String(await replay.handler({}, context)));
-    expect(inspect.replays).toEqual({ count: 1, latestId: summaries[0].id });
+    expect(inspect.replays).toMatchObject({ count: 1, latestId: summaries[0].id, tool: 'terrarium_replay' });
     expect(summaries[0].frames).toBeUndefined();
     const recorded = JSON.parse(String(await replay.handler({ id: summaries[0].id }, context)));
     expect(recorded.frames).toHaveLength(3);

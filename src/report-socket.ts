@@ -43,6 +43,8 @@ export class ReportSocket {
     let reply = await this.send(socket, message);
     if (reply.kind === 'resync') reply = await this.send(socket, { ...header, seq: ++this.seq, kind: 'full', state });
     if (reply.kind === 'error') throw new ReportSocketError(reply.error, reply.status);
+    const acceptance = reply as ReportReply & { accepted?: boolean; ignored?: boolean };
+    if (acceptance.accepted === false || acceptance.ignored === true) throw new ReportSocketError('Server ignored report; snapshot was not accepted');
     if (reply.kind !== 'ack' || typeof reply.revision !== 'string' || !/^[a-f0-9]{32}$/.test(reply.revision) || !Number.isSafeInteger(reply.score) || reply.score < 0) throw new Error('Invalid report acknowledgement');
     if ((reply.stateHash !== undefined || this.baselineHash !== undefined) && reply.stateHash !== stateHash) throw new Error('Report state checksum mismatch');
     if (this.socket !== socket || socket.readyState !== WebSocket.OPEN) throw new Error('Report connection closed');

@@ -3895,7 +3895,7 @@ var FeedbackStore = class {
 // package.json
 var package_default = {
   name: "cortico-world-terrarium",
-  version: "0.8.1",
+  version: "0.8.2",
   type: "module",
   description: "Claimable land and water ecosystems with plants, bugs, fish and a public leaderboard",
   license: "MIT",
@@ -3928,8 +3928,8 @@ var package_default = {
       "game"
     ],
     describe: "describe.json",
-    webUiClient: "dist/webui/0.8.1/client.js",
-    webUiStyle: "dist/webui/0.8.1/client.css",
+    webUiClient: "dist/webui/0.8.2/client.js",
+    webUiStyle: "dist/webui/0.8.2/client.css",
     locales: {
       zh: {
         displayName: "\u751F\u6001\u7BB1",
@@ -3963,7 +3963,7 @@ var package_default = {
     test: "vitest run",
     typecheck: "tsc --noEmit",
     "typecheck:webui": "tsc --noEmit -p tsconfig.web.json",
-    "build:webui": "esbuild webui/client.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/webui/0.8.1/client.js",
+    "build:webui": "esbuild webui/client.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/webui/0.8.2/client.js",
     "build:server": "tsx server/build.ts",
     "build:admin": "esbuild server/admin.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/admin.mjs"
   },
@@ -4327,6 +4327,28 @@ var TERRARIUM_PLANT_REQUIREMENTS = {
 };
 var TERRARIUM_MAX_HISTORY = 168;
 
+// src/care-alerts.ts
+function validCareAlerts(value) {
+  return value === void 0 || !!value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length <= 100 && Object.entries(value).every(([key, v]) => key.length <= 100 && v && [1, 2].includes(v.severity) && typeof v.label === "string" && v.label.length <= 200);
+}
+
+// src/deaths.ts
+var TERRARIUM_MAX_DEATH_RECORDS = 48;
+function validDeaths(value, atMs) {
+  if (value === void 0) return true;
+  return Array.isArray(value) && value.length <= TERRARIUM_MAX_DEATH_RECORDS && value.every((r, i) => {
+    if (!r || !Number.isFinite(r.recordedAtMs) || r.recordedAtMs > atMs || i > 0 && r.recordedAtMs < value[i - 1].recordedAtMs || typeof r.cause !== "string" || r.cause.length > 1e3) return false;
+    const o = r.organism;
+    return o && typeof o.id === "string" && o.id.length <= 32 && typeof o.species === "string" && o.species.length <= 32 && [o.x, o.y].every((n) => Number.isInteger(n) && n >= 0 && n < 5) && ["energy", "hunger", "health", "ageHours"].every((k) => o[k] === void 0 || Number.isFinite(o[k]) && o[k] >= 0) && validMeal(o.lastMeal, r.recordedAtMs) && r.environment && typeof r.environment === "object" && !Array.isArray(r.environment) && Object.keys(r.environment).length <= 10 && Object.values(r.environment).every((v) => typeof v === "number" ? Number.isFinite(v) : typeof v === "string" && v.length <= 100);
+  });
+}
+function validMeal(value, atMs) {
+  if (value === void 0) return true;
+  if (!value || typeof value !== "object") return false;
+  const meal = value;
+  return Number.isFinite(meal.atMs) && meal.atMs <= atMs && typeof meal.kind === "string" && meal.kind.length <= 32 && (meal.id === void 0 || typeof meal.id === "string" && meal.id.length <= 32);
+}
+
 // src/scoring.ts
 function scoreParts(state) {
   if ("fish" in state) return {
@@ -4382,7 +4404,7 @@ function validFrame(value, atMs) {
 function validAquarium(value) {
   if (!value || typeof value !== "object") return false;
   const s = value;
-  return validCollection(s.collection, "water") && (s.oxygenWarning === void 0 || typeof s.oxygenWarning === "boolean") && s.version === 1 && Number.isFinite(s.updatedAtMs) && Number.isSafeInteger(s.nextId) && s.nextId >= 1 && (s.name === void 0 || typeof s.name === "string" && s.name === s.name.trim() && Array.from(s.name).length >= 1 && Array.from(s.name).length <= TERRARIUM_MAX_NAME_LENGTH && !/[\u0000-\u001f\u007f-\u009f]/.test(s.name)) && validFrame({ ...s, phase: "day" }, s.updatedAtMs) && new Set([...s.fish, ...s.plants, ...s.food, ...(s.collection ?? []).map((e) => e.specimen)].map((e) => e.id)).size === s.fish.length + s.plants.length + s.food.length + (s.collection?.length ?? 0) && Array.isArray(s.history) && s.history.length <= 168 && s.history.every((h, i) => h && Number.isFinite(h.recordedAtMs) && (h.score === void 0 || Number.isSafeInteger(h.score) && h.score >= 0) && h.recordedAtMs <= s.updatedAtMs && (i === 0 || h.recordedAtMs > s.history[i - 1].recordedAtMs) && percent(h.oxygen) && percent(h.cleanliness) && validFrame({ kind: "water", phase: "day", oxygen: h.oxygen, cleanliness: h.cleanliness, fish: h.fish, plants: [], food: [] }, h.recordedAtMs)) && Array.isArray(s.replays) && s.replays.length <= TERRARIUM_MAX_REPLAYS && new Set(s.replays.map((r) => r?.id)).size === s.replays.length && s.replays.every((r, i) => {
+  return validCareAlerts(s.careAlerts) && validDeaths(s.deaths, s.updatedAtMs) && validCollection(s.collection, "water") && (s.oxygenWarning === void 0 || typeof s.oxygenWarning === "boolean") && s.version === 1 && Number.isFinite(s.updatedAtMs) && Number.isSafeInteger(s.nextId) && s.nextId >= 1 && (s.name === void 0 || typeof s.name === "string" && s.name === s.name.trim() && Array.from(s.name).length >= 1 && Array.from(s.name).length <= TERRARIUM_MAX_NAME_LENGTH && !/[\u0000-\u001f\u007f-\u009f]/.test(s.name)) && validFrame({ ...s, phase: "day" }, s.updatedAtMs) && new Set([...s.fish, ...s.plants, ...s.food, ...(s.collection ?? []).map((e) => e.specimen)].map((e) => e.id)).size === s.fish.length + s.plants.length + s.food.length + (s.collection?.length ?? 0) && Array.isArray(s.history) && s.history.length <= 168 && s.history.every((h, i) => h && Number.isFinite(h.recordedAtMs) && (h.score === void 0 || Number.isSafeInteger(h.score) && h.score >= 0) && h.recordedAtMs <= s.updatedAtMs && (i === 0 || h.recordedAtMs > s.history[i - 1].recordedAtMs) && percent(h.oxygen) && percent(h.cleanliness) && validFrame({ kind: "water", phase: "day", oxygen: h.oxygen, cleanliness: h.cleanliness, fish: h.fish, plants: [], food: [] }, h.recordedAtMs)) && Array.isArray(s.replays) && s.replays.length <= TERRARIUM_MAX_REPLAYS && new Set(s.replays.map((r) => r?.id)).size === s.replays.length && s.replays.every((r, i) => {
     if (!r || typeof r.id !== "string" || r.id.length > 160 || !Number.isFinite(r.recordedAtMs) || r.recordedAtMs > s.updatedAtMs || i > 0 && r.recordedAtMs < s.replays[i - 1].recordedAtMs || !Array.isArray(r.frames) || r.frames.length !== 3 || !r.frames.every((f) => validFrame(f, r.recordedAtMs))) return false;
     const [before, contact, after] = r.frames;
     const hunter = contact.fish.find((f) => f.id === r.hunterId), prey = contact.fish.find((f) => f.id === r.preyId);
@@ -4413,8 +4435,10 @@ function validCollection(value, habitat) {
     base.seeds = [];
     if (entry.kind === "plant") base.plants = [entry.specimen];
     else if (entry.kind === "seed") base.seeds = [entry.specimen];
-    else if (entry.kind === "bug") base.bugs = [entry.specimen];
-    else return false;
+    else if (entry.kind === "bug") {
+      base.bugs = [entry.specimen];
+      base.updatedAtMs = entry.specimen.lastMeal?.atMs ?? 0;
+    } else return false;
     return validState(base);
   });
 }
@@ -4515,8 +4539,8 @@ function validReplays(state) {
 function validState(value) {
   if (!value || typeof value !== "object") return false;
   const state = value;
-  if (!validCollection(state.collection, "land") || state.irrigation !== void 0 && (!Array.isArray(state.irrigation) || state.irrigation.length > 25 || new Set(state.irrigation.map((c) => `${c?.x},${c?.y}`)).size !== state.irrigation.length || !state.irrigation.every((c) => c && inGrid(c.x, c.y) && Number.isFinite(c.targetMoisture) && c.targetMoisture >= 0 && c.targetMoisture <= 100 && Number.isFinite(c.intervalMinutes) && c.intervalMinutes >= 1 && c.intervalMinutes <= 1440 && Number.isFinite(c.lastWateredAtMs)))) return false;
-  return state.version === 3 && (state.name === void 0 || validName(state.name)) && validHabitat(state) && validReplays(state) && Number.isFinite(state.updatedAtMs) && Number.isSafeInteger(state.nextId) && state.nextId >= 1 && Array.isArray(state.plants) && state.plants.length <= 12 && state.plants.every((p) => p && typeof p.id === "string" && p.id.length <= 32 && ["fern", "clover", "moss", "basil", "bean"].includes(p.species) && inGrid(p.x, p.y) && Number.isFinite(p.moisture) && p.moisture >= 0 && p.moisture <= 100 && Number.isFinite(p.growthHours) && p.growthHours >= 0 && Number.isInteger(p.stage) && p.stage >= 0 && p.stage <= 3 && typeof p.dry === "boolean" && Number.isFinite(p.health) && p.health >= 0 && p.health <= 100 && (p.healthWarning === void 0 || typeof p.healthWarning === "boolean")) && Array.isArray(state.seeds) && state.seeds.length <= 12 && state.plants.length + state.seeds.length <= 12 && state.seeds.every((s) => s && typeof s.id === "string" && Object.hasOwn(TERRARIUM_PLANT_REQUIREMENTS, s.species) && inGrid(s.x, s.y) && Number.isFinite(s.ageHours) && s.ageHours >= 0) && Array.isArray(state.bugs) && state.bugs.length <= 12 && state.bugs.every((b) => b && typeof b.id === "string" && (["aphid", "beetle", "spider", "ant"].includes(b.species) || isFlying(b.species)) && inGrid(b.x, b.y) && Number.isFinite(b.energy) && b.energy >= 0 && b.energy <= 100 && (b.hunger === void 0 || Number.isFinite(b.hunger) && b.hunger >= 0 && b.hunger <= 100) && (b.carrying === void 0 || b.species === "ant" && Number.isInteger(b.carrying) && b.carrying >= 0 && b.carrying <= 5) && Number.isFinite(b.ageHours) && b.ageHours >= 0) && (state.eggs === void 0 || Array.isArray(state.eggs) && state.eggs.length <= 12 && state.eggs.every((egg) => egg && typeof egg.id === "string" && egg.id.length <= 32 && (["beetle", "spider", "ant"].includes(egg.species) || isFlying(egg.species)) && inGrid(egg.x, egg.y) && Number.isFinite(egg.laidAtMs) && egg.laidAtMs <= state.updatedAtMs && Number.isFinite(egg.hatchesAtMs) && egg.hatchesAtMs > egg.laidAtMs && egg.hatchesAtMs <= egg.laidAtMs + 6 * HOUR_MS2)) && state.bugs.length + (state.eggs?.length ?? 0) <= 12 && (state.nests === void 0 || Array.isArray(state.nests) && state.nests.length <= 5 && state.nests.every((nest) => nest && typeof nest.id === "string" && nest.id.length <= 32 && inGrid(nest.x, nest.y) && Number.isInteger(nest.depth) && nest.depth >= 1 && nest.depth <= 5 && Number.isInteger(nest.food) && nest.food >= 0 && nest.food <= nest.depth * 20) && new Set(state.nests.map((nest) => `${nest.x},${nest.y}`)).size === state.nests.length) && (state.food === void 0 || Array.isArray(state.food) && state.food.length <= 20 && state.food.every((food) => food && typeof food.id === "string" && food.id.length <= 32 && inGrid(food.x, food.y) && Number.isInteger(food.portions) && food.portions >= 1 && food.portions <= 10 && Number.isFinite(food.droppedAtMs) && food.droppedAtMs <= state.updatedAtMs)) && (state.webs === void 0 || Array.isArray(state.webs) && state.webs.length <= 12 * TERRARIUM_WEBS_PER_SPIDER && state.webs.every((web) => web && typeof web.id === "string" && web.id.length <= 32 && typeof web.spiderId === "string" && inGrid(web.x, web.y) && Number.isFinite(web.createdAtMs) && web.createdAtMs <= state.updatedAtMs && state.bugs.some((bug) => bug.id === web.spiderId && bug.species === "spider")) && new Set(state.webs.map((web) => `${web.x},${web.y}`)).size === state.webs.length && state.bugs.every((bug) => state.webs.filter((web) => web.spiderId === bug.id).length <= TERRARIUM_WEBS_PER_SPIDER)) && Array.isArray(state.items) && state.items.length === 2 && ["coin", "pebble"].every((id) => state.items.filter((item) => item.id === id && inGrid(item.x, item.y)).length === 1) && !(state.items[0].x === state.items[1].x && state.items[0].y === state.items[1].y) && new Set([...state.plants, ...state.seeds, ...state.bugs, ...state.eggs ?? [], ...state.nests ?? [], ...state.food ?? [], ...state.webs ?? [], ...(state.collection ?? []).map((e) => e.specimen)].map((v) => v.id)).size === (state.collection?.length ?? 0) + state.plants.length + state.seeds.length + state.bugs.length + (state.eggs?.length ?? 0) + (state.nests?.length ?? 0) + (state.food?.length ?? 0) + (state.webs?.length ?? 0) && new Set([...state.plants, ...state.seeds].map((v) => `${v.x},${v.y}`)).size === state.plants.length + state.seeds.length && validColony(state);
+  if (!validCareAlerts(state.careAlerts) || !validDeaths(state.deaths, state.updatedAtMs) || !validCollection(state.collection, "land") || state.irrigation !== void 0 && (!Array.isArray(state.irrigation) || state.irrigation.length > 25 || new Set(state.irrigation.map((c) => `${c?.x},${c?.y}`)).size !== state.irrigation.length || !state.irrigation.every((c) => c && inGrid(c.x, c.y) && Number.isFinite(c.targetMoisture) && c.targetMoisture >= 0 && c.targetMoisture <= 100 && Number.isFinite(c.intervalMinutes) && c.intervalMinutes >= 1 && c.intervalMinutes <= 1440 && Number.isFinite(c.lastWateredAtMs)))) return false;
+  return state.version === 3 && (state.name === void 0 || validName(state.name)) && validHabitat(state) && validReplays(state) && Number.isFinite(state.updatedAtMs) && Number.isSafeInteger(state.nextId) && state.nextId >= 1 && Array.isArray(state.plants) && state.plants.length <= 12 && state.plants.every((p) => p && typeof p.id === "string" && p.id.length <= 32 && ["fern", "clover", "moss", "basil", "bean"].includes(p.species) && inGrid(p.x, p.y) && Number.isFinite(p.moisture) && p.moisture >= 0 && p.moisture <= 100 && Number.isFinite(p.growthHours) && p.growthHours >= 0 && Number.isInteger(p.stage) && p.stage >= 0 && p.stage <= 3 && typeof p.dry === "boolean" && Number.isFinite(p.health) && p.health >= 0 && p.health <= 100 && (p.healthWarning === void 0 || typeof p.healthWarning === "boolean")) && Array.isArray(state.seeds) && state.seeds.length <= 12 && state.plants.length + state.seeds.length <= 12 && state.seeds.every((s) => s && typeof s.id === "string" && Object.hasOwn(TERRARIUM_PLANT_REQUIREMENTS, s.species) && inGrid(s.x, s.y) && Number.isFinite(s.ageHours) && s.ageHours >= 0) && Array.isArray(state.bugs) && state.bugs.length <= 12 && state.bugs.every((b) => b && typeof b.id === "string" && (["aphid", "beetle", "spider", "ant"].includes(b.species) || isFlying(b.species)) && inGrid(b.x, b.y) && Number.isFinite(b.energy) && b.energy >= 0 && b.energy <= 100 && validMeal(b.lastMeal, state.updatedAtMs) && (b.hunger === void 0 || Number.isFinite(b.hunger) && b.hunger >= 0 && b.hunger <= 100) && (b.carrying === void 0 || b.species === "ant" && Number.isInteger(b.carrying) && b.carrying >= 0 && b.carrying <= 5) && Number.isFinite(b.ageHours) && b.ageHours >= 0) && (state.eggs === void 0 || Array.isArray(state.eggs) && state.eggs.length <= 12 && state.eggs.every((egg) => egg && typeof egg.id === "string" && egg.id.length <= 32 && (["beetle", "spider", "ant"].includes(egg.species) || isFlying(egg.species)) && inGrid(egg.x, egg.y) && Number.isFinite(egg.laidAtMs) && egg.laidAtMs <= state.updatedAtMs && Number.isFinite(egg.hatchesAtMs) && egg.hatchesAtMs > egg.laidAtMs && egg.hatchesAtMs <= egg.laidAtMs + 6 * HOUR_MS2)) && state.bugs.length + (state.eggs?.length ?? 0) <= 12 && (state.nests === void 0 || Array.isArray(state.nests) && state.nests.length <= 5 && state.nests.every((nest) => nest && typeof nest.id === "string" && nest.id.length <= 32 && inGrid(nest.x, nest.y) && Number.isInteger(nest.depth) && nest.depth >= 1 && nest.depth <= 5 && Number.isInteger(nest.food) && nest.food >= 0 && nest.food <= nest.depth * 20) && new Set(state.nests.map((nest) => `${nest.x},${nest.y}`)).size === state.nests.length) && (state.food === void 0 || Array.isArray(state.food) && state.food.length <= 20 && state.food.every((food) => food && typeof food.id === "string" && food.id.length <= 32 && inGrid(food.x, food.y) && Number.isInteger(food.portions) && food.portions >= 1 && food.portions <= 10 && Number.isFinite(food.droppedAtMs) && food.droppedAtMs <= state.updatedAtMs)) && (state.webs === void 0 || Array.isArray(state.webs) && state.webs.length <= 12 * TERRARIUM_WEBS_PER_SPIDER && state.webs.every((web) => web && typeof web.id === "string" && web.id.length <= 32 && typeof web.spiderId === "string" && inGrid(web.x, web.y) && Number.isFinite(web.createdAtMs) && web.createdAtMs <= state.updatedAtMs && state.bugs.some((bug) => bug.id === web.spiderId && bug.species === "spider")) && new Set(state.webs.map((web) => `${web.x},${web.y}`)).size === state.webs.length && state.bugs.every((bug) => state.webs.filter((web) => web.spiderId === bug.id).length <= TERRARIUM_WEBS_PER_SPIDER)) && Array.isArray(state.items) && state.items.length === 2 && ["coin", "pebble"].every((id) => state.items.filter((item) => item.id === id && inGrid(item.x, item.y)).length === 1) && !(state.items[0].x === state.items[1].x && state.items[0].y === state.items[1].y) && new Set([...state.plants, ...state.seeds, ...state.bugs, ...state.eggs ?? [], ...state.nests ?? [], ...state.food ?? [], ...state.webs ?? [], ...(state.collection ?? []).map((e) => e.specimen)].map((v) => v.id)).size === (state.collection?.length ?? 0) + state.plants.length + state.seeds.length + state.bugs.length + (state.eggs?.length ?? 0) + (state.nests?.length ?? 0) + (state.food?.length ?? 0) + (state.webs?.length ?? 0) && new Set([...state.plants, ...state.seeds].map((v) => `${v.x},${v.y}`)).size === state.plants.length + state.seeds.length && validColony(state);
 }
 
 // server/index.ts

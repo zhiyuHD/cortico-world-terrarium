@@ -17,6 +17,8 @@ interface Credentials { id: string; token: string }
 export interface TerrariumSyncStatus {
   state: 'disabled' | 'idle' | 'syncing' | 'synced' | 'error';
   mode: 'full' | 'incremental';
+  clientVersion: string;
+  lastSuccessStateAt?: string;
   transport?: 'ws' | 'http';
   lastAttemptAt?: string;
   lastSuccessAt?: string;
@@ -41,7 +43,7 @@ export class LeaderboardClient {
   private syncStatus: TerrariumSyncStatus;
 
   constructor(private readonly options: LeaderboardClientOptions) {
-    this.syncStatus = { state: options.url ? 'idle' : 'disabled', mode: options.incrementalReports ? 'incremental' : 'full', consecutiveFailures: 0 };
+    this.syncStatus = { clientVersion: TERRARIUM_CLIENT_VERSION, state: options.url ? 'idle' : 'disabled', mode: options.incrementalReports ? 'incremental' : 'full', consecutiveFailures: 0 };
   }
 
   status(): TerrariumSyncStatus { return { ...this.syncStatus }; }
@@ -145,7 +147,7 @@ export class LeaderboardClient {
       this.syncStatus.lastAttemptAt = new Date().toISOString();
       try {
         const transport = await this.deliver(snapshot, phase);
-        this.syncStatus = { ...this.syncStatus, state: 'synced', transport, lastSuccessAt: new Date().toISOString(), lastError: undefined, nextRetryAt: undefined, consecutiveFailures: 0 };
+        this.syncStatus = { ...this.syncStatus, state: 'synced', transport, lastSuccessStateAt: new Date(snapshot.updatedAtMs).toISOString(), lastSuccessAt: new Date().toISOString(), lastError: undefined, nextRetryAt: undefined, consecutiveFailures: 0 };
       } catch (error) {
         this.syncStatus.state = 'error';
         this.syncStatus.lastError = error instanceof Error ? error.message : String(error);
@@ -173,6 +175,8 @@ export class LeaderboardClient {
     }
     const response = await this.request(new URL('/api/reports', url), 'PUT', { id: credentials.id, state, phase, ...reportClientMetadata() }, credentials.token);
     if (response.status < 200 || response.status >= 300) throw new Error(`Leaderboard report HTTP ${response.status}`);
+    const receipt = parseJson(response.body) as { accepted?: boolean; ignored?: boolean; upgradeRequired?: boolean } | null;
+    if (receipt?.accepted === false || receipt?.ignored === true || receipt?.upgradeRequired === true) throw new Error('Server ignored report; upgrade required, snapshot was not accepted');
     return 'http';
   }
 
