@@ -3932,7 +3932,7 @@ var FeedbackStore = class {
 // package.json
 var package_default = {
   name: "cortico-world-terrarium",
-  version: "0.8.7",
+  version: "0.8.7-bugfix.1",
   type: "module",
   description: "Claimable land and water ecosystems with plants, bugs, fish and a public leaderboard",
   license: "MIT",
@@ -3965,8 +3965,8 @@ var package_default = {
       "game"
     ],
     describe: "describe.json",
-    webUiClient: "dist/webui/0.8.7/client.js",
-    webUiStyle: "dist/webui/0.8.7/client.css",
+    webUiClient: "dist/webui/0.8.7-bugfix.1/client.js",
+    webUiStyle: "dist/webui/0.8.7-bugfix.1/client.css",
     locales: {
       zh: {
         displayName: "\u751F\u6001\u7BB1",
@@ -4000,7 +4000,7 @@ var package_default = {
     test: "vitest run",
     typecheck: "tsc --noEmit",
     "typecheck:webui": "tsc --noEmit -p tsconfig.web.json",
-    "build:webui": "esbuild webui/client.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/webui/0.8.7/client.js",
+    "build:webui": "esbuild webui/client.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/webui/0.8.7-bugfix.1/client.js",
     "build:server": "tsx server/build.ts",
     "build:admin": "esbuild server/admin.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/admin.mjs"
   },
@@ -4788,7 +4788,7 @@ async function start(options = {}) {
       }
       if (input.stateHash !== void 0 && input.stateHash !== reportStateHash(state)) throw new ReportError(409, "Report state checksum mismatch", true);
       const now = Date.now();
-      if (state.updatedAtMs > now + 6e4 || state.updatedAtMs < now - 31 * 864e5) throw new ReportError(400, "Invalid report time");
+      if (state.updatedAtMs > now + 6e4 || state.updatedAtMs < now - 31 * 864e5) throw new ReportError(400, `Invalid report time: stateUpdatedAtMs=${state.updatedAtMs}, serverAtMs=${now}; allowed age <= 31 days and future offset <= 60000 ms`);
       const kind = "fish" in state ? "water" : "land";
       if (registry[id] && (registry[id].kind ?? "land") !== kind) throw new ReportError(409, "Box habitat cannot change");
       if (registry[id] && state.updatedAtMs < registry[id].state.updatedAtMs) throw new ReportError(409, "Stale report");

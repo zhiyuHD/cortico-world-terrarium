@@ -7,8 +7,8 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { ReportSocket, ReportSocketError } from './report-socket.ts';
-import { TERRARIUM_CLIENT_VERSION, reportClientMetadata } from './version.ts';
+import { ReportSocket } from './report-socket.ts';
+import { TERRARIUM_CLIENT_VERSION } from './version.ts';
 import type { AquariumState } from './aquarium.ts';
 import type { TerrariumState } from './state.ts';
 import type { LeaderboardBoxSummary, LeaderboardSummary, ScoreParts } from './scoring.ts';
@@ -20,6 +20,7 @@ export interface TerrariumSyncStatus {
   mode: 'full' | 'incremental';
   clientVersion: string;
   lastSuccessStateAt?: string;
+  lastAttemptStateAt?: string;
   transport?: 'ws' | 'http';
   lastAttemptAt?: string;
   lastSuccessAt?: string;
@@ -40,7 +41,6 @@ export class LeaderboardClient {
   private authorizing: Promise<Credentials> | undefined;
   private reportSocket: ReportSocket | undefined;
   private reportQueue: Promise<unknown> = Promise.resolve();
-  private httpFallbackUntilMs = 0;
   private syncStatus: TerrariumSyncStatus;
 
   constructor(private readonly options: LeaderboardClientOptions) {
@@ -171,6 +171,7 @@ export class LeaderboardClient {
       if (full) this.close();
       this.syncStatus.state = 'syncing';
       this.syncStatus.lastAttemptAt = new Date().toISOString();
+      this.syncStatus.lastAttemptStateAt = new Date(snapshot.updatedAtMs).toISOString();
       try {
         const transport = await this.deliver(snapshot, phase);
         this.syncStatus = { ...this.syncStatus, state: 'synced', transport, lastSuccessStateAt: new Date(snapshot.updatedAtMs).toISOString(), lastSuccessAt: new Date().toISOString(), lastError: undefined, nextRetryAt: undefined, consecutiveFailures: 0 };
@@ -186,24 +187,17 @@ export class LeaderboardClient {
     return result;
   }
 
-  private async deliver(state: TerrariumState | AquariumState, phase: 'day' | 'night'): Promise<'ws' | 'http'> {
+  private async deliver(state: TerrariumState | AquariumState, phase: 'day' | 'night'): Promise<'ws'> {
     const url = new URL(this.options.url);
     requireHttps(url);
-    const credentials = await this.authorize(url);
-    if (Date.now() >= this.httpFallbackUntilMs) {
-      this.reportSocket ??= new ReportSocket({ url, ...credentials, incremental: (this.options.incrementalReports ?? TERRARIUM_DEFAULTS.incrementalReports) === true, timeoutMs: this.options.requestTimeoutMs, onNotice: this.options.onNotice });
-      try { await this.reportSocket.report(state, phase); return 'ws'; }
-      catch (error) {
-        if (!(error instanceof ReportSocketError) || ![404, 405, 426, 501].includes(error.status ?? 0)) throw error;
-        // Compatibility fallback for servers without the WebSocket report endpoint.
-        this.close(); this.httpFallbackUntilMs = Date.now() + 5 * 60_000;
-      }
-    }
-    const response = await this.request(new URL('/api/reports', url), 'PUT', { id: credentials.id, state, phase, ...reportClientMetadata() }, credentials.token);
-    if (response.status < 200 || response.status >= 300) throw new Error(`Leaderboard report HTTP ${response.status}`);
-    const receipt = parseJson(response.body) as { accepted?: boolean; ignored?: boolean; upgradeRequired?: boolean } | null;
-    if (receipt?.accepted === false || receipt?.ignored === true || receipt?.upgradeRequired === true) throw new Error('Server ignored report; upgrade required, snapshot was not accepted');
-    return 'http';
+    const habitat = this.options.kind ?? 'land';
+    let credentials: Credentials;
+    try { credentials = await this.authorize(url); }
+    catch (error) { throw new Error(`${habitat} report credentials: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
+    this.syncStatus.transport = 'ws';
+    this.reportSocket ??= new ReportSocket({ url, ...credentials, incremental: (this.options.incrementalReports ?? TERRARIUM_DEFAULTS.incrementalReports) === true, timeoutMs: this.options.requestTimeoutMs, onNotice: this.options.onNotice });
+    try { await this.reportSocket.report(state, phase); return 'ws'; }
+    catch (error) { throw new Error(`${habitat} WebSocket report: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
   }
 
   private request(url: URL, method: string, value: unknown, token?: string, maxResponseBytes = 16384) {
@@ -283,11 +277,22 @@ function parseLeaderboard(value: unknown, habitat: 'land' | 'water', limit: numb
   if (own && own.id !== ownId) return invalid();
   return { habitat, total: summary.total, entries, own };
 }
-function request(url: URL, method: string, value: unknown, token?: string, maxResponseBytes = 16384, timeoutMs = TERRARIUM_DEFAULTS.requestTimeoutMs!): Promise<{ status: number; body: string }> {
+async function request(url: URL, method: string, value: unknown, token?: string, maxResponseBytes = 16384, timeoutMs = TERRARIUM_DEFAULTS.requestTimeoutMs!): Promise<{ status: number; body: string }> {
+  const deadlineAt = Date.now() + timeoutMs;
+  try { return await requestOnce(url, method, value, token, maxResponseBytes, timeoutMs, false); }
+  catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    const remainingMs = deadlineAt - Date.now();
+    if (method !== 'GET' || !['ECONNRESET', 'EPIPE'].includes(code ?? '') || remainingMs <= 0) throw error;
+    return requestOnce(url, method, value, token, maxResponseBytes, remainingMs, true);
+  }
+}
+
+function requestOnce(url: URL, method: string, value: unknown, token: string | undefined, maxResponseBytes: number, timeoutMs: number, freshConnection: boolean): Promise<{ status: number; body: string }> {
   const body = value === undefined ? undefined : JSON.stringify(value);
   return new Promise((resolve, reject) => {
     const send = url.protocol === 'https:' ? httpsRequest : httpRequest;
-    const req = send(url, { method, family: 4, headers: { ...(body === undefined ? {} : { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) }), ...(token ? { authorization: `Bearer ${token}` } : {}) }, timeout: timeoutMs }, res => {
+    const req = send(url, { method, family: 4, ...(freshConnection ? { agent: false as const } : {}), headers: { ...(body === undefined ? {} : { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) }), ...(token ? { authorization: `Bearer ${token}` } : {}) }, timeout: timeoutMs }, res => {
       let response = '';
       res.setEncoding('utf8');
       res.on('data', (chunk: string) => {

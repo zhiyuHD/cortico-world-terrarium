@@ -11,6 +11,7 @@ import { newAquarium, stockFish } from '../src/aquarium.ts';
 import { score, type LeaderboardSummary } from '../src/scoring.ts';
 import { TerrariumWorld } from '../src/world.ts';
 import { TERRARIUM_DEFAULTS } from '../src/config.ts';
+import { createReportProxy } from './report-service.ts';
 
 const servers: Server[] = [];
 const dirs: string[] = [];
@@ -431,7 +432,7 @@ it('checks water ranks when no land box is owned', async () => {
   } finally { await world.stop(); vi.useRealTimers(); }
 });
 
-it('rejects an ignored HTTP success response instead of recording an accepted snapshot', async () => {
+it('does not send a report to HTTP when WS is unavailable', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'terrarium-ignored-')); dirs.push(dir);
   const server = createServer((req, res) => {
     req.resume(); res.setHeader('Content-Type', 'application/json');
@@ -444,8 +445,8 @@ it('rejects an ignored HTTP success response instead of recording an accepted sn
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('Missing port');
   const client = new LeaderboardClient({ url: `http://127.0.0.1:${address.port}`, id: '', credentialsFile: join(dir, 'credentials.json') });
   try {
-    await expect(client.report(newState(Date.now()), 'day')).rejects.toThrow('not accepted');
-    expect(client.status()).toMatchObject({ state: 'error', consecutiveFailures: 1 });
+    await expect(client.report(newState(Date.now()), 'day')).rejects.toThrow('WebSocket HTTP 404');
+    expect(client.status()).toMatchObject({ state: 'error', transport: 'ws', consecutiveFailures: 1 });
     expect(client.status().lastSuccessAt).toBeUndefined();
     expect(client.status().lastSuccessStateAt).toBeUndefined();
   } finally { client.close(); }
@@ -471,4 +472,74 @@ it('recalculates persisted leaderboard totals on restart without changing upload
     const summary = await (await fetch(`${url}/api/leaderboard?kind=${entry.kind}&view=summary`)).json();
     expect(summary.entries[0].score).toBe(Object.values(summary.entries[0].scoreParts).reduce((sum: number, part) => sum + Number(part), 0));
   }
+});
+
+it.each(['land', 'water'] as const)('retries one reset %s ranking GET on a new connection', async habitat => {
+  const { url, server, dir } = await rankingService();
+  let reset = true;
+  const reads: string[] = [];
+  server.prependListener('request', req => {
+    if (req.url?.startsWith('/api/leaderboard')) {
+      reads.push(req.url);
+      if (reset) { reset = false; req.socket.destroy(); }
+    }
+  });
+  const client = new LeaderboardClient({ url, id: '', kind: habitat, credentialsFile: join(dir, 'read-only.json') });
+  expect(await client.leaderboard(1)).toEqual({ habitat, total: 0, entries: [], own: null });
+  expect(reads).toHaveLength(2);
+  expect(reads[0]).toBe(reads[1]);
+});
+
+it('does not retry registration after a reset or create new credentials', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-registration-reset-')); dirs.push(dir);
+  let registrations = 0;
+  const server = createServer(req => { req.resume(); if (req.url === '/api/registrations') registrations++; req.socket.destroy(); });
+  servers.push(server); await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address(); if (!address || typeof address === 'string') throw new Error('Missing port');
+  const credentialsFile = join(dir, 'credentials.json');
+  const client = new LeaderboardClient({ url: `http://127.0.0.1:${address.port}`, id: '', kind: 'water', automaticIds: true, credentialsFile });
+  await expect(client.report(newAquarium(Date.now()), 'day')).rejects.toThrow('water report credentials');
+  expect(registrations).toBe(1);
+  expect(client.status().transport).toBeUndefined();
+  await expect(access(credentialsFile)).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it('stops after two reset GET connections', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-reading-reset-')); dirs.push(dir);
+  let attempts = 0;
+  const server = createServer(req => { attempts++; req.socket.destroy(); });
+  servers.push(server); await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address(); if (!address || typeof address === 'string') throw new Error('Missing port');
+  const client = new LeaderboardClient({ url: `http://127.0.0.1:${address.port}`, id: '', credentialsFile: join(dir, 'unused.json') });
+  await expect(client.leaderboard(1)).rejects.toMatchObject({ code: 'ECONNRESET' });
+  expect(attempts).toBe(2);
+});
+
+it('uses the same WS route for both World habitats and recovers water without changing either identity', async () => {
+  const { dir, url } = await rankingService();
+  let brokenWaterId: string | undefined;
+  const proxy = await createReportProxy(url, undefined, id => id === brokenWaterId);
+  const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: proxy.url }, stateFile: join(dir, 'deployment', 'land', 'state.json'), waterStateFile: join(dir, 'deployment', 'water', 'state.json'), timezone: 'UTC' });
+  const call = async (name: string, args: Record<string, unknown>) => JSON.parse(String(await world.tools().find(tool => tool.name === name)!.handler(args, {} as ToolCallContext)));
+  try {
+    await world.start(host);
+    const land = await call('terrarium_claim', { habitat: 'land' });
+    const water = await call('terrarium_claim', { habitat: 'water' });
+    expect(land.sync).toMatchObject({ state: 'synced', transport: 'ws' });
+    expect(water.sync).toMatchObject({ state: 'synced', transport: 'ws' });
+    brokenWaterId = water.id;
+    proxy.disconnect();
+    const failed = await call('terrarium_sync', { habitat: 'water' });
+    expect(failed.sync).toMatchObject({ state: 'error', transport: 'ws' });
+    expect(failed.sync.lastError).toContain('water WebSocket report');
+    expect((await call('terrarium_sync', { habitat: 'land' })).sync).toMatchObject({ state: 'synced', transport: 'ws' });
+    brokenWaterId = undefined;
+    const recovered = await call('terrarium_sync', { habitat: 'water' });
+    expect(recovered).toMatchObject({ id: water.id, sync: { state: 'synced', transport: 'ws' } });
+    expect(new Set(proxy.upgrades.map(u => u.pathname))).toEqual(new Set(['/api/reports/ws']));
+    expect(new Set(proxy.upgrades.map(u => u.searchParams.get('id')))).toEqual(new Set([land.id, water.id]));
+    expect(proxy.httpReports).toEqual([]);
+    const credentials = JSON.parse(await readFile(join(dir, 'server-credentials.json'), 'utf8'));
+    expect(Object.keys(credentials).sort()).toEqual([land.id, water.id].sort());
+  } finally { await world.stop(); await proxy.close(); }
 });

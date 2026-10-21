@@ -2,9 +2,10 @@ import { createServer, request } from 'node:http';
 import WebSocket, { WebSocketServer } from 'ws';
 import type { ReportMessage, ReportReply } from '../src/report-protocol.ts';
 
-export async function createReportProxy(target: string, onReport?: (message: ReportMessage) => void, rejectUpgrade = false) {
+export async function createReportProxy(target: string, onReport?: (message: ReportMessage) => void, rejectUpgrade: boolean | ((id: string) => boolean) = false) {
   const frames: ReportMessage[] = [], peers = new Set<WebSocket>();
   const replies: ReportReply[] = [];
+  const upgrades: URL[] = [], httpReports: string[] = [];
   let rewriteReport: ((message: ReportMessage) => ReportMessage) | undefined;
   let rewriteReply: ((reply: ReportReply) => ReportReply) | undefined;
   let omitChecksums = false;
@@ -12,6 +13,7 @@ export async function createReportProxy(target: string, onReport?: (message: Rep
   let duplicateReplies = false;
   let previousReply: string | undefined;
   const server = createServer((req, res) => {
+    if (req.url === '/api/reports') httpReports.push(req.method ?? '');
     const forwarded = request(new URL(req.url ?? '/', target), { method: req.method, headers: req.headers }, response => {
       res.writeHead(response.statusCode ?? 500, response.headers); response.pipe(res);
     });
@@ -19,7 +21,8 @@ export async function createReportProxy(target: string, onReport?: (message: Rep
   });
   const sockets = new WebSocketServer({ noServer: true });
   server.on('upgrade', (req, socket, head) => {
-    if (rejectUpgrade) { socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'); return; }
+    const address = new URL(req.url ?? '/', target); upgrades.push(address);
+    if (typeof rejectUpgrade === 'function' ? rejectUpgrade(address.searchParams.get('id') ?? '') : rejectUpgrade) { socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'); return; }
     sockets.handleUpgrade(req, socket, head, downstream => {
       peers.add(downstream);
       const url = new URL(req.url ?? '/', target); url.protocol = 'ws:';
@@ -55,7 +58,7 @@ export async function createReportProxy(target: string, onReport?: (message: Rep
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('Missing proxy port');
   return {
-    url: `http://127.0.0.1:${address.port}`, frames, replies,
+    url: `http://127.0.0.1:${address.port}`, frames, replies, upgrades, httpReports,
     rewriteNextReport(rewrite: (message: ReportMessage) => ReportMessage) { rewriteReport = rewrite; },
     rewriteNextReply(rewrite: (reply: ReportReply) => ReportReply) { rewriteReply = rewrite; },
     omitReplyChecksums() { omitChecksums = true; },

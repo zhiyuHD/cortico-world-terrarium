@@ -124,7 +124,7 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
       } catch { throw new ReportError(400, 'Invalid report'); }
       if (input.stateHash !== undefined && input.stateHash !== reportStateHash(state)) throw new ReportError(409, 'Report state checksum mismatch', true);
       const now = Date.now();
-      if (state.updatedAtMs > now + 60000 || state.updatedAtMs < now - 31 * 86400000) throw new ReportError(400, 'Invalid report time');
+      if (state.updatedAtMs > now + 60000 || state.updatedAtMs < now - 31 * 86400000) throw new ReportError(400, `Invalid report time: stateUpdatedAtMs=${state.updatedAtMs}, serverAtMs=${now}; allowed age <= 31 days and future offset <= 60000 ms`);
       const kind = 'fish' in state ? 'water' : 'land';
       if (registry[id] && (registry[id].kind ?? 'land') !== kind) throw new ReportError(409, 'Box habitat cannot change');
       if (registry[id] && state.updatedAtMs < registry[id].state.updatedAtMs) throw new ReportError(409, 'Stale report');

@@ -112,7 +112,7 @@ export class TerrariumWorld implements World {
     // The retired config key only selects existing credentials during migration.
     const legacyId = (opts.cfg as TerrariumConfigSection & { leaderboardId?: unknown }).leaderboardId;
     this.waterLeaderboard = new LeaderboardClient({ url: opts.cfg.leaderboardUrl, id: '', automaticIds: true, kind: 'water', credentialsFile: join(dirname(this.waterFile), 'report-credentials.json'), incrementalReports: opts.cfg.incrementalReports, requestTimeoutMs: opts.cfg.requestTimeoutMs, onNotice: notice => this.inbox.receive('protocol', { announcements: [notice], nextCursor: 0 }, value => this.pushAnnouncement(value)) });
-    this.leaderboard = new LeaderboardClient({ url: opts.cfg.leaderboardUrl, id: typeof legacyId === 'string' ? legacyId : '', automaticIds: true, token: opts.reportToken, credentialsFile: join(dirname(opts.stateFile), 'report-credentials.json'), incrementalReports: opts.cfg.incrementalReports, requestTimeoutMs: opts.cfg.requestTimeoutMs, onNotice: notice => this.inbox.receive('protocol', { announcements: [notice], nextCursor: 0 }, value => this.pushAnnouncement(value)) });
+    this.leaderboard = new LeaderboardClient({ url: opts.cfg.leaderboardUrl, id: typeof legacyId === 'string' ? legacyId : '', automaticIds: true, kind: 'land', token: opts.reportToken, credentialsFile: join(dirname(opts.stateFile), 'report-credentials.json'), incrementalReports: opts.cfg.incrementalReports, requestTimeoutMs: opts.cfg.requestTimeoutMs, onNotice: notice => this.inbox.receive('protocol', { announcements: [notice], nextCursor: 0 }, value => this.pushAnnouncement(value)) });
   }
   envPromptVars(): Record<string, string> { return {}; }
 
@@ -298,7 +298,7 @@ export class TerrariumWorld implements World {
       await this.serial(() => this.synchronize());
       const release = TERRARIUM_VERSION_NOTICE;
       await deliverVersionNotice(join(dirname(this.opts.stateFile), 'version-notices.json'), release.version, async () => {
-        await host.pushEvent({ type: 'terrarium.updated', source: this.id, senderKey: 'terrarium.updates', origin: 'internal', ts: nowIso(this.opts.timezone), text: `生态箱 World 已更新到 ${release.version} · ${release.theme}。本版改进：\n${release.improvements.map(item => `- ${item}`).join('\n')}\n这是本部署对该版本的一次更新说明，重启不会重复投递。无需为此主动联系主人；主人下次聊到生态箱时可按需提及。` }, { trigger: 'piggyback' });
+        await host.pushEvent({ type: 'terrarium.updated', source: this.id, senderKey: 'terrarium.updates', origin: 'internal', ts: nowIso(this.opts.timezone), text: `生态箱 World 已更新到 ${release.version}${release.theme ? ` · ${release.theme}` : ''}。本版改进：\n${release.improvements.map(item => `- ${item}`).join('\n')}\n这是本部署对该版本的一次更新说明，重启不会重复投递。无需为此主动联系主人；主人下次聊到生态箱时可按需提及。` }, { trigger: 'piggyback' });
       });
       for (const habitat of ['land', 'water'] as const) {
         const before = habitat === 'land' ? beforeLand : beforeWater, state = habitat === 'land' ? this.state : this.waterState;
@@ -522,21 +522,14 @@ export class TerrariumWorld implements World {
 
   private async reportNow(habitat: 'land' | 'water'): Promise<void> {
     await this.update();
-    const state = habitat === 'land' ? this.current() : this.currentWater();
-    const client = habitat === 'land' ? this.leaderboard : this.waterLeaderboard;
-    try { await client.report(state, phase(this.now(), this.opts.timezone), true); }
-    catch (error) { this.host?.log.warn('terrarium.report.failed', { habitat, error: String(error) }); }
+    await this.report(habitat, true);
   }
 
   private async persistWater(): Promise<void> {
     const state = this.currentWater();
     observeProgress(state);
     await saveState(this.waterFile, state);
-    await this.reportWater();
-  }
-  private async reportWater(): Promise<void> {
-    try { await this.waterLeaderboard.report(this.currentWater(), phase(this.now(), this.opts.timezone)); }
-    catch (error) { this.host?.log.warn('terrarium.report.failed', { habitat: 'water', error: String(error) }); }
+    await this.report('water');
   }
   private async aquaticTool(name: string, args: Record<string, unknown>): Promise<string> {
     if (!this.host) throw new Error('Terrarium is not running');
@@ -561,7 +554,7 @@ export class TerrariumWorld implements World {
       if (habitat === 'land') this.state = state as TerrariumState; else this.waterState = state as AquariumState;
       try {
         await (habitat === 'land' ? this.leaderboard : this.waterLeaderboard).claim();
-        if (habitat === 'land') await this.report(); else await this.reportWater();
+        if (habitat === 'land') await this.report(); else await this.report('water');
       } catch (error) { this.host?.log.warn('terrarium.claim.sync.failed', { habitat, error: String(error) }); }
       // Ranking and announcement polling runs on the maintenance schedule.
       return JSON.stringify({ ...this.ownership(habitat), guide: guide(state), tool: 'terrarium_progress', savedLocally: true, synchronization: (habitat === 'land' ? this.leaderboard : this.waterLeaderboard).status().state === 'synced' ? 'synced' : 'pending; local habitat is claimed and will retry synchronization' });
@@ -591,10 +584,11 @@ export class TerrariumWorld implements World {
 
   private async persist(): Promise<void> { observeProgress(this.current()); await saveState(this.opts.stateFile, this.current()); await this.report(); }
 
-  private async report(): Promise<void> {
-    try {
-      await this.leaderboard.report(this.current(), phase(this.now(), this.opts.timezone));
-    } catch (error) { this.host?.log.warn('terrarium.report.failed', { error: String(error) }); }
+  private async report(habitat: 'land' | 'water' = 'land', full = false): Promise<void> {
+    const state = habitat === 'land' ? this.current() : this.currentWater();
+    const client = habitat === 'land' ? this.leaderboard : this.waterLeaderboard;
+    try { await client.report(state, phase(this.now(), this.opts.timezone), full); }
+    catch (error) { this.host?.log.warn('terrarium.report.failed', { habitat, error: String(error) }); }
   }
 
   private async checkRank(habitat: 'land' | 'water', force = false): Promise<void> {

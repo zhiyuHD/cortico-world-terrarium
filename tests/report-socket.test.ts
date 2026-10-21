@@ -45,8 +45,7 @@ async function fixture(incrementalReports: boolean | undefined = undefined, reje
 it.each([
   { incremental: false, http: false, habitat: 'land' as const },
   { incremental: true, http: false, habitat: 'water' as const },
-  { incremental: true, http: true, habitat: 'land' as const },
-])('persists Coopanion versions with full, incremental and HTTP reports: $habitat incremental=$incremental http=$http', async ({ incremental, http, habitat }) => {
+])('persists Coopanion versions with full and incremental reports: $habitat incremental=$incremental http=$http', async ({ incremental, http, habitat }) => {
   const version = '1.2.3-beta.1+fixture';
   vi.stubEnv('COOPANION_VERSION', version);
   const { client, proxy, get, dataFile, id } = await fixture(incremental, http, habitat);
@@ -110,9 +109,9 @@ it('keeps explicit full reporting and always declares the actual client version'
   expect(await get()).toMatchObject({ clientVersion: TERRARIUM_CLIENT_VERSION, phase: 'night', state });
 });
 
-it('sends acknowledged deltas after a full snapshot and sends full state again after reconnect or resync', async () => {
-  const { client, proxy, get, httpReport } = await fixture(true);
-  const state = newState(Date.now());
+it.each(['land', 'water'] as const)('sends %s full/delta reports and restores full state after reconnect or resync', async habitat => {
+  const { client, proxy, get, httpReport } = await fixture(true, false, habitat);
+  const state = habitat === 'water' ? newAquarium(Date.now()) : newState(Date.now());
   await client.report(state, 'day');
   state.plants[0].health -= 2;
   await client.report(state, 'night');
@@ -160,14 +159,17 @@ it('resends a full snapshot after a lost acknowledgement without applying a delt
   } finally { vi.useRealTimers(); }
 });
 
-it('falls back to the unchanged HTTP endpoint on an older server while including clientVersion', async () => {
-  const { client, get, proxy, httpReport } = await fixture(true, true);
-  const state = newState(Date.now());
-  await client.report(state, 'day'); state.name = '旧版兼容'; await client.report(state, 'night');
-  expect(client.status()).toMatchObject({ state: 'synced', transport: 'http' });
+it.each(['land', 'water'] as const)('keeps %s reports on WS when upgrade fails and preserves the legacy server HTTP endpoint', async kind => {
+  const { client, get, proxy, httpReport } = await fixture(true, true, kind);
+  const state = kind === 'water' ? newAquarium(Date.now()) : newState(Date.now());
+  await expect(client.report(state, 'day')).rejects.toThrow(`${kind} WebSocket report: Report WebSocket HTTP 404`);
+  expect(client.status()).toMatchObject({ state: 'error', transport: 'ws', lastAttemptStateAt: new Date(state.updatedAtMs).toISOString() });
+  expect(client.status().lastSuccessStateAt).toBeUndefined();
   expect(proxy.frames).toEqual([]);
-  expect(await get()).toMatchObject({ clientVersion: TERRARIUM_CLIENT_VERSION, state });
+  expect(proxy.httpReports).toEqual([]);
+  expect((await get()).error).toBeDefined();
   const legacy = await httpReport(state);
+  expect(legacy.status).toBe(200);
   expect(await legacy.json()).toEqual({ score: (await get()).score });
   expect(await get()).not.toHaveProperty('clientVersion');
   expect((await httpReport(state, 123)).status).toBe(400);
@@ -534,4 +536,21 @@ it('accepts new land species and sunflower harvest rounds through full, delta an
   await client.report(state, 'night');
   expect((await get()).state).toEqual(state);
   expect(proxy.frames.at(-1)!.kind).toBe('full');
+});
+
+it.each(['land', 'water'] as const)('reports %s timestamp rejection details and recovers with a current full snapshot', async habitat => {
+  const { client, get } = await fixture(true, false, habitat);
+  const state = habitat === 'water' ? newAquarium(Date.now()) : newState(Date.now());
+  await client.report(state, 'day');
+  const accepted = await get();
+  const successfulTime = client.status().lastSuccessStateAt;
+  state.updatedAtMs = Date.now() + 120_000;
+  await expect(client.report(state, 'day')).rejects.toThrow(`stateUpdatedAtMs=${state.updatedAtMs}`);
+  expect(client.status().lastError).toContain('serverAtMs=');
+  expect(client.status()).toMatchObject({ state: 'error', transport: 'ws', lastAttemptStateAt: new Date(state.updatedAtMs).toISOString(), lastSuccessStateAt: successfulTime });
+  expect(await get()).toEqual(accepted);
+  state.updatedAtMs = Date.now();
+  await client.report(state, 'day', true);
+  expect(client.status()).toMatchObject({ state: 'synced', transport: 'ws', consecutiveFailures: 0 });
+  expect((await get()).state).toEqual(state);
 });

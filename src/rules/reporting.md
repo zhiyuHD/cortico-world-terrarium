@@ -3,3 +3,5 @@
 terrarium_feedback 可向生态箱服务端管理员私下提交意见：text 为 1–2000 字，contact 联系方式选填且最多 200 字；habitat 默认为 land，选择要关联的现有箱子。没有认领也能提交，不会为此认领或创建凭据，不上传生态箱状态。已关联箱子每分钟最多 5 条，所有未关联提交共享每分钟 20 条限额；限额由服务端执行。回执包含编号和提交时间，只表示已保存，不承诺回复。
 
 网络请求、WebSocket 握手和确认默认等待 15 秒，由 requestTimeoutMs 配置。连续上报失败后按 30 秒、60 秒逐步退避至最多 5 分钟；sync.nextRetryAt 返回下次允许自动重试的时间，terrarium_sync 可绕过退避。榜单和公告轮询与定期上报错开半个检查周期。协议升级提醒在同一服务策略下跨地水箱去重；若服务端已安排未来最低版本或 HTTP 停机，可在期限前收到预告，当前版本仍被允许时不会拒绝提交。
+
+地箱与水箱均通过 /api/reports/ws 提交状态，不自动回退 HTTP Push。握手失败、连接重置不表示服务端已接收；sync.transport 为最近一次实际尝试的提交通道，lastAttemptStateAt 为该次快照时间，lastSuccessStateAt 仍只在确认成功后改变。错误中的 report credentials 表示获取或读取凭据失败，WebSocket report 表示握手或提交失败。排行榜等 GET 读取连接被重置时，使用新连接重试一次；注册、反馈、发帖等写操作不自动重试。

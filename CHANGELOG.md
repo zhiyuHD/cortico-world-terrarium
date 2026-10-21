@@ -2,6 +2,12 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.8.7-bugfix.1
+
+- Use the same WS submission path for land and water; remove automatic HTTP Push fallback after a failed handshake. Keep server HTTP compatibility routes for older clients.
+- Retry one reset GET on a fresh connection within the original timeout; do not retry registrations or other writes.
+- Include habitat and failure step in sync errors, record attempted transport and snapshot time, and include snapshot/server timestamps when rejecting report times.
+
 ## 0.8.7 · 新邻初见（第一阶段）
 
 - Report the client host operating system and version with full, incremental and HTTP submissions; display it in the private administration table. Preserve compatibility with older clients.

@@ -32,7 +32,8 @@ it('notifies an unclaimed deployment once with piggyback delivery across fresh W
     expect(notices).toHaveLength(1);
     expect(notices[0]).toMatchObject({ trigger: 'piggyback' });
     expect(notices[0].text).toContain(TERRARIUM_VERSION_NOTICE.version);
-    expect(notices[0].text).toContain(TERRARIUM_VERSION_NOTICE.theme);
+    if (TERRARIUM_VERSION_NOTICE.theme) expect(notices[0].text).toContain(TERRARIUM_VERSION_NOTICE.theme);
+    else expect(notices[0].text).toContain(`已更新到 ${TERRARIUM_VERSION_NOTICE.version}。本版改进：`);
     for (const improvement of TERRARIUM_VERSION_NOTICE.improvements) expect(notices[0].text).toContain(improvement);
     await expect(readFile(join(dir, 'land', 'state.json'))).rejects.toMatchObject({ code: 'ENOENT' });
   } finally { await rm(dir, { recursive: true, force: true }); }
