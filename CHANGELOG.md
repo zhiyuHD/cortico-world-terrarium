@@ -2,6 +2,12 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.8.7-bugfix.2
+
+- Run initial reports, ranking checks and announcement reads in the background after loading, catching up and saving local habitats. Land and water start their first reports independently.
+- Keep local inspection available while initial synchronization waits for the network; retain scheduled retries and synchronization status.
+- Cancel pending requests and drain startup work on stop before closing connections and saving local habitats.
+
 ## 0.8.7-bugfix.1
 
 - Use the same WS submission path for land and water; remove automatic HTTP Push fallback after a failed handshake. Keep server HTTP compatibility routes for older clients.

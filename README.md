@@ -275,6 +275,8 @@ Startup advances saved ecosystems under the normal simulation rules. After at le
 
 `terrarium.care` combines care changes for each habitat into one event per settlement. Persisted levels suppress unchanged warnings across restarts; new conditions, worsening levels and recovery produce updates. Health warns at 20, worsens at 10 and clears at 35. Oxygen warns at 40, worsens below 25 and clears at 50. Removed organisms are not reported as recovered. The former separate dry-soil, low-health, hunger and oxygen notifications are delivered through this combined event. Simulation rates and death rules are unchanged.
 
+Startup loads, catches up and saves local habitats before returning. Initial reporting, ranking checks and announcement reads run in the background, independently of local inspection. Land and water send their first reports independently. Stop cancels pending requests and waits for background work before saving and closing. Failed synchronization retains local habitats and retries on the maintenance schedule.
+
 Panel and inspection sync status include `clientVersion`, `lastSuccessAt` (acknowledgement time), `lastSuccessStateAt` (the accepted snapshot's simulation time) and `nextRetryAt`. These fields describe this process's submission history; they do not indicate a live connection. Ignored responses are failures and preserve the previous successful timestamp. Failed WS handshakes do not switch clients to HTTP Push.
 
 Model-facing inspection selects fields independently from the complete browser snapshot. Saved collections, nest residents and catch-up metrics are not duplicated in ordinary state reads. Inspection limits sync error text to 256 characters and marks truncation with `errorTruncated`; the panel retains the original error.

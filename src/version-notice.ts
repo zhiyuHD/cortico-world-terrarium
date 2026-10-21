@@ -5,10 +5,9 @@ import { TERRARIUM_CLIENT_VERSION } from './version.ts';
 export const TERRARIUM_VERSION_NOTICE: { version: string; theme?: string; improvements: string[] } = {
   version: TERRARIUM_CLIENT_VERSION,
   improvements: [
-    '地箱和水箱统一通过 WS 提交；握手失败不再自动回退到已停用的 HTTP Push。各箱 ID、token 和增量基准保持独立。',
-    '排行榜等 GET 读取遇到连接重置时，在原超时内换新连接重试一次；注册、反馈和发帖不自动重试。',
-    '同步错误标出箱子与失败步骤，并显示本次尝试的通道和快照时间；只有收到成功确认才更新成功时间。',
-    '时间拒绝包含快照与服务端时间，便于排查时间偏差；原有存档与凭据保留。',
+    '首次上报、排行榜和公告读取改为后台执行，网络延迟不再阻塞 World 启动和本地查看。地箱和水箱首次同步独立进行。',
+    '启动时仍完成本地读档、离线补算和保存；同步失败保留本地状态，并按原有计划重试。',
+    '停止时取消未完成的网络请求并等待后台任务退出，防止停止后继续投递公告或重建连接。',
   ],
 };
 /** Delivered versions persist separately from habitat saves, including across rollbacks. */

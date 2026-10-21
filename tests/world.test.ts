@@ -172,6 +172,10 @@ it('advances ants every 10 seconds while reads preserve files and synchronize bo
     const waterClient = new LeaderboardClient({ url, id: '', kind: 'water', credentialsFile: join(dir, 'water', 'report-credentials.json') });
     await landClient.report(state, 'night'); await waterClient.report(aquarium, 'night');
     await world.start(host);
+    await settleScheduledUpdate(async () => {
+      expect(requests.ranks).toBe(2);
+      expect(requests.announcements).toBe(2);
+    });
     const baseline = { ...requests };
     const initialLand = await readFile(file, 'utf8'), initialWater = await readFile(waterFile, 'utf8');
     const initialLandTime = (await stat(file)).mtimeMs, initialWaterTime = (await stat(waterFile)).mtimeMs;

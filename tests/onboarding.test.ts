@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import type { ToolCallContext, WorldHost } from 'cortico/core/types.ts';
 import { TerrariumWorld } from '../src/world.ts';
 import { TERRARIUM_DEFAULTS } from '../src/config.ts';
@@ -25,7 +25,8 @@ it('keeps a locally claimed habitat when registration fails and never queries ra
   const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: `http://127.0.0.1:${address.port}`, requestTimeoutMs: 200 }, stateFile: file, timezone: 'UTC', now: () => at });
   try {
     await world.start(host);
-    reads = 0; // Startup may read the public announcement feed.
+    await vi.waitFor(() => expect(reads).toBe(1));
+    reads = 0;
     const result = await invoke(world, 'terrarium_claim', { habitat: 'land', name: 'Test garden' });
     expect(result).toMatchObject({ claimed: true, savedLocally: true, name: 'Test garden', sync: { state: 'error' } });
     expect(result.synchronization).toContain('pending');

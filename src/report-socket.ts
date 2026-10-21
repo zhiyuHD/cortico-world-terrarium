@@ -18,7 +18,7 @@ export class ReportSocket {
   private reportQueue: Promise<void> = Promise.resolve();
   private pending: { seq: number; resolve: (reply: ReportReply) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> } | undefined;
 
-  constructor(private readonly options: { url: URL; id: string; token: string; incremental: boolean; timeoutMs?: number; onNotice?: (notice: Announcement) => Promise<void> }) {}
+  constructor(private readonly options: { url: URL; id: string; token: string; incremental: boolean; timeoutMs?: number; onNotice?: (notice: Announcement) => Promise<void>; signal?: AbortSignal }) {}
 
   close(): void { this.disconnect(new Error('Report connection closed')); }
 
@@ -31,6 +31,7 @@ export class ReportSocket {
 
   private async reportSnapshot(snapshot: unknown, phase: 'day' | 'night'): Promise<void> {
     for (let attempt = 0; ; attempt++) {
+      this.options.signal?.throwIfAborted();
       try { await this.deliver(snapshot, phase); return; }
       catch (error) {
         this.disconnect(error instanceof Error ? error : new Error(String(error)));
@@ -41,6 +42,7 @@ export class ReportSocket {
 
   private async deliver(state: unknown, phase: 'day' | 'night'): Promise<void> {
     const socket = await this.connect();
+    this.options.signal?.throwIfAborted();
     const changes = this.options.incremental && this.revision && this.baselineHash && reportStateHash(this.baseline) === this.baselineHash ? reportChanges(this.baseline, state) : undefined;
     const stateHash = reportStateHash(state);
     const header = { protocol: 1 as const, seq: ++this.seq, ...reportClientMetadata(), phase, stateHash };

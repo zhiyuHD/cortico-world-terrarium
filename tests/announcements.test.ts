@@ -68,7 +68,7 @@ it('delivers broadcasts and targeted notices as external events, deduplicating b
   const beforeClaim = await admin('publish', '--title', '服务端通知', '--text', '认领前的广播\n第二行正文') as Announcement;
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   try {
-    await world.start(host); expect(notices()).toHaveLength(1);
+    await world.start(host); await vi.waitFor(() => expect(notices()).toHaveLength(1));
     const land = await call('terrarium_claim', { habitat: 'land' }), water = await call('terrarium_claim', { habitat: 'water' });
     expect(notices()).toHaveLength(1);
     const broadcast = await admin('publish', '--text', '同时持有两个箱子的广播') as Announcement;

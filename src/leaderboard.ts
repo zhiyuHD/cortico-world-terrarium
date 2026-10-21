@@ -40,6 +40,7 @@ export class LeaderboardClient {
   private credentials: Credentials | undefined;
   private authorizing: Promise<Credentials> | undefined;
   private reportSocket: ReportSocket | undefined;
+  private requests = new AbortController();
   private reportQueue: Promise<unknown> = Promise.resolve();
   private syncStatus: TerrariumSyncStatus;
 
@@ -125,6 +126,10 @@ export class LeaderboardClient {
   }
 
   async restore(): Promise<void> {
+    if (this.requests.signal.aborted) {
+      this.requests = new AbortController();
+      this.syncStatus = { ...this.syncStatus, state: this.options.url ? 'idle' : 'disabled', nextRetryAt: undefined };
+    }
     if (!this.options.url || this.credentials || (!this.options.automaticIds && this.options.token)) return;
     const url = new URL(this.options.url);
     this.credentials = (await this.restoreCredentials(url)).credentials;
@@ -161,12 +166,16 @@ export class LeaderboardClient {
     return { saved, credentials };
   }
 
+  cancel(): void { this.requests.abort(); this.close(); }
+
   close(): void { this.reportSocket?.close(); this.reportSocket = undefined; }
 
   report(state: TerrariumState | AquariumState, phase: 'day' | 'night', full = false): Promise<void> {
     if (!this.options.url) return Promise.resolve();
     const snapshot = JSON.parse(JSON.stringify(state)) as TerrariumState | AquariumState;
+    const signal = this.requests.signal;
     const result = this.reportQueue.then(async () => {
+      if (signal.aborted) return;
       if (!full && this.syncStatus.nextRetryAt && Date.now() < Date.parse(this.syncStatus.nextRetryAt)) return;
       if (full) this.close();
       this.syncStatus.state = 'syncing';
@@ -176,6 +185,7 @@ export class LeaderboardClient {
         const transport = await this.deliver(snapshot, phase);
         this.syncStatus = { ...this.syncStatus, state: 'synced', transport, lastSuccessStateAt: new Date(snapshot.updatedAtMs).toISOString(), lastSuccessAt: new Date().toISOString(), lastError: undefined, nextRetryAt: undefined, consecutiveFailures: 0 };
       } catch (error) {
+        if (signal.aborted) throw error;
         this.syncStatus.state = 'error';
         this.syncStatus.lastError = error instanceof Error ? error.message : String(error);
         this.syncStatus.consecutiveFailures++;
@@ -194,14 +204,15 @@ export class LeaderboardClient {
     let credentials: Credentials;
     try { credentials = await this.authorize(url); }
     catch (error) { throw new Error(`${habitat} report credentials: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
+    this.requests.signal.throwIfAborted();
     this.syncStatus.transport = 'ws';
-    this.reportSocket ??= new ReportSocket({ url, ...credentials, incremental: (this.options.incrementalReports ?? TERRARIUM_DEFAULTS.incrementalReports) === true, timeoutMs: this.options.requestTimeoutMs, onNotice: this.options.onNotice });
+    this.reportSocket ??= new ReportSocket({ url, ...credentials, incremental: (this.options.incrementalReports ?? TERRARIUM_DEFAULTS.incrementalReports) === true, timeoutMs: this.options.requestTimeoutMs, onNotice: this.options.onNotice, signal: this.requests.signal });
     try { await this.reportSocket.report(state, phase); return 'ws'; }
     catch (error) { throw new Error(`${habitat} WebSocket report: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
   }
 
   private request(url: URL, method: string, value: unknown, token?: string, maxResponseBytes = 16384) {
-    return request(url, method, value, token, maxResponseBytes, this.options.requestTimeoutMs ?? TERRARIUM_DEFAULTS.requestTimeoutMs!);
+    return request(url, method, value, token, maxResponseBytes, this.options.requestTimeoutMs ?? TERRARIUM_DEFAULTS.requestTimeoutMs!, this.requests.signal);
   }
 
   private async authorize(url: URL): Promise<Credentials> {
@@ -234,6 +245,7 @@ export class LeaderboardClient {
       } catch {}
       throw new Error(`Leaderboard registration HTTP ${response.status}${reason}`);
     }
+    this.requests.signal.throwIfAborted();
     const credentials = parseCredentials(parseJson(response.body), requested);
     saved[key] = credentials;
     await this.saveCredentials(saved);
@@ -277,22 +289,22 @@ function parseLeaderboard(value: unknown, habitat: 'land' | 'water', limit: numb
   if (own && own.id !== ownId) return invalid();
   return { habitat, total: summary.total, entries, own };
 }
-async function request(url: URL, method: string, value: unknown, token?: string, maxResponseBytes = 16384, timeoutMs = TERRARIUM_DEFAULTS.requestTimeoutMs!): Promise<{ status: number; body: string }> {
+async function request(url: URL, method: string, value: unknown, token?: string, maxResponseBytes = 16384, timeoutMs = TERRARIUM_DEFAULTS.requestTimeoutMs!, signal?: AbortSignal): Promise<{ status: number; body: string }> {
   const deadlineAt = Date.now() + timeoutMs;
-  try { return await requestOnce(url, method, value, token, maxResponseBytes, timeoutMs, false); }
+  try { return await requestOnce(url, method, value, token, maxResponseBytes, timeoutMs, false, signal); }
   catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     const remainingMs = deadlineAt - Date.now();
     if (method !== 'GET' || !['ECONNRESET', 'EPIPE'].includes(code ?? '') || remainingMs <= 0) throw error;
-    return requestOnce(url, method, value, token, maxResponseBytes, remainingMs, true);
+    return requestOnce(url, method, value, token, maxResponseBytes, remainingMs, true, signal);
   }
 }
 
-function requestOnce(url: URL, method: string, value: unknown, token: string | undefined, maxResponseBytes: number, timeoutMs: number, freshConnection: boolean): Promise<{ status: number; body: string }> {
+function requestOnce(url: URL, method: string, value: unknown, token: string | undefined, maxResponseBytes: number, timeoutMs: number, freshConnection: boolean, signal?: AbortSignal): Promise<{ status: number; body: string }> {
   const body = value === undefined ? undefined : JSON.stringify(value);
   return new Promise((resolve, reject) => {
     const send = url.protocol === 'https:' ? httpsRequest : httpRequest;
-    const req = send(url, { method, family: 4, ...(freshConnection ? { agent: false as const } : {}), headers: { ...(body === undefined ? {} : { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) }), ...(token ? { authorization: `Bearer ${token}` } : {}) }, timeout: timeoutMs }, res => {
+    const req = send(url, { method, signal, family: 4, ...(freshConnection ? { agent: false as const } : {}), headers: { ...(body === undefined ? {} : { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) }), ...(token ? { authorization: `Bearer ${token}` } : {}) }, timeout: timeoutMs }, res => {
       let response = '';
       res.setEncoding('utf8');
       res.on('data', (chunk: string) => {

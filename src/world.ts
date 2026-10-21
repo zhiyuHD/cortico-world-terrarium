@@ -99,6 +99,7 @@ export class TerrariumWorld implements World {
   private host: WorldHost | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private queue: Promise<unknown> = Promise.resolve();
+  private initialSync: Promise<void> = Promise.resolve();
   private nextCheckAtMs = 0;
   private nextMaintenanceAtMs = 0;
   private readonly now: () => number;
@@ -295,7 +296,11 @@ export class TerrariumWorld implements World {
     const beforeLand = this.state ? captureConditions(this.state) : null;
     const beforeWater = this.waterState ? captureConditions(this.waterState) : null;
     try {
-      await this.serial(() => this.synchronize());
+      await this.serial(async () => {
+        await this.update();
+        if (this.state) await saveState(this.opts.stateFile, this.state);
+        if (this.waterState) await saveState(this.waterFile, this.waterState);
+      });
       const release = TERRARIUM_VERSION_NOTICE;
       await deliverVersionNotice(join(dirname(this.opts.stateFile), 'version-notices.json'), release.version, async () => {
         await host.pushEvent({ type: 'terrarium.updated', source: this.id, senderKey: 'terrarium.updates', origin: 'internal', ts: nowIso(this.opts.timezone), text: `生态箱 World 已更新到 ${release.version}${release.theme ? ` · ${release.theme}` : ''}。本版改进：\n${release.improvements.map(item => `- ${item}`).join('\n')}\n这是本部署对该版本的一次更新说明，重启不会重复投递。无需为此主动联系主人；主人下次聊到生态箱时可按需提及。` }, { trigger: 'piggyback' });
@@ -310,13 +315,24 @@ export class TerrariumWorld implements World {
     this.nextCheckAtMs = this.now() + this.opts.cfg.tickIntervalMs;
     this.nextMaintenanceAtMs = this.now() + this.opts.cfg.tickIntervalMs / 2;
     this.schedule();
+    this.initialSync = this.synchronizeInitial().catch(error => this.host?.log.warn('terrarium.initial.sync.failed', { error: String(error) }));
+  }
+
+  private async synchronizeInitial(): Promise<void> {
+    await Promise.all((['land', 'water'] as const).map(async habitat => {
+      if (!(habitat === 'land' ? this.state : this.waterState)) return;
+      await this.report(habitat);
+      if (this.host) await this.checkRank(habitat);
+    }));
+    if (this.host) await this.checkAnnouncements();
   }
 
   async stop(): Promise<void> {
     this.host = null;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
-    await this.queue;
+    this.leaderboard.cancel(); this.waterLeaderboard.cancel();
+    await Promise.all([this.queue, this.initialSync]);
     this.leaderboard.close(); this.waterLeaderboard.close();
     if (this.state) await saveState(this.opts.stateFile, this.state);
     if (this.waterState) await saveState(this.waterFile, this.waterState);
@@ -599,6 +615,7 @@ export class TerrariumWorld implements World {
     this.lastRankCheck[habitat] = now;
     try {
       const { own } = await client.leaderboard(1);
+      if (!this.host) return;
       const previous = await alerts.observe(`${new URL(this.opts.cfg.leaderboardUrl).origin}|${client.id}`, own?.rank ?? null, now, { competitiveRank: own?.competitiveRank, scoreParts: own?.scoreParts });
       if (previous !== undefined && own && this.host) await this.host.pushEvent({
         type: 'terrarium.overtaken', source: this.id, senderKey: habitat === 'land' ? this.id : 'terrarium.water', origin: 'internal', ts: nowIso(this.opts.timezone),
@@ -619,9 +636,11 @@ export class TerrariumWorld implements World {
     const clients = [this.leaderboard, this.waterLeaderboard].filter(client => client.id);
     if (!clients.length) clients.push(this.leaderboard);
     for (const client of clients) {
+      if (!this.host) return;
       const id = client.id ?? 'public';
       try {
         const page = await client.announcements(this.inbox.cursor(id));
+        if (!this.host) return;
         await this.inbox.receive(id, page, notice => this.pushAnnouncement(notice));
       } catch (error) { this.host?.log.warn('terrarium.announcements.failed', { error: String(error) }); }
     }

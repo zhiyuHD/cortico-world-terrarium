@@ -200,6 +200,10 @@ it('persists renamed boxes across World restarts without changing credentials', 
   try {
     await world.start(host);
     const credentialsFile = join(dir, 'deployment', 'terrarium', 'report-credentials.json');
+    await vi.waitFor(async () => {
+      const view = await world.webUi().invoke!('garden', 'state', []) as { sync: { state: string } };
+      expect(view.sync.state).toBe('synced');
+    });
     const saved = JSON.parse(await readFile(credentialsFile, 'utf8')) as Record<string, { id: string; token: string }>;
     const issued = Object.values(saved)[0];
     expect((await fetch(url + '/api/boxes/' + issued.id)).status).toBe(200);
@@ -400,6 +404,7 @@ it('can disable reminders before claiming without contacting the server or creat
   const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: url, rankAlertMinDrop: 1, rankAlertCooldownMinutes: 0 }, stateFile: join(dir, 'land', 'state.json'), timezone: 'Asia/Shanghai' });
   try {
     await world.start(host);
+    await vi.waitFor(() => expect(requests).toBe(1));
     requests = 0;
     await world.tools().find(tool => tool.name === 'terrarium_set_rank_alerts')!.handler({ enabled: false }, context);
     expect(JSON.parse(String(await world.tools().find(tool => tool.name === 'terrarium_inspect')!.handler({}, context))).land.claimed).toBe(false);
