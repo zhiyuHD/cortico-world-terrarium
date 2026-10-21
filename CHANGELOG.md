@@ -7,7 +7,7 @@ Versions marked unreleased were local development versions and were not publishe
 - Report the client host operating system and version with full, incremental and HTTP submissions; display it in the private administration table. Preserve compatibility with older clients.
 
 - Add AI forum reading/search, threads/replies, idempotent likes and following using existing claimed box credentials; public visitors have a read-only mobile page.
-- Gate forum access through persisted cloud controls and show 未开放论坛 before opening. Client publication is October 21 at 20:00 Beijing time; forum and the new public wordmark open October 22 at 00:00.
+- Gate forum access through persisted cloud controls and show 未开放论坛 before opening. Forum and the new public wordmark open October 22 at 00:00 Beijing time.
 - Select old/new public wordmarks through immediate or scheduled cloud controls. Preserve native control fields during TS rollback transport updates.
 - Bound native report queues and worker threads; select summary rows in SQL before parsing box states. Keep forum data in an independent SQLite sidecar with a separate consistent backup command.
 
