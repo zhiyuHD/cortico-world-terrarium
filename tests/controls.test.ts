@@ -278,3 +278,13 @@ it('warns during a scheduled grace period while accepting reports, then rejects 
   vi.setSystemTime(now + 60_000); expect((await report()).status).toBe(426);
   const blocked = await poll(); expect(blocked).toHaveLength(1); expect(blocked[0].id).not.toBe(advance[0].id); expect(blocked[0].text).toContain('提交将被忽略');
 });
+
+it('retains native forum and logo controls when the legacy server updates its own transport policy', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-controls-rollback-')); disposals.push(() => rm(dir, { recursive: true, force: true }));
+  const file = join(dir, 'controls.json');
+  const native = { forum: { enabled: false, scheduledChange: { enabled: true, at: '2099-01-01T00:00:00Z' } }, logo: { version: '0.8.6', scheduledChange: { version: '0.8.7', at: '2099-01-01T00:00:00Z' } } };
+  await writeFile(file, JSON.stringify({ ...native, httpPush: { enabled: true, scheduledChange: null }, minimumClientVersion: { version: null, scheduledChange: null } }));
+  const store = new ControlStore(file); await store.restore(); await store.updateHttpPush({ enabled: false });
+  expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject(native);
+  const restarted = new ControlStore(file); await restarted.restore(); expect(restarted.get()).toMatchObject({ ...native, httpPush: { enabled: false } });
+});

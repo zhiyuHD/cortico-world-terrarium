@@ -4196,7 +4196,7 @@ var ControlStore = class {
     if (rule !== null && (!object2(rule) || typeof rule.enabled !== "boolean" || !timestamp(rule.at))) throw new Error("Invalid controls file");
     const floor = value.minimumClientVersion;
     if (floor !== void 0 && (!object2(floor) || !version(floor.version) || floor.scheduledChange !== null && (!object2(floor.scheduledChange) || !version(floor.scheduledChange.version) || !timestamp(floor.scheduledChange.at)))) throw new Error("Invalid controls file");
-    this.state = { httpPush: value.httpPush, minimumClientVersion: floor === void 0 ? { version: null, scheduledChange: null } : floor };
+    this.state = { ...value, httpPush: value.httpPush, minimumClientVersion: floor === void 0 ? { version: null, scheduledChange: null } : floor };
   }
   // Evaluate persisted deadlines on every read, including after a restart or idle period.
   get() {

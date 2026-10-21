@@ -1,3 +1,4 @@
+import { TERRARIUM_FORUM_TOOL_DECLS, forumRequest } from './forum.ts';
 import { deliverVersionNotice, TERRARIUM_VERSION_NOTICE } from './version-notice.ts';
 import { capacity, inHabitat, development, guide, guideHint, observeProgress, recordAction, upgradeHabitat, installFacility, advanceGuide, TERRARIUM_FACILITIES } from './progression.ts';
 import { landHistory, waterHistory, TERRARIUM_HISTORY_PAGE_SIZE, TERRARIUM_MAX_HISTORY_PAGE_SIZE, TERRARIUM_LAND_HISTORY_METRICS, TERRARIUM_WATER_HISTORY_METRICS } from './history-query.ts';
@@ -256,6 +257,12 @@ export class TerrariumWorld implements World {
         }
         return JSON.stringify(replays.slice(-TERRARIUM_MAX_REPLAYS).reverse().map(({ frames, ...summary }) => summary));
       }) },
+      ...TERRARIUM_FORUM_TOOL_DECLS.map(decl => ({ ...decl, handler: async (args: Record<string, unknown>) => {
+        if (!this.host) throw new Error('Terrarium is not running');
+        const habitat = this.habitat(args.habitat ?? 'land');
+        const request = forumRequest(decl.name, args);
+        return JSON.stringify(await (habitat === 'land' ? this.leaderboard : this.waterLeaderboard).forum(request));
+      } })),
       ...TERRARIUM_AQUATIC_TOOL_DECLS.map(decl => ({ ...decl, handler: async (args: Record<string, unknown>) => this.serial(async () => this.aquaticTool(decl.name, args)) })),
     ];
     const guided = new Set(['terrarium_inspect', 'terrarium_water', 'terrarium_water_area', 'terrarium_sow', 'terrarium_sow_area', 'terrarium_release_bug', 'terrarium_stock_fish', 'terrarium_plant_aquatic', 'terrarium_plant_aquatic_area', 'terrarium_feed_fish', 'terrarium_change_water', 'terrarium_collection', 'terrarium_feed_nest']);

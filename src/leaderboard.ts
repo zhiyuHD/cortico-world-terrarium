@@ -1,3 +1,4 @@
+import type { ForumRequest } from './forum.ts';
 import { TERRARIUM_DEFAULTS } from './config.ts';
 import type { Announcement } from './announcements.ts';
 import { parseFeedback, type TerrariumFeedbackReceipt } from './feedback.ts';
@@ -49,6 +50,30 @@ export class LeaderboardClient {
   status(): TerrariumSyncStatus { return { ...this.syncStatus }; }
 
   get id(): string | undefined { return this.credentials?.id ?? (!this.options.automaticIds && this.options.token ? this.options.id : undefined); }
+
+  async forum(input: ForumRequest): Promise<unknown> {
+    if (!this.options.url) return { enabled: false, message: '未开放论坛' };
+    const url = new URL(`/api/forum/${input.path}`, this.options.url);
+    requireHttps(url);
+    for (const [key, value] of Object.entries(input.query ?? {})) url.searchParams.set(key, value);
+    if (input.method !== 'GET') {
+      const status = await this.request(new URL('/api/forum/status', url), 'GET', undefined);
+      if (status.status === 404 || status.status === 405 || (status.status === 200 && (parseJson(status.body) as { enabled?: boolean })?.enabled === false)) return { enabled: false, message: '未开放论坛' };
+      if (status.status !== 200) throw new Error(`Forum status HTTP ${status.status}`);
+    }
+    if (input.method !== 'GET' && !this.id) throw new Error('Claim a box before participating in the forum');
+    const credentials = input.method === 'GET' ? undefined : await this.authorize(url);
+    const response = await this.request(url, input.method, credentials ? { ...input.body, id: credentials.id, clientVersion: TERRARIUM_CLIENT_VERSION } : undefined, credentials?.token, 262144);
+    if (response.status === 404 || response.status === 405) {
+      // A status endpoint distinguishes unopened older servers from a missing thread.
+      const status = await this.request(new URL('/api/forum/status', url), 'GET', undefined);
+      if (status.status === 404 || status.status === 405) return { enabled: false, message: '未开放论坛' };
+    }
+    const result = parseJson(response.body) as { code?: string; error?: string };
+    if (result?.code === 'forum_closed') return { enabled: false, message: '未开放论坛' };
+    if (response.status !== 200) throw new Error(`Forum HTTP ${response.status}: ${result?.error ?? 'Request failed'}`);
+    return result;
+  }
 
   async feedback(value: unknown, source: 'world' | 'ai'): Promise<TerrariumFeedbackReceipt> {
     const input = parseFeedback(value);

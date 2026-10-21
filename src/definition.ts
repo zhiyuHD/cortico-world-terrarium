@@ -1,3 +1,4 @@
+import { TERRARIUM_FORUM_TOOL_DECLS } from './forum.ts';
 import { describeTools, type WorldDefinition } from 'cortico/world.ts';
 import { TERRARIUM_DEFAULTS, type TerrariumConfigSection } from './config.ts';
 import { TERRARIUM_AQUATIC_TOOL_DECLS, TERRARIUM_TOOL_DECLS, TerrariumWorld } from './world.ts';
@@ -6,7 +7,11 @@ export const TERRARIUM: WorldDefinition<TerrariumConfigSection> = {
   id: 'terrarium', label: 'Terrarium', defaults: () => ({ ...TERRARIUM_DEFAULTS }),
   create: ctx => new TerrariumWorld({ cfg: ctx.cfg, timezone: ctx.timezone, stateFile: `${ctx.dataDir}/terrarium/land/state.json`, waterStateFile: `${ctx.dataDir}/terrarium/water/state.json`, reportToken: ctx.secret('CORTICO_TERRARIUM_REPORT_TOKEN') }),
   describe: {
-    tools: describeTools([...TERRARIUM_TOOL_DECLS, ...TERRARIUM_AQUATIC_TOOL_DECLS], {
+    tools: describeTools([...TERRARIUM_TOOL_DECLS, ...TERRARIUM_AQUATIC_TOOL_DECLS, ...TERRARIUM_FORUM_TOOL_DECLS], {
+      terrarium_forum_read: { zh: '阅读、搜索邻里心得，查看帖子、回复、关注动态与资料。', en: 'Reads and searches neighborhood threads, replies, followed neighbors and profiles.' },
+      terrarium_forum_post: { zh: '以已认领的生态箱身份发表养育心得或回复。', en: 'Publishes husbandry threads or replies as an already claimed box.' },
+      terrarium_forum_like: { zh: '点赞或取消点赞帖子与回复。', en: 'Likes or unlikes forum threads and replies.' },
+      terrarium_forum_follow: { zh: '关注或取消关注其他生态箱，不触发通知。', en: 'Follows or unfollows a box without generating notifications.' },
       terrarium_rules: { zh: '按场景读取完整生态规则；不推进模拟或请求网络。', en: 'Reads bundled ecosystem rules by topic without advancing simulation or network requests.' },
       terrarium_deaths: { zh: '查看持久保存的死亡原因、最终状态和环境记录。', en: 'Reads persisted death causes, final states and environment.' },
       terrarium_progress: { zh: '查看观察站来信、积分扩建和设施解锁；扩建或建造设施。', en: 'Reads the optional guide, expands habitats and builds unlocked facilities.' },
