@@ -15,6 +15,7 @@ import { LeaderboardClient } from '../src/leaderboard.ts';
 import { newState } from '../src/state.ts';
 import { newAquarium, stockFish } from '../src/aquarium.ts';
 import { reportChanges, reportStateHash, type ReportReply } from '../src/report-protocol.ts';
+import { TERRARIUM_CLIENT_SYSTEM } from '../src/client-system.ts';
 import { TERRARIUM_CLIENT_VERSION } from '../src/version.ts';
 import { createReportProxy } from './report-service.ts';
 
@@ -37,7 +38,7 @@ async function fixture(incrementalReports: boolean | undefined = undefined, reje
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     await rm(dir, { recursive: true, force: true });
   });
-  const httpReport = async (state: unknown, clientVersion?: unknown, coopanionVersion?: unknown) => fetch(`${origin}/api/reports`, { method: 'PUT', headers: { authorization: `Bearer ${credentials.token}` }, body: JSON.stringify({ id, state, clientVersion, coopanionVersion }) });
+  const httpReport = async (state: unknown, clientVersion?: unknown, coopanionVersion?: unknown, clientSystem?: unknown) => fetch(`${origin}/api/reports`, { method: 'PUT', headers: { authorization: `Bearer ${credentials.token}` }, body: JSON.stringify({ id, state, clientVersion, coopanionVersion, clientSystem }) });
   return { client, id, credentials, origin, proxy, get, httpReport, dataFile: join(dir, 'server.json') };
 }
 
@@ -51,11 +52,11 @@ it.each([
   const { client, proxy, get, dataFile, id } = await fixture(incremental, http, habitat);
   const state = habitat === 'water' ? newAquarium(Date.now()) : newState(Date.now());
   await client.report(state, 'day'); state.name = 'Updated'; await client.report(state, 'night');
-  expect(await get()).toMatchObject({ clientVersion: TERRARIUM_CLIENT_VERSION, coopanionVersion: version, state });
-  expect(JSON.parse(await readFile(dataFile, 'utf8'))[id]).toMatchObject({ coopanionVersion: version });
+  expect(await get()).toMatchObject({ clientVersion: TERRARIUM_CLIENT_VERSION, coopanionVersion: version, clientSystem: TERRARIUM_CLIENT_SYSTEM, state });
+  expect(JSON.parse(await readFile(dataFile, 'utf8'))[id]).toMatchObject({ coopanionVersion: version, clientSystem: TERRARIUM_CLIENT_SYSTEM });
   if (!http) {
     expect(proxy.frames.map(frame => frame.kind)).toEqual(['full', incremental ? 'delta' : 'full']);
-    expect(proxy.frames.every(frame => frame.coopanionVersion === version)).toBe(true);
+    expect(proxy.frames.every(frame => frame.coopanionVersion === version && JSON.stringify(frame.clientSystem) === JSON.stringify(TERRARIUM_CLIENT_SYSTEM))).toBe(true);
   }
   vi.stubEnv('COOPANION_VERSION', '');
   await client.report(state, 'day');
@@ -81,6 +82,20 @@ it('rejects invalid Coopanion metadata on both transports without changing the s
     for (const coopanionVersion of [null, 123, {}, 'invalid', '1.2.3\ninvalid', '1.2.3-' + 'x'.repeat(100)]) {
       expect((await httpReport(accepted.state, TERRARIUM_CLIENT_VERSION, coopanionVersion)).status).toBe(400);
       expect(await send(ws, { protocol: 1, seq: ++seq, clientVersion: TERRARIUM_CLIENT_VERSION, coopanionVersion, phase: 'day', kind: 'full', state: accepted.state })).toMatchObject({ kind: 'error', status: 400 });
+      expect(await get()).toEqual(accepted);
+    }
+  } finally { ws.terminate(); }
+});
+
+it('rejects invalid system metadata on HTTP and WS without changing the stored state', async () => {
+  const { client, origin, id, credentials, get, httpReport } = await fixture();
+  await client.report(newState(Date.now()), 'day');
+  const accepted = await get(), ws = await socket(origin, id, credentials.token);
+  try {
+    let seq = 0;
+    for (const clientSystem of [null, {}, { name: 'Linux', version: 'bad\nvalue' }, { name: 'Linux', version: 'v'.repeat(201) }, { name: 'Linux', version: '1', hostname: 'private' }]) {
+      expect((await httpReport(accepted.state, TERRARIUM_CLIENT_VERSION, undefined, clientSystem)).status).toBe(400);
+      expect(await send(ws, { protocol: 1, seq: ++seq, clientVersion: TERRARIUM_CLIENT_VERSION, clientSystem, phase: 'day', kind: 'full', state: accepted.state })).toMatchObject({ kind: 'error', status: 400 });
       expect(await get()).toEqual(accepted);
     }
   } finally { ws.terminate(); }

@@ -3,9 +3,17 @@ import { createHash } from 'node:crypto';
 export const TERRARIUM_REPORT_MAX_BYTES = 8_388_608;
 export const TERRARIUM_REPORT_MAX_CHANGES = 16_384;
 
+export interface ClientSystem { name: string; version: string }
+
+export function validClientSystem(value: unknown): value is ClientSystem {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const system = value as Record<string, unknown>;
+  return Object.keys(system).every(key => key === 'name' || key === 'version') && [system.name, system.version].every(part => typeof part === 'string' && part.length > 0 && Array.from(part).length <= 200 && part.trim() === part && !/[\x00-\x1f\x7f]/.test(part));
+}
+
 export type ReportChange = { op: 'add' | 'replace'; path: string; value: unknown } | { op: 'remove'; path: string };
 export type ReportMessage = {
-  protocol: 1; seq: number; clientVersion: string; coopanionVersion?: string; phase: 'day' | 'night'; stateHash?: string;
+  protocol: 1; seq: number; clientVersion: string; coopanionVersion?: string; clientSystem?: ClientSystem; phase: 'day' | 'night'; stateHash?: string;
 } & ({ kind: 'full'; state: unknown } | { kind: 'delta'; baseRevision: string; baseHash?: string; changes: ReportChange[] });
 export type ReportReply = { kind: 'ack'; seq: number; revision: string; score: number; stateHash?: string }
   | { kind: 'resync'; seq: number }

@@ -3795,6 +3795,11 @@ function parseFeedback(value) {
 import { createHash } from "node:crypto";
 var TERRARIUM_REPORT_MAX_BYTES = 8388608;
 var TERRARIUM_REPORT_MAX_CHANGES = 16384;
+function validClientSystem(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const system = value;
+  return Object.keys(system).every((key) => key === "name" || key === "version") && [system.name, system.version].every((part) => typeof part === "string" && part.length > 0 && Array.from(part).length <= 200 && part.trim() === part && !/[\x00-\x1f\x7f]/.test(part));
+}
 function validClientVersion(value) {
   return typeof value === "string" && value.length <= 100 && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(value);
 }
@@ -4761,6 +4766,7 @@ async function start(options = {}) {
     const report = reportQueue.then(async () => {
       await rejectReport(id, input.clientVersion, transport);
       if (input.phase !== void 0 && input.phase !== "day" && input.phase !== "night" || input.clientVersion !== void 0 && !validClientVersion(input.clientVersion) || input.coopanionVersion !== void 0 && !validClientVersion(input.coopanionVersion)) throw new ReportError(400, "Invalid report metadata");
+      if (input.clientSystem !== void 0 && !validClientSystem(input.clientSystem)) throw new ReportError(400, "Invalid report metadata");
       let raw = input.state;
       if (input.baseRevision !== void 0) {
         if (!registry[id] || input.baseRevision !== registry[id].reportRevision) throw new ReportError(409, "Full report required", true);
@@ -4786,7 +4792,7 @@ async function start(options = {}) {
       const kind = "fish" in state ? "water" : "land";
       if (registry[id] && (registry[id].kind ?? "land") !== kind) throw new ReportError(409, "Box habitat cannot change");
       if (registry[id] && state.updatedAtMs < registry[id].state.updatedAtMs) throw new ReportError(409, "Stale report");
-      const entry = { id, kind, state, reportTransport: transport, phase: input.phase, score: score(state), reportedAt: new Date(now).toISOString(), reportRevision: randomBytes(16).toString("hex"), ...input.clientVersion === void 0 ? {} : { clientVersion: input.clientVersion }, ...input.coopanionVersion === void 0 ? {} : { coopanionVersion: input.coopanionVersion } };
+      const entry = { id, kind, state, reportTransport: transport, phase: input.phase, score: score(state), reportedAt: new Date(now).toISOString(), reportRevision: randomBytes(16).toString("hex"), ...input.clientVersion === void 0 ? {} : { clientVersion: input.clientVersion }, ...input.coopanionVersion === void 0 ? {} : { coopanionVersion: input.coopanionVersion }, ...input.clientSystem === void 0 ? {} : { clientSystem: input.clientSystem } };
       const next = Object.assign(/* @__PURE__ */ Object.create(null), registry, { [id]: entry });
       await writeJson(file, next);
       registry = next;
@@ -4843,7 +4849,7 @@ async function start(options = {}) {
         }
         const boxes = [.../* @__PURE__ */ new Set([...Object.keys(credentials), ...Object.keys(registry)])].map((id) => {
           const entry = registry[id];
-          return { id, registered: Object.hasOwn(credentials, id), name: entry?.state.name ?? id, kind: entry ? entry.kind ?? "land" : null, score: entry?.score ?? null, reportedAt: entry?.reportedAt ?? null, clientVersion: entry?.clientVersion ?? null, coopanionVersion: entry?.coopanionVersion ?? null, reportTransport: entry?.reportTransport ?? null, wsConnections: connections.get(id)?.size ?? 0 };
+          return { id, registered: Object.hasOwn(credentials, id), name: entry?.state.name ?? id, kind: entry ? entry.kind ?? "land" : null, score: entry?.score ?? null, reportedAt: entry?.reportedAt ?? null, clientVersion: entry?.clientVersion ?? null, coopanionVersion: entry?.coopanionVersion ?? null, clientSystem: entry?.clientSystem ?? null, reportTransport: entry?.reportTransport ?? null, wsConnections: connections.get(id)?.size ?? 0 };
         });
         reply(200, { boxes, serverAt: (/* @__PURE__ */ new Date()).toISOString(), uptimeSec: process.uptime(), memoryBytes: process.memoryUsage().rss, acceptedReports });
         return;
@@ -5116,7 +5122,7 @@ async function start(options = {}) {
           reply(401, { error: "Unauthorized" });
           return;
         }
-        const entry = await commitReport(input.id, { state: input.state, phase: input.phase, clientVersion: input.clientVersion, coopanionVersion: input.coopanionVersion }, "http");
+        const entry = await commitReport(input.id, { state: input.state, phase: input.phase, clientVersion: input.clientVersion, coopanionVersion: input.coopanionVersion, clientSystem: input.clientSystem }, "http");
         reply(200, { score: entry.score });
         return;
       }
@@ -5186,7 +5192,7 @@ Content-Length: 0\r
             requireHashes ||= input.stateHash !== void 0 || input.kind === "delta" && input.baseHash !== void 0;
             if (requireHashes && (!validReportHash(input.stateHash) || input.kind === "delta" && !validReportHash(input.baseHash))) throw new ReportError(409, "Report checksums required", true);
             if (input.kind === "delta" && (requireFull || typeof input.baseRevision !== "string")) throw new ReportError(409, "Full report required", true);
-            const entry = await commitReport(id, { phase: input.phase, clientVersion: input.clientVersion, coopanionVersion: input.coopanionVersion, stateHash: input.stateHash, ...input.kind === "full" ? { state: input.state } : { baseRevision: input.baseRevision, baseHash: input.baseHash, changes: input.changes } }, "websocket");
+            const entry = await commitReport(id, { phase: input.phase, clientVersion: input.clientVersion, coopanionVersion: input.coopanionVersion, clientSystem: input.clientSystem, stateHash: input.stateHash, ...input.kind === "full" ? { state: input.state } : { baseRevision: input.baseRevision, baseHash: input.baseHash, changes: input.changes } }, "websocket");
             requireFull = false;
             reply = { kind: "ack", seq, revision: entry.reportRevision, score: entry.score, stateHash: reportStateHash(entry.state) };
           } catch (error) {

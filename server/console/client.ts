@@ -1,7 +1,7 @@
 import './client.css';
 import { icon, mountIcons, type IconName } from './icons.ts';
 mountIcons();
-interface Box { id: string; registered: boolean; name: string; kind: 'land' | 'water' | null; score: number | null; reportedAt: string | null; clientVersion: string | null; coopanionVersion: string | null; reportTransport: 'http' | 'websocket' | null; wsConnections: number }
+interface Box { id: string; registered: boolean; name: string; kind: 'land' | 'water' | null; score: number | null; reportedAt: string | null; clientVersion: string | null; coopanionVersion: string | null; clientSystem?: { name: string; version: string } | null; reportTransport: 'http' | 'websocket' | null; wsConnections: number }
 interface Feedback { id: number; text: string; contact?: string; boxId?: string; source: string; createdAt: string; resolvedAt?: string }
 interface Notice { id: number; title: string; text: string; targets: 'all' | string[]; createdAt: string; expiresAt: string }
 interface Controls { httpPush: { enabled: boolean; scheduledChange: { at: string; enabled: boolean } | null }; minimumClientVersion?: { version: string | null; scheduledChange: { at: string; version: string | null } | null } }
@@ -61,11 +61,11 @@ function renderBoxes() {
     const nameCell = node('td'), check = button('', () => { if (selected.has(box.id)) selected.delete(box.id); else selected.add(box.id); renderBoxes(); }, 'check', 'check');
     check.setAttribute('role', 'checkbox'); check.setAttribute('aria-checked', String(selected.has(box.id))); check.setAttribute('aria-label', `选择 ${box.name}`); check.disabled = !box.registered;
     const name = node('div'); name.append(node('strong', box.name), node('span', `${box.kind === 'land' ? '地' : box.kind === 'water' ? '水' : '待认领'} · ${box.id}`, 'small muted')); nameCell.append(check, name);
-    row.append(nameCell, node('td', version(box)), node('td', box.coopanionVersion ?? '未上报'));
+    row.append(nameCell, node('td', version(box)), node('td', box.coopanionVersion ?? '未上报'), node('td', box.clientSystem ? `${box.clientSystem.name} · ${box.clientSystem.version}` : '未上报'));
     const connection = node('td'), live = node('span', '', box.wsConnections ? 'pill' : 'muted'); iconLabel(live, box.wsConnections ? 'wifi' : 'wifi-off', box.wsConnections ? `WS 在线 (${box.wsConnections})` : 'WS 未连接'); connection.append(live, node('span', `最近提交：${box.reportTransport === 'websocket' ? 'WS' : box.reportTransport === 'http' ? 'HTTP' : '未知'}`, 'small muted'));
     row.append(connection, node('td', date(box.reportedAt)), node('td', box.score === null ? '未上报' : String(box.score))); rows.append(row);
   }
-  if (!visible.length) { const row = node('tr'), cell = node('td', '没有符合条件的盒子', 'empty'); cell.colSpan = 6; row.append(cell); rows.append(row); }
+  if (!visible.length) { const row = node('tr'), cell = node('td', '没有符合条件的盒子', 'empty'); cell.colSpan = 7; row.append(cell); rows.append(row); }
   el('selection-info').textContent = `显示 ${visible.length} / ${snapshot?.boxes.length ?? 0} 个 · 已选择 ${selected.size} 个（切换筛选会保留选择）`;
   audience();
 }

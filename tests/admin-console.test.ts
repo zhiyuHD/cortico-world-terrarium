@@ -59,9 +59,9 @@ it('tracks HTTP and WS reporting independently from live connections and omits b
   await once(ws, 'open');
   try {
     expect((await boxes())[0]).toMatchObject({ reportTransport: 'http', wsConnections: 1 });
-    const reply = once(ws, 'message'); ws.send(JSON.stringify({ protocol: 1, seq: 1, kind: 'full', state, clientVersion: TERRARIUM_CLIENT_VERSION, coopanionVersion: '0.2.4', phase: 'day' }));
+    const reply = once(ws, 'message'); ws.send(JSON.stringify({ protocol: 1, seq: 1, kind: 'full', state, clientVersion: TERRARIUM_CLIENT_VERSION, coopanionVersion: '0.2.4', clientSystem: { name: 'Linux', version: 'TestOS 2 (kernel 6.12)' }, phase: 'day' }));
     expect(JSON.parse(String((await reply)[0])).kind).toBe('ack');
-    const result = await boxes(); expect(result[0]).toMatchObject({ clientVersion: TERRARIUM_CLIENT_VERSION, coopanionVersion: '0.2.4', reportTransport: 'websocket', wsConnections: 1 });
+    const result = await boxes(); expect(result[0]).toMatchObject({ clientVersion: TERRARIUM_CLIENT_VERSION, coopanionVersion: '0.2.4', clientSystem: { name: 'Linux', version: 'TestOS 2 (kernel 6.12)' }, reportTransport: 'websocket', wsConnections: 1 });
     expect(JSON.stringify(result)).not.toMatch(/box-token|other-token|admin-secret|"state"/);
   } finally { const closed = once(ws, 'close'); ws.close(); await closed; }
   await expect.poll(async () => (await boxes())[0].wsConnections).toBe(0);

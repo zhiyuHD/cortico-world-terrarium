@@ -13,13 +13,13 @@ import { dirname } from 'node:path';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { migrateState, type TerrariumState } from '../src/state.ts';
-import { applyReportChanges, reportStateHash, validReportHash, validClientVersion, TERRARIUM_REPORT_MAX_BYTES, type ReportMessage, type ReportReply } from '../src/report-protocol.ts';
+import { applyReportChanges, reportStateHash, validReportHash, validClientVersion, validClientSystem, type ClientSystem, TERRARIUM_REPORT_MAX_BYTES, type ReportMessage, type ReportReply } from '../src/report-protocol.ts';
 
 import { validAquarium, type AquariumState } from '../src/aquarium.ts';
 import { score, scoreParts, type LeaderboardBoxSummary } from '../src/scoring.ts';
 export { score } from '../src/scoring.ts';
 
-interface Entry { id: string; kind?: 'land' | 'water'; state: TerrariumState | AquariumState; phase?: 'day' | 'night'; score: number; reportedAt: string; clientVersion?: string; coopanionVersion?: string; reportRevision?: string; reportTransport?: 'http' | 'websocket' }
+interface Entry { id: string; kind?: 'land' | 'water'; state: TerrariumState | AquariumState; phase?: 'day' | 'night'; score: number; reportedAt: string; clientVersion?: string; coopanionVersion?: string; clientSystem?: ClientSystem; reportRevision?: string; reportTransport?: 'http' | 'websocket' }
 const idPattern = /^[a-z0-9][a-z0-9_-]{1,39}$/;
 export interface ServerOptions { dataFile?: string; credentialsFile?: string; port?: number; announcementsFile?: string; controlsFile?: string; adminToken?: string; adminTokenFile?: string; adminHost?: string; adminPort?: number; adminAllowedCidr?: string }
 
@@ -103,10 +103,11 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
     const control = controls.get(), obsolete = !meetsMinimumVersion(clientVersion, control.minimumClientVersion.version);
     if (notice && (obsolete || (transport === 'http' && !control.httpPush.enabled))) throw new ReportError(obsolete ? 426 : 410, `本次提交未成功，提交内容已被忽略。${notice.text}`, false, true);
   };
-  const commitReport = (id: string, input: { phase?: unknown; clientVersion?: unknown; coopanionVersion?: unknown; state?: unknown; baseRevision?: string; baseHash?: string; stateHash?: string; changes?: unknown }, transport: 'http' | 'websocket') => {
+  const commitReport = (id: string, input: { phase?: unknown; clientVersion?: unknown; coopanionVersion?: unknown; clientSystem?: unknown; state?: unknown; baseRevision?: string; baseHash?: string; stateHash?: string; changes?: unknown }, transport: 'http' | 'websocket') => {
     const report = reportQueue.then(async () => {
       await rejectReport(id, input.clientVersion, transport);
       if ((input.phase !== undefined && input.phase !== 'day' && input.phase !== 'night') || (input.clientVersion !== undefined && !validClientVersion(input.clientVersion)) || (input.coopanionVersion !== undefined && !validClientVersion(input.coopanionVersion))) throw new ReportError(400, 'Invalid report metadata');
+      if (input.clientSystem !== undefined && !validClientSystem(input.clientSystem)) throw new ReportError(400, 'Invalid report metadata');
       let raw = input.state;
       if (input.baseRevision !== undefined) {
         if (!registry[id] || input.baseRevision !== registry[id].reportRevision) throw new ReportError(409, 'Full report required', true);
@@ -127,7 +128,7 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
       const kind = 'fish' in state ? 'water' : 'land';
       if (registry[id] && (registry[id].kind ?? 'land') !== kind) throw new ReportError(409, 'Box habitat cannot change');
       if (registry[id] && state.updatedAtMs < registry[id].state.updatedAtMs) throw new ReportError(409, 'Stale report');
-      const entry: Entry = { id, kind, state, reportTransport: transport, phase: input.phase as Entry['phase'], score: score(state), reportedAt: new Date(now).toISOString(), reportRevision: randomBytes(16).toString('hex'), ...(input.clientVersion === undefined ? {} : { clientVersion: input.clientVersion as string }), ...(input.coopanionVersion === undefined ? {} : { coopanionVersion: input.coopanionVersion as string }) };
+      const entry: Entry = { id, kind, state, reportTransport: transport, phase: input.phase as Entry['phase'], score: score(state), reportedAt: new Date(now).toISOString(), reportRevision: randomBytes(16).toString('hex'), ...(input.clientVersion === undefined ? {} : { clientVersion: input.clientVersion as string }), ...(input.coopanionVersion === undefined ? {} : { coopanionVersion: input.coopanionVersion as string }), ...(input.clientSystem === undefined ? {} : { clientSystem: input.clientSystem as ClientSystem }) };
       const next = Object.assign(Object.create(null), registry, { [id]: entry });
       await writeJson(file, next);
       registry = next; acceptedReports[transport]++;
@@ -163,7 +164,7 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
         if (req.method !== 'GET') { reply(405, { error: 'Method not allowed' }); return; }
         const boxes = [...new Set([...Object.keys(credentials), ...Object.keys(registry)])].map(id => {
           const entry = registry[id];
-          return { id, registered: Object.hasOwn(credentials, id), name: entry?.state.name ?? id, kind: entry ? entry.kind ?? 'land' : null, score: entry?.score ?? null, reportedAt: entry?.reportedAt ?? null, clientVersion: entry?.clientVersion ?? null, coopanionVersion: entry?.coopanionVersion ?? null, reportTransport: entry?.reportTransport ?? null, wsConnections: connections.get(id)?.size ?? 0 };
+          return { id, registered: Object.hasOwn(credentials, id), name: entry?.state.name ?? id, kind: entry ? entry.kind ?? 'land' : null, score: entry?.score ?? null, reportedAt: entry?.reportedAt ?? null, clientVersion: entry?.clientVersion ?? null, coopanionVersion: entry?.coopanionVersion ?? null, clientSystem: entry?.clientSystem ?? null, reportTransport: entry?.reportTransport ?? null, wsConnections: connections.get(id)?.size ?? 0 };
         });
         reply(200, { boxes, serverAt: new Date().toISOString(), uptimeSec: process.uptime(), memoryBytes: process.memoryUsage().rss, acceptedReports }); return;
       }
@@ -310,12 +311,12 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
           raw += String(chunk);
           if (Buffer.byteLength(raw) > TERRARIUM_REPORT_MAX_BYTES) { reply(413, { error: 'Report too large' }); return; }
         }
-        const input = JSON.parse(raw) as { id?: string; state?: unknown; phase?: unknown; clientVersion?: unknown; coopanionVersion?: unknown } | null;
+        const input = JSON.parse(raw) as { id?: string; state?: unknown; phase?: unknown; clientVersion?: unknown; coopanionVersion?: unknown; clientSystem?: unknown } | null;
         if (!input || typeof input.id !== 'string' || !idPattern.test(input.id)) { reply(400, { error: 'Invalid report' }); return; }
         const expected = credentials[input.id];
         const token = req.headers.authorization?.replace(/^Bearer /, '') ?? '';
         if (!expected || !equal(token, expected)) { reply(401, { error: 'Unauthorized' }); return; }
-        const entry = await commitReport(input.id, { state: input.state, phase: input.phase, clientVersion: input.clientVersion, coopanionVersion: input.coopanionVersion }, 'http');
+        const entry = await commitReport(input.id, { state: input.state, phase: input.phase, clientVersion: input.clientVersion, coopanionVersion: input.coopanionVersion, clientSystem: input.clientSystem }, 'http');
         reply(200, { score: entry.score });
         return;
       }
@@ -364,7 +365,7 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
             requireHashes ||= input.stateHash !== undefined || (input.kind === 'delta' && input.baseHash !== undefined);
             if (requireHashes && (!validReportHash(input.stateHash) || (input.kind === 'delta' && !validReportHash(input.baseHash)))) throw new ReportError(409, 'Report checksums required', true);
             if (input.kind === 'delta' && (requireFull || typeof input.baseRevision !== 'string')) throw new ReportError(409, 'Full report required', true);
-            const entry = await commitReport(id, { phase: input.phase, clientVersion: input.clientVersion, coopanionVersion: input.coopanionVersion, stateHash: input.stateHash, ...(input.kind === 'full' ? { state: input.state } : { baseRevision: input.baseRevision, baseHash: input.baseHash, changes: input.changes }) }, 'websocket');
+            const entry = await commitReport(id, { phase: input.phase, clientVersion: input.clientVersion, coopanionVersion: input.coopanionVersion, clientSystem: input.clientSystem, stateHash: input.stateHash, ...(input.kind === 'full' ? { state: input.state } : { baseRevision: input.baseRevision, baseHash: input.baseHash, changes: input.changes }) }, 'websocket');
             requireFull = false;
             reply = { kind: 'ack', seq, revision: entry.reportRevision!, score: entry.score, stateHash: reportStateHash(entry.state) };
           } catch (error) {
