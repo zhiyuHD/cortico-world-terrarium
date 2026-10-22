@@ -1,3 +1,5 @@
+import { photoCaption } from './photo.ts';
+import { reportStateHash } from './report-protocol.ts';
 import type { ForumRequest } from './forum.ts';
 import { TERRARIUM_DEFAULTS } from './config.ts';
 import type { Announcement } from './announcements.ts';
@@ -51,6 +53,49 @@ export class LeaderboardClient {
   status(): TerrariumSyncStatus { return { ...this.syncStatus }; }
 
   get id(): string | undefined { return this.credentials?.id ?? (!this.options.automaticIds && this.options.token ? this.options.id : undefined); }
+
+  async takePhoto(state: TerrariumState | AquariumState, phase: 'day' | 'night', caption: string): Promise<{ bytes: Buffer; stateHash: string; capturedAt: string }> {
+    caption = photoCaption(caption);
+    if (!this.options.url) throw new Error('Photos require a configured server');
+    if (!this.id) throw new Error('Claim a box before taking a photo');
+    const snapshot = JSON.parse(JSON.stringify(state)) as typeof state;
+    const stateHash = reportStateHash(snapshot);
+    await this.report(snapshot, phase, true);
+    const url = new URL('/api/photos', this.options.url);
+    requireHttps(url);
+    const credentials = await this.authorize(url);
+    const payload = Buffer.from(JSON.stringify({ id: credentials.id, stateHash, phase, caption, clientVersion: TERRARIUM_CLIENT_VERSION }));
+    return new Promise((resolve, reject) => {
+      const req = (url.protocol === 'https:' ? httpsRequest : httpRequest)(url, {
+        method: 'POST', family: 4, signal: this.requests.signal,
+        headers: { 'content-type': 'application/json', 'content-length': String(payload.length), authorization: `Bearer ${credentials.token}` },
+      }, res => {
+        const chunks: Buffer[] = []; let size = 0;
+        res.on('error', reject);
+        res.on('data', (chunk: Buffer) => {
+          size += chunk.length;
+          if (size > 8 * 1024 * 1024) { req.destroy(new Error('Photo exceeds 8 MiB')); return; }
+          chunks.push(chunk);
+        });
+        res.on('end', () => {
+          const bytes = Buffer.concat(chunks);
+          if (res.statusCode === 404 || res.statusCode === 405) { reject(new Error('This server does not support photos; upgrade the server')); return; }
+          if (res.statusCode !== 200) {
+            const detail = res.statusCode === 409 ? 'Snapshot changed; retry taking the photo' : res.statusCode === 429 ? 'Another photo is rendering; retry shortly' : 'Photo request failed';
+            reject(new Error(`Photo HTTP ${res.statusCode}: ${detail}`)); return;
+          }
+          const capturedAt = res.headers['x-terrarium-captured-at'];
+          if (res.headers['content-type'] !== 'image/png' || !bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) || res.headers['x-terrarium-state-hash'] !== stateHash || typeof capturedAt !== 'string' || !Number.isFinite(Date.parse(capturedAt))) {
+            reject(new Error('Invalid photo response or mismatched snapshot')); return;
+          }
+          resolve({ bytes, stateHash, capturedAt });
+        });
+      });
+      const deadline = setTimeout(() => req.destroy(new Error('Photo request timed out')), Math.max(25000, this.options.requestTimeoutMs ?? 0));
+      deadline.unref(); req.once('close', () => clearTimeout(deadline));
+      req.on('error', reject); req.end(payload);
+    });
+  }
 
   async forum(input: ForumRequest): Promise<unknown> {
     if (!this.options.url) return { enabled: false, message: '未开放论坛' };

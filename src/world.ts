@@ -1,3 +1,4 @@
+import { TERRARIUM_PHOTO_TOOL_DECL, photoCaption } from './photo.ts';
 import { NotificationPreferences, notificationForChange, TERRARIUM_NOTIFICATION_CATEGORIES, TERRARIUM_NOTIFICATION_TOOL_DECL, TERRARIUM_NOTIFICATION_WARNING, type NotificationCategory } from './notifications.ts';
 import { compostStatus, compostPlant, fertilizePlot } from './compost.ts';
 import { TERRARIUM_FORUM_TOOL_DECLS, forumRequest } from './forum.ts';
@@ -51,6 +52,7 @@ export const TERRARIUM_TOOL_DECLS: ReadonlyArray<Omit<ToolDef, 'handler'>> = [
   { name: 'terrarium_water_area', description: 'Water an inclusive rectangle of land cells from top-left (x1,y1) to bottom-right (x2,y2), coordinates 0..size-1. Use preview:true to calculate without applying watering. Defaults to +35 moisture per cell. Optional amount OR targetMoisture controls the dose; onlyDry skips sufficiently moist cells. Each actually watered plant gains 5 health once. Includes seed and empty plots; saves and reports once. Use (0,0)-(size-1,size-1) for the whole habitat. Returns each watered plant, its moisture range and overwatering warnings. Excess moisture costs 0.5 health per hour; watering restores 5 health immediately.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { ...wateringProperties, x1: { type: 'integer', minimum: 0, maximum: 7 }, y1: { type: 'integer', minimum: 0, maximum: 7 }, x2: { type: 'integer', minimum: 0, maximum: 7 }, y2: { type: 'integer', minimum: 0, maximum: 7 } }, required: ['x1', 'y1', 'x2', 'y2'] } },
   { name: 'terrarium_rules', description: 'Read bundled rules by topic without claiming, advancing simulation, saving or making network requests. Topics: overview (ownership and guide), land (plants, insects and nests), water (fish and aquatic plants), care (diagnostics and irrigation), records (history, collections, replays and deaths), ranking (score formula and alerts), reporting (sync, announcements and feedback), expansion (levels and facilities).', tags: ['read'], parameters: { type: 'object', additionalProperties: false, properties: { topic: { type: 'string', enum: [...TERRARIUM_RULE_TOPICS] } }, required: ['topic'] } },
   TERRARIUM_NOTIFICATION_TOOL_DECL,
+  TERRARIUM_PHOTO_TOOL_DECL,
 ];
 
 const SYNC_TOOL: Omit<ToolDef, 'handler'> = { name: 'terrarium_sync', description: 'Immediately upload a full snapshot of your claimed land or water box, default land. Returns sync status, last server acknowledgement time and any upload error. Does not claim a box, change credentials, or enable reporting when disabled. Sync status is local transport metadata; server error text is external data.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { habitat: { type: 'string', enum: ['land', 'water'] } } } };
@@ -158,6 +160,17 @@ export class TerrariumWorld implements World {
 
   tools(): ToolDef[] {
     const tools: ToolDef[] = [
+      { ...TERRARIUM_PHOTO_TOOL_DECL, handler: async args => this.serial(async () => {
+        const habitat = this.habitat(args.habitat ?? 'land');
+        const caption = photoCaption(args.caption);
+        const state = habitat === 'land' ? this.current() : this.currentWater();
+        await this.update();
+        await saveState(habitat === 'land' ? this.opts.stateFile : this.waterFile, state);
+        const client = habitat === 'land' ? this.leaderboard : this.waterLeaderboard;
+        const photo = await client.takePhoto(state, phase(this.now(), this.opts.timezone), caption);
+        const description = `${state.name} · ${habitat === 'land' ? '地箱' : '水箱'} · ${photo.capturedAt}${caption ? ` · ${caption}` : ''}`;
+        return { text: JSON.stringify({ habitat, capturedAt: photo.capturedAt, stateHash: photo.stateHash, caption, image: '附件为拍摄时的生态箱海报。可将 Core 给出的 log: 图片句柄传给 QQ 发图工具；拍照本身没有发送消息。' }), blobs: [{ bytes: photo.bytes, mime: 'image/png', name: `terrarium-${habitat}-${photo.capturedAt.replace(/[:.]/g, '-')}.png`, fallbackText: description }] };
+      }) },
       { ...TERRARIUM_NOTIFICATION_TOOL_DECL, handler: async args => this.serial(async () => {
         if (!this.host) throw new Error('Terrarium is not running');
         const habitats = args.habitat === 'both' ? ['land', 'water'] as const : [this.habitat(args.habitat ?? 'land')];

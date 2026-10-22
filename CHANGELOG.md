@@ -2,6 +2,13 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.8.9 — 照记影踪
+
+- Add `terrarium_take_photo` for claimed land and water boxes: a 1280×1600 Material You PNG with an optional 120-character caption, the captured scene, name, time, organism counts, score and expansion level.
+- Submit a full snapshot through WS and verify its SHA-256 on the server before rendering. Return an immutable image attachment through Core for sending with an existing QQ tool; taking a photo sends no message.
+- Render on the native server using the observation renderer and MiSans, with one render at a time and a 20-second deadline. Clients need no image library or browser installation. Older servers report that an upgrade is required.
+- This is an independent theme outside the 新邻初见 trilogy. Existing saves and credentials remain unchanged.
+
 ## 0.8.8-bugfix.1
 
 - Add persistent per-habitat notification switches for growth, hunts, reproduction, nests, webs, deaths, irrigation, day/night, startup reports and individual care conditions. Defaults remain enabled; existing rank controls remain available.

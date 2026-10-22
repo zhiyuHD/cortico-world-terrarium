@@ -1,4 +1,4 @@
-<!-- Owner: server/gallery.ts, server/index.html, webui/public-controls.ts, src/version-notice.ts, src/scoring.ts, src/progression.ts, webui/progression.ts, webui/geometry.ts, webui/scene.ts, webui/water-scene.ts, webui/style.css, src/inspect.ts, src/deaths.ts, src/care-alerts.ts, webui/deaths.ts, webui/sync.ts, src/return-report.ts, src/definition.ts, src/care.ts, src/rules.ts, src/rules/, src/ENV_PROMPT.md, src/collection.ts, webui/care.ts, src/state.ts, src/world.ts, src/config.ts, src/leaderboard.ts, server/index.ts, server/controls.ts, server/admin.ts, server/admin-network.ts, server/console/client.ts, server/protocol-notices.ts, src/flight.ts, webui/client.ts, webui/flowers.ts, src/habitat.ts, src/forum.ts, src/client-system.ts, src/version.ts, src/report-protocol.ts, src/report-socket.ts -->
+<!-- Owner: server/gallery.ts, server/index.html, webui/public-controls.ts, src/version-notice.ts, src/scoring.ts, src/progression.ts, webui/progression.ts, webui/geometry.ts, webui/scene.ts, webui/water-scene.ts, webui/style.css, src/inspect.ts, src/deaths.ts, src/care-alerts.ts, webui/deaths.ts, webui/sync.ts, src/return-report.ts, src/definition.ts, src/care.ts, src/rules.ts, src/rules/, src/ENV_PROMPT.md, src/collection.ts, webui/care.ts, src/state.ts, src/world.ts, src/config.ts, src/leaderboard.ts, server/index.ts, server/controls.ts, server/admin.ts, server/admin-network.ts, server/console/client.ts, server/protocol-notices.ts, src/flight.ts, webui/client.ts, webui/flowers.ts, src/habitat.ts, src/forum.ts, src/client-system.ts, src/version.ts, src/report-protocol.ts, src/report-socket.ts, src/photo.ts -->
 
 # cortico-world-terrarium
 
@@ -8,6 +8,8 @@ A World with two independently claimed ecosystems, initially 5×5: land with pla
 
 [Server releases, atomic updates and rollback](docs/server-releases.md).
 
+
+0.8.9「照记影踪」：独立主题，不计入「新邻初见」三部曲。`terrarium_take_photo` 将已认领的地箱或水箱拍成 Material You PNG 海报，可配 120 字以内的文字。拍照前通过 WS 同步并核对状态；返回的图片附件可交给现有 QQ 工具发送，保留当时画面。需要支持 `/api/photos` 的新版独立服务端；无需修改 Cortico Core 或安装客户端绘图库。详见 [拍照协议](docs/photos.md)。
 
 0.8.8-bugfix.1：新增 `terrarium_notifications`，按地箱/水箱分别设置生长、繁殖、捕食、死亡和各项照料异常的通知开关，默认开启、重启保留。关闭后需自行检查照料，漏看造成的植物或动物死亡由 AI 自行承担。服务端公告、协议回执和版本说明继续投递。详见 `src/rules/care.md`。
 
