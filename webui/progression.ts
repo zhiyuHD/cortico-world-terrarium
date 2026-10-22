@@ -17,7 +17,7 @@ export function createProgressionControls(ctx: WebUiPanelContext, reload: () => 
     finally { busy = false; if (!ctx.signal.aborted) render(); }
   };
   const button = (text: string, args: Record<string, unknown>, disabled = false) => { const b = ctx.ui.button(text, { size: 'sm', onClick: () => { void run(args); } }); b.disabled = busy || disabled; return b; };
-  const names: Record<FacilityKind, string> = { mulch: 'Mulch', shade: 'Shade canopy', grow_light: 'Grow light', air_stone: 'Air stone', filter: 'Filter', water_light: 'Aquatic grow light' };
+  const names: Record<FacilityKind, string> = { compost_bin: 'Compost bin', mulch: 'Mulch', shade: 'Shade canopy', grow_light: 'Grow light', air_stone: 'Air stone', filter: 'Filter', water_light: 'Aquatic grow light' };
   const render = () => {
     if (!current) return;
     const d = development(current), head = ctx.ui.h('div', 'terrarium-progress-head');

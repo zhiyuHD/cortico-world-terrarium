@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       terrarium-renderer:
-        specifier: ^0.1.1
-        version: 0.1.1
+        specifier: ^0.1.2
+        version: 0.1.2
       ws:
         specifier: ^8.22.0
         version: 8.22.0
@@ -38,9 +38,6 @@ importers:
         version: 2.1.9(@types/node@22.20.5)
 
 packages:
-
-  terrarium-renderer@0.1.1:
-    resolution: {integrity: sha512-1FjoDYDaIpBdpHXCFul0c1SKi+OrB9LcF2IdF72+uYj0KPVTa66iN+zVYBWJNBPGkueVy6xDRR3gCktPX2eETw==}
 
   '@babel/runtime@7.29.10':
     resolution: {integrity: sha512-NpugTzbKgGrNe45Ui32cN8vCFFMxVtP/9rtfwv0nP5FRDAjvYBxJcLVpYA9mr1jxP6cnIT7x9LUzuDTbWYYNRA==}
@@ -999,6 +996,9 @@ packages:
   teex@1.0.1:
     resolution: {integrity: sha512-eYE6iEI62Ni1H8oIa7KlDU6uQBtqr4Eajni3wX7rpfXD8ysFx8z0+dri+KWEPWpBsxXfxu58x/0jvTVT1ekOSg==}
 
+  terrarium-renderer@0.1.2:
+    resolution: {integrity: sha512-RD1W5OyWjNcyDmOT3Tl5Kwa2LTww7AvnoaQXDgNmaSF2HINkNGk/w1NOOiAixhWQJH/wJJPnhOa40NK+iS7OeQ==}
+
   text-decoder@1.2.7:
     resolution: {integrity: sha512-vlLytXkeP4xvEq2otHeJfSQIRyWxo/oZGEbXrtEEF9Hnmrdly59sUbzZ/QgyWuLYHctCHxFF4tRQZNQ9k60ExQ==}
 
@@ -1159,8 +1159,6 @@ packages:
         optional: true
 
 snapshots:
-
-  terrarium-renderer@0.1.1: {}
 
   '@babel/runtime@7.29.10': {}
 
@@ -2040,6 +2038,8 @@ snapshots:
     transitivePeerDependencies:
       - bare-abort-controller
       - react-native-b4a
+
+  terrarium-renderer@0.1.2: {}
 
   text-decoder@1.2.7:
     dependencies:

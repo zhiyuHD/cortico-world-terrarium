@@ -1,3 +1,4 @@
+import { TERRARIUM_AQUATIC_PLANTS } from '../src/aquatic-habitat.ts';
 import { capacity, type DevelopmentState } from '../src/progression.ts';
 import type { WebUiPanelContext } from 'cortico/web/shared/client-panel.ts';
 import type { landCare, waterCare } from '../src/care.ts';
@@ -45,11 +46,22 @@ export function createCareControls(ctx: WebUiPanelContext, habitat: 'land' | 'wa
     finally { busy = false; }
   };
   el.append(hint, actions, status);
-  return { el, update(state: DevelopmentState & { plants: { id: string; x: number; y: number }[]; bugs?: { id: string }[]; fish?: { id: string }[]; seeds?: { id: string }[]; collection?: { kind: string; specimen: { id: string; x: number; y: number } }[]; food?: { id: string }[]; soil?: { x: number; y: number; allowAntForaging?: boolean }[]; nests?: { id: string; x: number; y: number; entrances?: { x: number; y: number }[] }[] }, cell: { x: number; y: number } = { x: 2, y: 2 }) {
+  return { el, update(state: DevelopmentState & { fertilizer?: number; plants: { id: string; x: number; y: number }[]; bugs?: { id: string }[]; fish?: { id: string }[]; seeds?: { id: string }[]; collection?: { kind: string; specimen: { id: string; x: number; y: number } }[]; food?: { id: string }[]; soil?: { x: number; y: number; allowAntForaging?: boolean }[]; nests?: { id: string; x: number; y: number; entrances?: { x: number; y: number }[] }[] }, cell: { x: number; y: number } = { x: 2, y: 2 }) {
     hint.textContent = zh ? `收藏后暂停模拟、不计分；当前收藏容量 ${capacity(state).collection}，放回仍受生物和占格限制。` : `Collected organisms are frozen and unscored; collection capacity ${capacity(state).collection}. Restoring uses normal limits.`;
     actions.replaceChildren();
     const add = (text: string, args: Record<string, unknown>, disabled = false) => { const button = ctx.ui.button(text, { size: 'sm', onClick: () => { void run(args); } }); button.disabled = disabled; actions.append(button); };
     if (habitat === 'land') {
+      if (capacity(state).level >= 2) {
+        const installed = state.facilities?.some(f => f.kind === 'compost_bin' && f.enabled);
+        if (!installed) add(zh ? '在选中格安放堆肥桶' : 'Install compost bin in selected cell', { tool: 'terrarium_progress', action: 'install', facility: 'compost_bin', ...cell });
+        else {
+          const plant = state.plants.find(p => p.x === cell.x && p.y === cell.y);
+          if (plant) add(zh ? '将选中植物堆肥 · 换 1 份肥料' : 'Compost selected plant · receive 1 fertilizer', { tool: 'terrarium_compost', action: 'compost', id: plant.id });
+          const fertilizer = state.fertilizer ?? 0;
+          add(zh ? `施肥 +2 小时 · 库存 ${fertilizer}` : `Fertilize +2 hours · stock ${fertilizer}`, { tool: 'terrarium_compost', action: 'fertilize', ...cell }, !fertilizer);
+          if (fertilizer > 1) add(zh ? `全部施用 · +${fertilizer * 2} 小时` : `Use all · +${fertilizer * 2} hours`, { tool: 'terrarium_compost', action: 'fertilize', portions: fertilizer, ...cell });
+        }
+      }
       const allowed = state.soil?.find(c => c.x === cell.x && c.y === cell.y)?.allowAntForaging !== false;
       add(zh ? `(${cell.x},${cell.y}) ${allowed ? '禁止' : '允许'}蚂蚁采集` : `${allowed ? 'Forbid' : 'Allow'} ant harvesting in selected cell`, { tool: 'terrarium_set_ant_foraging', ...cell, enabled: !allowed });
       for (const nest of state.nests ?? []) if ([nest, ...(nest.entrances ?? [])].some(p => p.x === cell.x && p.y === cell.y)) add(zh ? `填平 (${cell.x},${cell.y}) 入口${nest.entrances?.length ? '' : '（储粮清空，生物移到地表）'}` : `Fill (${cell.x},${cell.y}) entrance${nest.entrances?.length ? '' : ' (empties pantry, evacuates residents)'}`, { tool: 'terrarium_fill_ant_hole', ...cell });
@@ -59,7 +71,7 @@ export function createCareControls(ctx: WebUiPanelContext, habitat: 'land' | 'wa
       add(zh ? '关闭选中格定时浇水' : 'Disable selected cell irrigation', { tool: 'terrarium_set_irrigation', ...cell, enabled: false });
     } else {
       for (const food of state.food ?? []) add(`${zh ? '清理残饵' : 'Remove food'} ${food.id}`, { tool: 'terrarium_cleanup_food', id: food.id });
-      for (const species of ['waterweed', 'waterlily', 'algae']) add(`${zh ? '选中格种植' : 'Plant selected cell'} ${species}`, { tool: 'terrarium_plant_aquatic_area', species, x1: cell.x, y1: cell.y, x2: cell.x, y2: cell.y });
+      for (const species of Object.keys(TERRARIUM_AQUATIC_PLANTS)) add(`${zh ? '选中格种植' : 'Plant selected cell'} ${species}`, { tool: 'terrarium_plant_aquatic_area', species, x1: cell.x, y1: cell.y, x2: cell.x, y2: cell.y });
     }
     for (const p of [...state.plants, ...(state.bugs ?? []), ...(state.fish ?? []), ...(state.seeds ?? [])]) add(`${zh ? '收藏' : 'Collect'} ${p.id}`, { tool: 'terrarium_collection', action: 'collect', id: p.id });
     for (const item of state.collection ?? []) {

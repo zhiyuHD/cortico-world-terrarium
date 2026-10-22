@@ -8,6 +8,8 @@
 
 先看 care 的 needsAction 和 advice，再决定操作。moistureHistory 是连续同类异常的小时采样记录，无法证明两次采样之间一直异常；sinceSampleAtMs 不是精确起始时间。植物只在水分、光照适宜的白天生长，夜里等待天亮；进度是适宜白天模拟小时，不是现实倒计时。石子会遮光。浇水可加 preview:true 先看结果和越界警告，不实际浇水。浇水默认增加 35，targetMoisture 是补到目标，不会排水；按该物种范围选目标，过湿和缺水都会损失健康。terrarium_drain 排水；terrarium_water_area 和 terrarium_sow_area 批量操作。虫子 energy 与 hunger 独立，feed_bug 只补能量，实际取食才降饥饿；到 100 会饿死。鱼需要游到饲料处才吃，已有残饵时可等待，反复投食会污染水质。
 
+地箱二级可用 terrarium_progress 安放并启用 compost_bin，再用 terrarium_compost：action:"compost",id 将一株现存植物换成 1 份肥料；action:"fertilize",x,y,portions 给指定格种子或植物每份增加 2 小时生长，无冷却，可一次多份，夜间也有效；不回血、不浇水、不推进其他生物。action:"status" 查库存。水箱新增 neon_tetra（无饲料且体力至少 40 时跟随群游）、corydoras（优先吃旧残饵，体力达到 85 暂停吃饲料）；金鱼藻 hornwort、浮萍 duckweed 的庇护与净水条件见 water 规则。
+
 ## 查规则
 
 terrarium_rules({topic}) 按需读取完整说明：overview（认领、查看、新手信）、land（播种、光照、虫子、蚁巢、花与蛛网）、water（鱼草与水质）、care（诊断、排水、灌溉）、records（历史、回放、收藏、死亡）、ranking（计分与排名提醒）、reporting（同步、公告、反馈）、expansion（等级与设施）。不读取或修改存档，不请求网络。terrarium_progress 看六封新手信和扩建，任务完成后操作回执会给 guide.next；扩建按当前公式历史最高分，不扣分。

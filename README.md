@@ -8,6 +8,9 @@ A World with two independently claimed ecosystems, initially 5×5: land with pla
 
 [Server releases, atomic updates and rollback](docs/server-releases.md).
 
+
+0.8.8「新邻初见 · 第二阶段」：水箱增加霓虹灯鱼、鼠鱼、金鱼藻和浮萍，包含群游、旧残饵觅食、金鱼藻庇护和成熟浮萍净水；睡莲在累计 18 个白天生长小时后开花。新物种沿用原有容量、收藏和计分规则。地箱二级可安装并启用 `compost_bin`，用 `terrarium_compost` 将一株植物换成 1 份肥料，每份让指定格种子或植物立即增加 2 小时生长；支持批量施用，无冷却，只受库存限制。阶段、开花和结籽立即结算，其他生物和时间不受影响。旧存档没有肥料字段时库存为零，无需重置。
+
 ## 新邻初见 · 第一阶段
 
 Land adds sunflower (`sunflower`), mint (`mint`) and ladybug (`ladybug`), available from level one through the existing sow/release tools. Their IDs, collection behavior and species scoring follow existing rules. Sunflower needs moisture 25–70 and daylight 0.75–1; mint needs 35–85 and 0.3–0.85. Both bud at 12 suitable daylight growth hours and bloom at 18. At 30 hours sunflower replaces its flower with a seed head and drops three food portions; later drops require another 12 suitable daylight growth hours. Drops require health at least 35 and suitable moisture/light, expire after 48 hours, and skip rounds while the 20-pile limit is full. Optional `seedRounds` persists completed rounds across saves and collection; old saves require no conversion. Ladybugs sense aphids within three cells, hunt with three-frame replays and use the existing paired egg/hatch cycle. Healthy, non-dry mint at stage two or above hides same-cell aphids from spiders in other cells. Beetles and ladybugs still find them. `care` reports aphid counts per plant and suggests actions; `residents` identifies each aphid's current host. Aphid meals cause three plant health damage, restore 15 energy and reduce hunger by 25; satiated aphids remain on their host.
@@ -80,7 +83,7 @@ The public gallery follows the browser's color preference on first visit. Its he
 
 ## Water ecosystem
 
-A claimed aquarium starts with waterweed and algae, oxygen 80 and cleanliness 100. Initially stock up to 12 guppies (`guppy`), goldfish (`goldfish`) or perch (`perch`), and plant up to 12 waterweed (`waterweed`), waterlilies (`waterlily`) or algae (`algae`). Aquatic plants occupy separate plots; fish may share cells. Perch hunt guppies; goldfish graze algae. Fish move one cell and feed every ten minutes, consuming 2 energy per hour, or 1 below energy 70 when oxygen and cleanliness are both at least 70. Goldfish only graze algae above health 30 when below energy 70 and no food is available. At oxygen below 25 or cleanliness below 30, fish lose 2 health per hour. Zero energy or health kills a fish.
+A claimed aquarium starts with waterweed and algae, oxygen 80 and cleanliness 100. Initially stock up to 12 fish (`guppy`, `goldfish`, `perch`, `neon_tetra`, `corydoras`), and plant up to 12 aquatic plants (`waterweed`, `waterlily`, `algae`, `hornwort`, `duckweed`). Aquatic plants occupy separate plots; fish may share cells. Perch hunt guppies; goldfish graze algae. Fish move one cell and feed every ten minutes, consuming 2 energy per hour, or 1 below energy 70 when oxygen and cleanliness are both at least 70. Goldfish only graze algae above health 30 when below energy 70 and no food is available. At oxygen below 25 or cleanliness below 30, fish lose 2 health per hour. Zero energy or health kills a fish.
 
 `terrarium_feed_fish` drops 1–10 portions at x/y, with at most 20 piles. A fish eats one portion for 20 energy. Remaining food lowers cleanliness by 0.05 per portion per hour and expires after six hours; each fish lowers cleanliness by 0.15 per hour. Water recovers 1 oxygen per hour; day/night plant oxygen contributions are +0.8/−0.2 for waterweed, +1.1/−0.3 for algae and +0.5/−0.1 for waterlilies. Healthy waterweed and waterlilies together add 0.2 per hour; while each fish consumes 0.3. These are simulation rules.
 

@@ -2,6 +2,15 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.8.8 — 新邻初见 · 第二阶段
+
+- Add neon tetras and corydoras, shoaling, oldest-food scavenging and mature healthy hornwort shelter. Existing feeding, capacity and species scoring caps apply.
+- Add hornwort and duckweed with distinct day/night oxygen rates; mature healthy duckweed restores 0.12 cleanliness per hour. Waterlilies bud at 12 and bloom at 18 daylight growth hours.
+- Unlock a land compost bin at level two: exchange one plant for one fertilizer and apply two growth hours per portion to a selected crop, including seeds. Bulk and consecutive use have no cooldown; inventory persists and failed requests consume nothing.
+- Draw distinct new aquatic neighbors, health-dependent foliage, waterlily flowers and compost bins. Add local panel actions, inspect inventory and bundled rules.
+- Add an aquatic second-phase wordmark; cloud controls retain independent selection and scheduling for the first-phase wordmark.
+- Preserve existing saves, IDs, tokens, expansion thresholds and second-version scoring.
+
 ## 0.8.7-bugfix.2
 
 - Run initial reports, ranking checks and announcement reads in the background after loading, catching up and saving local habitats. Land and water start their first reports independently.
