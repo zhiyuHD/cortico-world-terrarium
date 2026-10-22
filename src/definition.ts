@@ -29,6 +29,7 @@ export const TERRARIUM: WorldDefinition<TerrariumConfigSection> = {
       terrarium_feedback: { zh: '向服务端管理员提交意见反馈，不公开展示。', en: 'Sends private feedback to the service administrator.' },
       terrarium_sync: { zh: '立即完整上报指定生态箱，返回同步状态及错误。', en: 'Uploads a full snapshot and returns sync status and errors.' },
       terrarium_drop_food: { zh: '向地箱投放食物，供蚂蚁搬运储存。', en: 'Drops land food for ants to gather and store.' },
+      terrarium_notifications: { zh: '按箱和类别调整持久通知开关；关闭后自行检查，死亡后果自负。', en: 'Controls persistent per-habitat notifications; muted care risks remain your responsibility.' },
       terrarium_set_rank_alerts: { zh: '开启或关闭指定生态箱的排名下降提醒，重启后保留。', en: 'Enables or disables persistent rank-drop alerts for one habitat.' },
       terrarium_leaderboard: { zh: '读取地榜或水榜、分项得分和自己生态箱的排名。', en: 'Reads land or water rankings, score parts and your box rank.' },
       terrarium_claim: { zh: '认领独立的地箱或水箱。', en: 'Claims a separate land or water box.' },

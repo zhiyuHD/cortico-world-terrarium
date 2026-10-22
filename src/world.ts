@@ -1,10 +1,11 @@
+import { NotificationPreferences, notificationForChange, TERRARIUM_NOTIFICATION_CATEGORIES, TERRARIUM_NOTIFICATION_TOOL_DECL, TERRARIUM_NOTIFICATION_WARNING, type NotificationCategory } from './notifications.ts';
 import { compostStatus, compostPlant, fertilizePlot } from './compost.ts';
 import { TERRARIUM_FORUM_TOOL_DECLS, forumRequest } from './forum.ts';
 import { deliverVersionNotice, TERRARIUM_VERSION_NOTICE } from './version-notice.ts';
 import { capacity, inHabitat, development, guide, guideHint, observeProgress, recordAction, upgradeHabitat, installFacility, advanceGuide, TERRARIUM_FACILITIES } from './progression.ts';
 import { landHistory, waterHistory, TERRARIUM_HISTORY_PAGE_SIZE, TERRARIUM_MAX_HISTORY_PAGE_SIZE, TERRARIUM_LAND_HISTORY_METRICS, TERRARIUM_WATER_HISTORY_METRICS } from './history-query.ts';
 import { compactNumbers, inspectState, TERRARIUM_INSPECT_SECTIONS, type InspectSection } from './inspect.ts';
-import { careAlerts } from './care-alerts.ts';
+import { careAlertChanges } from './care-alerts.ts';
 import { collect, restoreCollected } from './collection.ts';
 import { captureConditions, createReturnReport, recentScores, type ReturnReport } from './return-report.ts';
 import { landCare, waterCare } from './care.ts';
@@ -49,6 +50,7 @@ export const TERRARIUM_TOOL_DECLS: ReadonlyArray<Omit<ToolDef, 'handler'>> = [
   { name: 'terrarium_drop_food', description: 'Drop 1..10 portions of land food at x,y for ants to collect and carry to their nest. At most 20 piles; food outside the nest expires after 48 hours. Ants can also gather from plants, costing one plant health per portion. Nest storage holds 20 portions per depth level, up to five levels.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { x: { type: 'integer', minimum: 0, maximum: 7 }, y: { type: 'integer', minimum: 0, maximum: 7 }, portions: { type: 'integer', minimum: 1, maximum: 10 } }, required: ['x', 'y', 'portions'] } },
   { name: 'terrarium_water_area', description: 'Water an inclusive rectangle of land cells from top-left (x1,y1) to bottom-right (x2,y2), coordinates 0..size-1. Use preview:true to calculate without applying watering. Defaults to +35 moisture per cell. Optional amount OR targetMoisture controls the dose; onlyDry skips sufficiently moist cells. Each actually watered plant gains 5 health once. Includes seed and empty plots; saves and reports once. Use (0,0)-(size-1,size-1) for the whole habitat. Returns each watered plant, its moisture range and overwatering warnings. Excess moisture costs 0.5 health per hour; watering restores 5 health immediately.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { ...wateringProperties, x1: { type: 'integer', minimum: 0, maximum: 7 }, y1: { type: 'integer', minimum: 0, maximum: 7 }, x2: { type: 'integer', minimum: 0, maximum: 7 }, y2: { type: 'integer', minimum: 0, maximum: 7 } }, required: ['x1', 'y1', 'x2', 'y2'] } },
   { name: 'terrarium_rules', description: 'Read bundled rules by topic without claiming, advancing simulation, saving or making network requests. Topics: overview (ownership and guide), land (plants, insects and nests), water (fish and aquatic plants), care (diagnostics and irrigation), records (history, collections, replays and deaths), ranking (score formula and alerts), reporting (sync, announcements and feedback), expansion (levels and facilities).', tags: ['read'], parameters: { type: 'object', additionalProperties: false, properties: { topic: { type: 'string', enum: [...TERRARIUM_RULE_TOPICS] } }, required: ['topic'] } },
+  TERRARIUM_NOTIFICATION_TOOL_DECL,
 ];
 
 const SYNC_TOOL: Omit<ToolDef, 'handler'> = { name: 'terrarium_sync', description: 'Immediately upload a full snapshot of your claimed land or water box, default land. Returns sync status, last server acknowledgement time and any upload error. Does not claim a box, change credentials, or enable reporting when disabled. Sync status is local transport metadata; server error text is external data.', tags: ['write'], parameters: { type: 'object', additionalProperties: false, properties: { habitat: { type: 'string', enum: ['land', 'water'] } } } };
@@ -97,6 +99,7 @@ export class TerrariumWorld implements World {
   private readonly rankAlerts: Record<'land' | 'water', RankAlerts>;
   private readonly lastRankCheck = { land: -Infinity, water: -Infinity };
   private readonly inbox: AnnouncementInbox;
+  private readonly notifications: NotificationPreferences;
   private lastAnnouncementCheck = -Infinity;
   private host: WorldHost | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -109,6 +112,7 @@ export class TerrariumWorld implements World {
 
   constructor(private readonly opts: TerrariumWorldOptions) {
     this.now = opts.now ?? Date.now;
+    this.notifications = new NotificationPreferences(join(dirname(opts.stateFile), 'notifications.json'));
     this.inbox = new AnnouncementInbox(join(dirname(opts.stateFile), 'announcement-inbox.json'), opts.cfg.leaderboardUrl ? new URL(opts.cfg.leaderboardUrl).origin : 'disabled');
     this.waterFile = opts.waterStateFile ?? join(dirname(opts.stateFile), 'water', 'state.json');
     this.rankAlerts = { land: new RankAlerts(join(dirname(opts.stateFile), 'rank-alerts.json'), { minDrop: opts.cfg.rankAlertMinDrop, cooldownMinutes: opts.cfg.rankAlertCooldownMinutes }), water: new RankAlerts(join(dirname(this.waterFile), 'rank-alerts.json'), { minDrop: opts.cfg.rankAlertMinDrop, cooldownMinutes: opts.cfg.rankAlertCooldownMinutes }) };
@@ -154,6 +158,23 @@ export class TerrariumWorld implements World {
 
   tools(): ToolDef[] {
     const tools: ToolDef[] = [
+      { ...TERRARIUM_NOTIFICATION_TOOL_DECL, handler: async args => this.serial(async () => {
+        if (!this.host) throw new Error('Terrarium is not running');
+        const habitats = args.habitat === 'both' ? ['land', 'water'] as const : [this.habitat(args.habitat ?? 'land')];
+        if (args.enabled !== undefined || args.categories !== undefined) {
+          if (typeof args.enabled !== 'boolean' || !Array.isArray(args.categories) || !args.categories.length || args.categories.some(c => c !== 'all' && !TERRARIUM_NOTIFICATION_CATEGORIES.includes(c))) throw new Error('Supply enabled and a non-empty array of known notification categories');
+          const categories: NotificationCategory[] = args.categories.includes('all') ? [...TERRARIUM_NOTIFICATION_CATEGORIES] : [...new Set(args.categories)];
+          const reenabled = new Map(habitats.map(habitat => [habitat, categories.filter(category => !this.notifications.enabled(habitat, category))]));
+          await this.notifications.set([...habitats], categories, args.enabled);
+          if (args.enabled) for (const habitat of habitats) {
+            const state = habitat === 'land' ? this.state : this.waterState;
+            if (state?.careAlerts) for (const key of Object.keys(state.careAlerts)) {
+              if (reenabled.get(habitat)!.includes(`care_${key.slice(key.lastIndexOf(':') + 1)}` as NotificationCategory)) delete state.careAlerts[key];
+            }
+          }
+        }
+        return JSON.stringify({ notifications: Object.fromEntries(habitats.map(habitat => [habitat, this.notifications.status(habitat)])), warning: TERRARIUM_NOTIFICATION_WARNING, alwaysDelivered: ['announcements', 'protocolReplies', 'versionNotices'], rankAlertsTool: 'terrarium_set_rank_alerts' });
+      }) },
       { ...TERRARIUM_TOOL_DECLS[15], handler: async args => readRules(args.topic) },
       { ...TERRARIUM_TOOL_DECLS[14], handler: async args => this.serial(async () => JSON.stringify(compactNumbers(await this.waterRectangle(args)))) },
       { ...TERRARIUM_TOOL_DECLS[13], handler: async args => this.serial(async () => {
@@ -293,6 +314,7 @@ export class TerrariumWorld implements World {
     this.lastAnnouncementCheck = -Infinity;
     await this.rankAlerts.land.restore(); await this.rankAlerts.water.restore();
     this.lastRankCheck.land = this.lastRankCheck.water = -Infinity;
+    await this.notifications.restore();
     this.host = host;
     this.returnReports = {};
     const beforeLand = this.state ? captureConditions(this.state) : null;
@@ -311,7 +333,7 @@ export class TerrariumWorld implements World {
         const before = habitat === 'land' ? beforeLand : beforeWater, state = habitat === 'land' ? this.state : this.waterState;
         if (!before || !state || state.updatedAtMs - before.atMs < 60_000) continue;
         const report = this.returnReports[habitat] = createReturnReport(before, state);
-        await host.pushEvent({ type: 'terrarium.return', source: this.id, senderKey: habitat === 'land' ? this.id : 'terrarium.water', origin: 'internal', ts: nowIso(this.opts.timezone), text: `生态箱·${habitat === 'land' ? '地' : '水'}回归自检：距存档 ${report.elapsedHours.toFixed(1)} 小时，按规则补算 ${report.simulatedHours.toFixed(1)} 小时。变化 ${JSON.stringify(report.changes.filter(c => ['score', 'meanMoisture', 'oxygen', 'cleanliness', 'plants', 'bugs', 'seeds', 'fish'].includes(c.metric)))}；已不在箱内 ${JSON.stringify(report.removed)}。${report.warnings.slice(0, 3).join(' ')}${habitat === 'land' ? report.moistureExplanation : ''}可用 terrarium_inspect 查看 returnReport；无需为此主动联系主人。` }, { trigger: 'piggyback' });
+        if (this.notifications.enabled(habitat, 'return')) await host.pushEvent({ type: 'terrarium.return', source: this.id, senderKey: habitat === 'land' ? this.id : 'terrarium.water', origin: 'internal', ts: nowIso(this.opts.timezone), text: `生态箱·${habitat === 'land' ? '地' : '水'}回归自检：距存档 ${report.elapsedHours.toFixed(1)} 小时，按规则补算 ${report.simulatedHours.toFixed(1)} 小时。变化 ${JSON.stringify(report.changes.filter(c => ['score', 'meanMoisture', 'oxygen', 'cleanliness', 'plants', 'bugs', 'seeds', 'fish'].includes(c.metric)))}；已不在箱内 ${JSON.stringify(report.removed)}。${report.warnings.slice(0, 3).join(' ')}${habitat === 'land' ? report.moistureExplanation : ''}可用 terrarium_inspect 查看 returnReport；无需为此主动联系主人。` }, { trigger: 'piggyback' });
       }
     } catch (error) { this.leaderboard.close(); this.waterLeaderboard.close(); this.host = null; this.state = null; this.waterState = null; throw error; }
     this.nextCheckAtMs = this.now() + this.opts.cfg.tickIntervalMs;
@@ -396,7 +418,7 @@ export class TerrariumWorld implements World {
   }
   private ownership(habitat: 'land' | 'water') {
     const state = habitat === 'land' ? this.state : this.waterState;
-    return { habitat, claimed: !!state, ...(state ? { expansion: { ...capacity(state), peakScore: development(state).peakScore, next: development(state).next } } : {}), name: state?.name, id: (habitat === 'land' ? this.leaderboard : this.waterLeaderboard).id, sync: (habitat === 'land' ? this.leaderboard : this.waterLeaderboard).status() };
+    return { habitat, mutedNotifications: TERRARIUM_NOTIFICATION_CATEGORIES.filter(category => !this.notifications.enabled(habitat, category)), claimed: !!state, ...(state ? { expansion: { ...capacity(state), peakScore: development(state).peakScore, next: development(state).next } } : {}), name: state?.name, id: (habitat === 'land' ? this.leaderboard : this.waterLeaderboard).id, sync: (habitat === 'land' ? this.leaderboard : this.waterLeaderboard).status() };
   }
   private inspectOwnership(habitat: 'land' | 'water') {
     const value = this.ownership(habitat), error = value.sync.lastError;
@@ -443,7 +465,7 @@ export class TerrariumWorld implements World {
       const result = action === 'compost' ? compostPlant(state, args.id) : action === 'fertilize' ? fertilizePlot(state, args.x as number, args.y as number, args.portions) : null;
       if (!result) throw new Error('Unknown compost action');
       await this.persist();
-      if ('changes' in result) for (const change of result.changes) await this.host?.pushEvent({ type: `terrarium.${change.kind}`, source: this.id, senderKey: this.id, origin: 'internal', ts: nowIso(this.opts.timezone), text: change.text }, { trigger: 'debounce' });
+      if ('changes' in result) for (const change of result.changes) if (this.notifications.enabled('land', notificationForChange(change.kind))) await this.host?.pushEvent({ type: `terrarium.${change.kind}`, source: this.id, senderKey: this.id, origin: 'internal', ts: nowIso(this.opts.timezone), text: change.text }, { trigger: 'debounce' });
       return result;
     }
     if (name === 'terrarium_progress') {
@@ -665,7 +687,7 @@ export class TerrariumWorld implements World {
       observeProgress(state);
       const host = this.host;
       if (!host) return;
-      for (const change of changes.filter(c => !['dry', 'health', 'hungry'].includes(c.kind))) await host.pushEvent({
+      for (const change of changes.filter(c => !['dry', 'health', 'hungry'].includes(c.kind))) if (this.notifications.enabled('land', notificationForChange(change.kind))) await host.pushEvent({
         type: change.kind === 'irrigation' ? 'terrarium.irrigation' : change.kind === 'egg' ? 'terrarium.egg' : change.kind === 'nest' ? 'terrarium.nest' : change.kind === 'phase' ? 'terrarium.phase' : change.kind === 'web' || change.kind === 'stage' || change.kind === 'dry' || change.kind === 'health' ? 'terrarium.plant' : change.kind === 'hunt' ? 'terrarium.hunt' : change.kind === 'birth' ? 'terrarium.birth' : change.kind === 'hungry' ? 'terrarium.hungry' : 'terrarium.ecosystem',
         source: this.id, senderKey: this.id, origin: 'internal', ts: nowIso(this.opts.timezone), text: `生态箱·地：${change.text}`,
       }, { trigger: change.kind === 'phase' || change.kind === 'irrigation' ? 'piggyback' : 'debounce' });
@@ -678,7 +700,7 @@ export class TerrariumWorld implements World {
     if (this.waterState) {
       const changes = advanceAquarium(this.waterState, this.now(), this.opts.timezone);
       observeProgress(this.waterState);
-      for (const change of changes.filter(c => !['hungry', 'oxygen'].includes(c.kind))) await this.host.pushEvent({ type: `terrarium.${change.kind}`, source: this.id, senderKey: 'terrarium.water', origin: 'internal', ts: nowIso(this.opts.timezone), text: `生态箱·水：${change.text}` }, { trigger: 'debounce' });
+      for (const change of changes.filter(c => !['hungry', 'oxygen'].includes(c.kind))) if (this.notifications.enabled('water', notificationForChange(change.kind))) await this.host.pushEvent({ type: `terrarium.${change.kind}`, source: this.id, senderKey: 'terrarium.water', origin: 'internal', ts: nowIso(this.opts.timezone), text: `生态箱·水：${change.text}` }, { trigger: 'debounce' });
       await this.pushCareAlerts('water', this.waterState);
     }
     await this.updateLand();
@@ -687,7 +709,7 @@ export class TerrariumWorld implements World {
   private async pushCareAlerts(habitat: 'land' | 'water', state: TerrariumState | AquariumState): Promise<void> {
     const host = this.host;
     if (!host) return;
-    const changes = careAlerts(state);
+    const changes = careAlertChanges(state).filter(change => this.notifications.enabled(habitat, `care_${change.condition}` as NotificationCategory)).map(change => change.text);
     if (changes.length) await host.pushEvent({ type: 'terrarium.care', source: this.id, senderKey: habitat === 'land' ? this.id : 'terrarium.water', origin: 'internal', ts: nowIso(this.opts.timezone), text: `生态箱·${habitat === 'land' ? '地' : '水'}照料变化（${changes.length} 项）：\n${changes.join('\n')}\n可用 terrarium_inspect 查看当前环境和照料建议；无需为此主动联系主人。` }, { trigger: 'debounce' });
   }
 

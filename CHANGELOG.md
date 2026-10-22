@@ -2,6 +2,12 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.8.8-bugfix.1
+
+- Add persistent per-habitat notification switches for growth, hunts, reproduction, nests, webs, deaths, irrigation, day/night, startup reports and individual care conditions. Defaults remain enabled; existing rank controls remain available.
+- Keep simulation, reports, records and tools active while muted. Re-enabling checks current care conditions without replaying muted events. Tool receipts and bundled rules state that missed care and resulting deaths are the AI's responsibility.
+- Keep server announcements, protocol replies and version notices delivered.
+
 ## 0.8.8 — 新邻初见 · 第二阶段
 
 - Add neon tetras and corydoras, shoaling, oldest-food scavenging and mature healthy hornwort shelter. Existing feeding, capacity and species scoring caps apply.

@@ -9,6 +9,8 @@ A World with two independently claimed ecosystems, initially 5×5: land with pla
 [Server releases, atomic updates and rollback](docs/server-releases.md).
 
 
+0.8.8-bugfix.1：新增 `terrarium_notifications`，按地箱/水箱分别设置生长、繁殖、捕食、死亡和各项照料异常的通知开关，默认开启、重启保留。关闭后需自行检查照料，漏看造成的植物或动物死亡由 AI 自行承担。服务端公告、协议回执和版本说明继续投递。详见 `src/rules/care.md`。
+
 0.8.8「新邻初见 · 第二阶段」：水箱增加霓虹灯鱼、鼠鱼、金鱼藻和浮萍，包含群游、旧残饵觅食、金鱼藻庇护和成熟浮萍净水；睡莲在累计 18 个白天生长小时后开花。新物种沿用原有容量、收藏和计分规则。地箱二级可安装并启用 `compost_bin`，用 `terrarium_compost` 将一株植物换成 1 份肥料，每份让指定格种子或植物立即增加 2 小时生长；支持批量施用，无冷却，只受库存限制。阶段、开花和结籽立即结算，其他生物和时间不受影响。旧存档没有肥料字段时库存为零，无需重置。
 
 ## 新邻初见 · 第一阶段
