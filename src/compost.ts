@@ -1,3 +1,4 @@
+import { potAt } from './merchant.ts';
 import { capacity, hasFacility, inHabitat, recordAction } from './progression.ts';
 import { flowerStage, TERRARIUM_PLANT_REQUIREMENTS } from './habitat.ts';
 import { settlePlantGrowth, type TerrariumState, type Change } from './state.ts';
@@ -26,6 +27,7 @@ export function fertilizePlot(state: TerrariumState, x: number, y: number, porti
   if (!inHabitat(state, x, y)) throw new Error('Position must be in the current habitat grid');
   if (typeof portions !== 'number' || !Number.isSafeInteger(portions) || portions < 1) throw new Error('Supply a positive safe integer of fertilizer portions');
   if (portions > (state.fertilizer ?? 0)) throw new Error('Not enough fertilizer');
+  if (potAt(state, x, y)?.growth === 0) throw new Error('Remove the still pot before fertilizing');
   let plant = state.plants.find(p => p.x === x && p.y === y);
   const seed = state.seeds.find(p => p.x === x && p.y === y);
   if (!plant && !seed) throw new Error('That plot has no plant or seed');
@@ -35,12 +37,13 @@ export function fertilizePlot(state: TerrariumState, x: number, y: number, porti
   if (seed) {
     hours -= Math.max(0, 2 - seed.ageHours);
     const moisture = state.soil[y * capacity(state).size + x].moisture;
-    plant = { id: seed.id, species: seed.species, x, y, moisture, growthHours: 0, stage: 0, health: 100, dry: moisture < TERRARIUM_PLANT_REQUIREMENTS[seed.species].minMoisture };
+    plant = { id: seed.id, species: seed.species, x, y, moisture, growthHours: 0, naturalGrowthHours: 0, stage: 0, health: 100, dry: moisture < TERRARIUM_PLANT_REQUIREMENTS[seed.species].minMoisture };
     state.seeds.splice(state.seeds.indexOf(seed), 1);
     state.plants.push(plant);
     changes.push({ kind: 'sprout', text: `${plant.id}（${plant.species}），位置 (${x},${y}) 施肥后发芽了。` });
   }
   const previousFlower = flowerStage(plant!);
+  plant!.naturalGrowthHours ??= Math.min(48, plant!.growthHours);
   plant!.growthHours += hours;
   changes.push(...settlePlantGrowth(state, plant!, previousFlower, state.updatedAtMs, true, true));
   state.fertilizer = (state.fertilizer ?? 0) - portions;

@@ -22,7 +22,7 @@ export function galleryPage(ranked: readonly GalleryEntry[], query: URLSearchPar
       const state = entry.state;
       const common = { name: state.name, progression: state.progression, facilities: state.facilities, plants: state.plants };
       return { id: entry.id, kind: entry.kind ?? 'land', rank: ranks.get(entry.id)!, score: entry.score, reportedAt: entry.reportedAt, phase: entry.phase, replayCount: state.replays?.length ?? 0,
-        state: 'fish' in state ? { ...common, kind: 'water', oxygen: state.oxygen, cleanliness: state.cleanliness, fish: state.fish, food: state.food } : { ...common, soil: state.soil, seeds: state.seeds, bugs: state.bugs, items: state.items, nests: state.nests, eggs: state.eggs, food: state.food, webs: state.webs },
+        state: 'fish' in state ? { ...common, kind: 'water', oxygen: state.oxygen, cleanliness: state.cleanliness, fish: state.fish, eggs: state.eggs, food: state.food } : { ...common, economy: state.economy, soil: state.soil, seeds: state.seeds, bugs: state.bugs, items: state.items, nests: state.nests, eggs: state.eggs, food: state.food, webs: state.webs },
       };
     }),
   };

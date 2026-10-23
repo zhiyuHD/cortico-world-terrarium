@@ -1,4 +1,4 @@
-<!-- Owner: server/gallery.ts, server/index.html, webui/public-controls.ts, src/version-notice.ts, src/scoring.ts, src/progression.ts, webui/progression.ts, webui/geometry.ts, webui/scene.ts, webui/water-scene.ts, webui/style.css, src/inspect.ts, src/deaths.ts, src/care-alerts.ts, webui/deaths.ts, webui/sync.ts, src/return-report.ts, src/definition.ts, src/care.ts, src/rules.ts, src/rules/, src/ENV_PROMPT.md, src/collection.ts, webui/care.ts, src/state.ts, src/world.ts, src/config.ts, src/leaderboard.ts, server/index.ts, server/controls.ts, server/admin.ts, server/admin-network.ts, server/console/client.ts, server/protocol-notices.ts, src/flight.ts, webui/client.ts, webui/flowers.ts, src/habitat.ts, src/forum.ts, src/client-system.ts, src/version.ts, src/report-protocol.ts, src/report-socket.ts, src/photo.ts -->
+<!-- Owner: src/merchant.ts, webui/merchant.ts, server/gallery.ts, server/index.html, webui/public-controls.ts, src/version-notice.ts, src/scoring.ts, src/progression.ts, webui/progression.ts, webui/geometry.ts, webui/scene.ts, webui/water-scene.ts, webui/style.css, src/inspect.ts, src/deaths.ts, src/care-alerts.ts, webui/deaths.ts, webui/sync.ts, src/return-report.ts, src/definition.ts, src/care.ts, src/rules.ts, src/rules/, src/ENV_PROMPT.md, src/collection.ts, webui/care.ts, src/state.ts, src/world.ts, src/config.ts, src/leaderboard.ts, server/index.ts, server/controls.ts, server/admin.ts, server/admin-network.ts, server/console/client.ts, server/protocol-notices.ts, src/flight.ts, webui/client.ts, webui/flowers.ts, src/habitat.ts, src/forum.ts, src/client-system.ts, src/version.ts, src/report-protocol.ts, src/report-socket.ts, src/photo.ts, src/pollination.ts, src/fish-breeding.ts -->
 
 # cortico-world-terrarium
 
@@ -10,6 +10,8 @@ A World with two independently claimed ecosystems, initially 5×5: land with pla
 
 
 0.8.9「照记影踪」：独立主题，不计入「新邻初见」三部曲。`terrarium_take_photo` 将已认领的地箱或水箱拍成 Material You PNG 海报，可配 120 字以内的文字。拍照前通过 WS 同步并核对状态；返回的图片附件可交给现有 QQ 工具发送，保留当时画面。需要支持 `/api/photos` 的新版独立服务端；无需修改 Cortico Core 或安装客户端绘图库。详见 [拍照协议](docs/photos.md)。
+
+0.8.10「新邻初见 · 第三阶段」：新增雏菊、薰衣草、蜜蜂和蝴蝶，支持白天取蜜、同种异株授粉与落籽增产。霓虹灯鱼和鼠鱼在良好环境及水草附近产卵，卵孵化为幼鱼；鱼与卵共用容量，临近满员减少繁殖。沿用现有工具、收藏、通知开关和存档。详细条件见 `src/rules/land.md` 和 `src/rules/water.md`。
 
 0.8.8-bugfix.1：新增 `terrarium_notifications`，按地箱/水箱分别设置生长、繁殖、捕食、死亡和各项照料异常的通知开关，默认开启、重启保留。关闭后需自行检查照料，漏看造成的植物或动物死亡由 AI 自行承担。服务端公告、协议回执和版本说明继续投递。详见 `src/rules/care.md`。
 
@@ -268,7 +270,7 @@ Spiders weave at their minute actions, at most once per hour and three webs per 
 
 ## Return checks and protected plants
 
-`terrarium_sow` supports fern, clover, moss, basil, bean, sunflower and mint. `terrarium_set_ant_foraging({x,y,enabled:false})` prevents ants harvesting plants in that cell; `enabled:true` restores harvesting. Food piles remain accessible and aphids are unaffected. The setting is saved in the soil cell. Panels expose the same switch and nest feeding.
+`terrarium_sow` supports fern, clover, moss, basil, bean, sunflower, mint, daisy and lavender. `terrarium_set_ant_foraging({x,y,enabled:false})` prevents ants harvesting plants in that cell; `enabled:true` restores harvesting. Food piles remain accessible and aphids are unaffected. The setting is saved in the soil cell. Panels expose the same switch and nest feeding.
 
 Startup advances saved ecosystems under the normal simulation rules. After at least one minute since the last simulated timestamp, `terrarium_inspect({habitat,section:"return"})` and the panel expose `returnReport`: elapsed/simulated time, metric changes, removed organisms and current care warnings. A report event and irrigation summaries use piggyback delivery and do not independently trigger a model round. Neighbor diffusion can raise a cell’s moisture while evaporation reduces the box total; there is no dew mechanic. Scheduled watering is included in the chronological catch-up. No attendance, streak or additional offline penalties are applied.
 
@@ -326,3 +328,5 @@ The public gallery requests `GET /api/leaderboard?kind=land|water&view=gallery&p
 `src/leaderboard.ts` and `src/report-socket.ts` provide the shared land/water report path through `/api/reports/ws`. Both habitats keep independent IDs, tokens and delta baselines. New clients do not fall back to HTTP Push after a handshake failure. Server HTTP routes remain available for older clients under cloud policy. Read-only GET requests retry one connection reset on a fresh connection within the original timeout; writes do not retry. Sync status records the attempted transport and snapshot time, while successful times advance only after an accepted acknowledgement.
 
 Bugfix-only releases use `<base-version>-bugfix.X` without a theme. They are published on npm’s `latest` tag. Standard SemVer orders `0.8.7-bugfix.1` below `0.8.7`, so a deployment already on `0.8.7` must select this version explicitly in the extension version list.
+
+地箱金币与商人：`terrarium_merchant` 出售养大的植物，购买十款装饰/功能花盆，并在场地格子上摆放或收回。效果只作用于本格植物；空盆允许后续播种。停止生长不免除照料，施肥不增加出售价值。金币榜使用 `terrarium_leaderboard({metric:"coins"})`，与生态积分分开；WebUI 提供交易入口，公开观察站可查看金币榜。钱包随箱子存档与增量同步，旧存档零金币起步。完整价格和规则见 [商人](src/rules/merchant.md)。

@@ -2,6 +2,16 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.8.10 — 新邻初见 · 第三阶段
+
+- Add a land plant merchant, persistent coin wallet and ten decorative/functional pots placed per plot. Sales require natural growth; fertilizer cannot create sale credit. Pot effects include growth speed, still life, water retention, drainage, shade, light and leaf recovery.
+- Add an independent wallet-balance leaderboard with lifetime earnings and own rank, available to agents and the public observation page. Preserve old saves and full/delta report checksums.
+
+- Add daisies, lavender, bees and butterflies through existing sow/release tools. Daytime nectar visits carry pollen between plants of the same species; pollination adds two portions to a seed drop, with at most three stored charges per plant.
+- Add neon tetra and corydoras eggs, four-hour incubation and twelve-hour juvenile appearances. Mature healthy pairs require good water and nearby aquatic cover; poor water slows incubation or damages eggs.
+- Reserve population capacity for eggs and reduce new-species breeding near capacity. Summarize reproduction and pollination events per simulation update.
+- Render new flowers and pollinators, fish eggs and smaller juveniles in panels, observation scenes and photos. Preserve existing saves, credentials and tools.
+
 ## 0.8.9 — 照记影踪
 
 - Add `terrarium_take_photo` for claimed land and water boxes: a 1280×1600 Material You PNG with an optional 120-character caption, the captured scene, name, time, organism counts, score and expansion level.

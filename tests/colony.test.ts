@@ -56,7 +56,7 @@ it('lets a lone mature queen lay in the nest and hatches eggs there on a fractio
   expect(state.eggs!.every(egg => egg.laidAtMs === start + hour / 4 && egg.hatchesAtMs === start + 1.25 * hour)).toBe(true);
   const hatchAt = state.eggs![0].hatchesAtMs;
   expect(advance(state, hatchAt - 1, 'UTC').filter(change => change.kind === 'birth')).toHaveLength(0);
-  expect(advance(state, hatchAt, 'UTC').filter(change => change.kind === 'birth')).toHaveLength(3);
+  expect(advance(state, hatchAt, 'UTC').filter(change => change.kind === 'birth')).toHaveLength(1);
   expect(state.bugs.filter(bug => bug.role === 'worker' && bug.inside?.nestId === nest.id)).toHaveLength(3);
   expect(validState(state)).toBe(true);
 });

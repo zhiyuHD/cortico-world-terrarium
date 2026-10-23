@@ -548,3 +548,22 @@ it('uses the same WS route for both World habitats and recovers water without ch
     expect(Object.keys(credentials).sort()).toEqual([land.id, water.id].sort());
   } finally { await world.stop(); await proxy.close(); }
 });
+
+it('syncs wallets over full and incremental reports and reads a separate coin ranking', async () => {
+  const { url, dir } = await service();
+  const client = new LeaderboardClient({ url, id: '', automaticIds: true, incrementalReports: true, credentialsFile: join(dir, 'wallet-credentials.json') });
+  const { trade } = await import('../src/merchant.ts');
+  const state = newState(Date.now());
+  state.plants[0].growthHours = state.plants[0].naturalGrowthHours = 48; state.plants[0].stage = 3;
+  trade(state, { action: 'sell', id: 'fern' });
+  await client.report(state, 'day');
+  expect((await client.coinLeaderboard(10)).own).toMatchObject({ coins: 48, earned: 48, rank: 1 });
+  trade(state, { action: 'buy', pot: 'clay' }); trade(state, { action: 'place', pot: 'clay', x: 0, y: 0 });
+  state.updatedAtMs++;
+  await client.report(state, 'day');
+  expect((await client.coinLeaderboard(10)).own).toMatchObject({ coins: 24, earned: 48 });
+  const gallery = await (await fetch(url + '/api/leaderboard?kind=land&view=gallery')).json();
+  expect(gallery.entries[0].state.economy.pots).toEqual([{ kind: 'clay', x: 0, y: 0 }]);
+  expect((await client.leaderboard(10)).own?.score).toBeGreaterThan(0);
+  client.close();
+});

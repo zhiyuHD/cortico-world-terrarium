@@ -255,7 +255,7 @@ it('lays eggs, reserves capacity, hatches juveniles and round trips older and ex
   expect(state.eggs!.every(egg => egg.hatchesAtMs === start + 2 * hour)).toBe(true);
   expect(migrateState(JSON.parse(JSON.stringify(state)))).toEqual(state);
   expect(advance(state, start + 2 * hour - 1, 'Asia/Shanghai').some(event => event.kind === 'birth')).toBe(false);
-  expect(advance(state, start + 2 * hour, 'Asia/Shanghai').filter(event => event.kind === 'birth')).toHaveLength(3);
+  expect(advance(state, start + 2 * hour, 'Asia/Shanghai').filter(event => event.kind === 'birth')).toHaveLength(1);
   expect(state.bugs.slice(2).every(bug => bug.ageHours === 0 && bug.energy === 45)).toBe(true);
   expect(state.eggs).toEqual([]); expect(validState(state)).toBe(true);
   const old = newState(start); expect(migrateState(JSON.parse(JSON.stringify(old)))).toEqual(old);
@@ -333,7 +333,7 @@ it('incubates ant eggs for one hour within the shared population limit', async (
   expect(state.eggs).toHaveLength(3); expect(state.eggs![0].hatchesAtMs).toBe(start + 2 * hour);
   advance(state, start + 2 * hour - TERRARIUM_ANT_ACTION_INTERVAL_MS, 'Asia/Shanghai'); expect(state.bugs).toHaveLength(2);
   const hatched = advance(state, start + 2 * hour, 'Asia/Shanghai');
-  expect(hatched.filter(change => change.kind === 'birth')).toHaveLength(3); expect(state.bugs).toHaveLength(5);
+  expect(hatched.filter(change => change.kind === 'birth')).toHaveLength(1); expect(state.bugs).toHaveLength(5);
   expect(validState(state)).toBe(true);
 });
 

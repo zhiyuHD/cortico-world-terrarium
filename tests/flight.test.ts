@@ -5,7 +5,7 @@ import { flightDraw, TERRARIUM_FLY_ACTION_INTERVAL_MS, TERRARIUM_FLY_MOVE_PROBAB
 it('moves 75% of flying actions, stays otherwise, and never leaves the grid', () => {
   let moved = 0;
   for (let i = 0; i < 4000; i++) {
-    const start = i * TERRARIUM_FLY_ACTION_INTERVAL_MS;
+    const start = 6 * 3_600_000 + i * TERRARIUM_FLY_ACTION_INTERVAL_MS;
     const state = newState(start), bug = releaseBug(state, TERRARIUM_FLY_SPECIES[i % TERRARIUM_FLY_SPECIES.length], i % 5, i % 5);
     const x = bug.x, y = bug.y;
     advance(state, start + TERRARIUM_FLY_ACTION_INTERVAL_MS - 1, 'UTC');

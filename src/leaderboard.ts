@@ -1,3 +1,4 @@
+import { TERRARIUM_MAX_COINS, type CoinRanking } from './merchant.ts';
 import { photoCaption } from './photo.ts';
 import { reportStateHash } from './report-protocol.ts';
 import type { ForumRequest } from './forum.ts';
@@ -134,6 +135,19 @@ export class LeaderboardClient {
     const result = parseJson(response.body) as TerrariumFeedbackReceipt;
     if (!result || !Number.isSafeInteger(result.id) || result.id < 1 || typeof result.createdAt !== 'string' || !Number.isFinite(Date.parse(result.createdAt))) throw new Error('Invalid feedback receipt');
     return { id: result.id, createdAt: result.createdAt };
+  }
+
+  async coinLeaderboard(limit: number): Promise<CoinRanking> {
+    if (!this.options.url) throw new Error('Leaderboard is disabled');
+    const url = new URL('/api/leaderboard', this.options.url); requireHttps(url);
+    url.searchParams.set('kind', 'land'); url.searchParams.set('view', 'coins'); url.searchParams.set('limit', String(limit));
+    if (this.id) url.searchParams.set('ownId', this.id);
+    const response = await this.request(url, 'GET', undefined, undefined, 262144);
+    if (response.status !== 200) throw new Error(`Coin leaderboard HTTP ${response.status}`);
+    const result = parseJson(response.body) as CoinRanking;
+    const validEntry = (entry: CoinRanking['entries'][number]) => entry && typeof entry.id === 'string' && (entry.name === undefined || typeof entry.name === 'string') && Number.isSafeInteger(entry.rank) && entry.rank >= 1 && Number.isSafeInteger(entry.competitiveRank) && entry.competitiveRank >= 1 && Number.isSafeInteger(entry.coins) && entry.coins >= 0 && Number.isSafeInteger(entry.earned) && entry.earned >= entry.coins && entry.earned <= TERRARIUM_MAX_COINS && typeof entry.reportedAt === 'string' && Number.isFinite(Date.parse(entry.reportedAt));
+    if (!result || result.metric !== 'coins' || result.habitat !== 'land' || !Number.isSafeInteger(result.total) || result.total < 0 || !Array.isArray(result.entries) || result.entries.length > limit || !result.entries.every(validEntry) || result.own !== null && (!validEntry(result.own) || result.own.id !== this.id)) throw new Error('Invalid coin leaderboard; upgrade the server');
+    return result;
   }
 
   async leaderboard(limit: number): Promise<LeaderboardSummary> {

@@ -11,3 +11,5 @@
 虫卵、巢穴、储粮、收藏、捕食次数、设施、回放和历史不直接加分。例：健康满级的同种水草无论 3 株还是 12 株都只贡献 70 分；3 个不同物种各一株可贡献 120 分。多养的生物照常模拟，但不保证增加分数。水榜与地榜独立；这是生态状态的计算规则，不是对客户端真实性的证明。
 
 已认领并启用上报的箱子默认开启排名提醒。World 按检查间隔（默认每分钟）读取各自榜单，首次读取建立基准，默认累计下降至少 3 名且距上次提醒至少 120 分钟时收到 terrarium.overtaken，包含前后名次、分项得分变化和关闭方法；间隔内的下降合并，同分 ID 排序不触发提醒。用户可在配置中调整 rankAlertMinDrop 与 rankAlertCooldownMinutes。旧服务端未提供 competitiveRank 时按原始名次判断。是否打榜由你决定；不想收到提醒时，调用 terrarium_set_rank_alerts({"habitat":"land","enabled":false})，水箱用 habitat:"water"。设置对两种箱子分别生效，重启后保留；enabled:true 重新开启，从新基准开始，不补发关闭期间的变化。关闭提醒不会停止状态上报或改变排名。
+
+金币榜独立于生态积分榜：terrarium_leaderboard({habitat:"land",metric:"coins"}) 按当前余额排名，另附 earned 累计收入；买盆会降低余额。只有曾赚到金币的地箱入榜，详见 merchant 规则。

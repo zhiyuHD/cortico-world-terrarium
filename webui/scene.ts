@@ -11,15 +11,16 @@ export { createWaterScene, createWaterReplayControls } from './water-scene.ts';
 export { createPublicSelect, createPublicReplayControls } from './public-controls.ts';
 
 export interface SceneState extends DevelopmentState {
+  economy?: import('../src/merchant.ts').Economy;
   phase: 'day' | 'night'; soil?: SoilCell[]; eggs?: EggState[]; nests?: NestState[]; food?: LandFood[];
   webs?: import('../src/state.ts').SpiderWeb[];
-  plants: Array<{ id: string; species: string; x: number; y: number; moisture: number; growthHours?: number; stage: number; dry: boolean; health: number; leafDamage?: number }>;
+  plants: Array<{ id: string; species: string; x: number; y: number; moisture: number; growthHours?: number; stage: number; dry: boolean; health: number; leafDamage?: number; pollination?: number }>;
   seeds: Array<{ id: string; species: string; x: number; y: number }>;
   bugs: Array<{ id: string; species: string; x: number; y: number; carrying?: number; role?: 'queen' | 'worker'; inside?: import('../src/colony.ts').NestPosition; energy?: number; hunger?: number }>;
   items: Array<{ id: 'coin' | 'pebble'; x: number; y: number }>;
 }
 export function landScene(state: SceneState) {
-  return { phase: state.phase, gridSize: capacity(state).size, facilities: state.facilities, eggs: state.eggs, nests: state.nests?.map(n => ({ ...n, foodCapacity: n.depth * 20 })), food: state.food, webs: state.webs, seeds: state.seeds, items: state.items, soil: state.soil?.map(cell => ({ ...cell, daylight: daylight(state, cell.x, cell.y) })), plants: state.plants.map(p => ({ ...p, flower: flowerStage(p), seedHead: hasSeedHead(p) })), bugs: state.bugs.map(b => ({ ...b, flying: isFlying(b.species) })) };
+  return { economy: state.economy ? { pots: state.economy.pots } : undefined, phase: state.phase, gridSize: capacity(state).size, facilities: state.facilities, eggs: state.eggs, nests: state.nests?.map(n => ({ ...n, foodCapacity: n.depth * 20 })), food: state.food, webs: state.webs, seeds: state.seeds, items: state.items, soil: state.soil?.map(cell => ({ ...cell, daylight: daylight(state, cell.x, cell.y) })), plants: state.plants.map(p => ({ ...p, flower: flowerStage(p), seedHead: hasSeedHead(p) })), bugs: state.bugs.map(b => ({ ...b, flying: isFlying(b.species) })) };
 }
 export function drawScene(canvas: HTMLCanvasElement, state: SceneState, positions?: ReadonlyMap<string, { x: number; y: number }>, hits?: ReadonlyArray<{ x: number; y: number; strength: number }>): void { drawLand(canvas, landScene(state), positions, hits); }
 export function createLandRenderer(canvas: HTMLCanvasElement) {

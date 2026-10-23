@@ -1,3 +1,4 @@
+import { coinRanking } from '../src/merchant.ts';
 import { galleryPage } from './gallery.ts';
 import { FeedbackStore, FeedbackError } from './feedback.ts';
 import packageMetadata from '../package.json' with { type: 'json' };
@@ -257,6 +258,11 @@ export async function start(options: ServerOptions = {}): Promise<ReturnType<typ
         const kind = query.get('kind');
         if (kind !== null && kind !== 'land' && kind !== 'water') { reply(400, { error: 'Invalid box kind' }); return; }
         const ranked = Object.values(registry).filter(entry => kind === null || (entry.kind ?? 'land') === kind).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+        if (query.get('view') === 'coins') {
+          const limit = Number(query.get('limit') ?? 20);
+          if (kind !== 'land' || !Number.isInteger(limit) || limit < 1 || limit > 100) { reply(400, { error: 'Coin ranking requires land and limit 1..100' }); return; }
+          reply(200, coinRanking(ranked as Array<Entry & { state: TerrariumState }>, limit, query.get('ownId') ?? undefined)); return;
+        }
         if (query.get('view') === 'gallery') {
           if (!kind) { reply(400, { error: 'Gallery requires a box kind' }); return; }
           try { reply(200, galleryPage(ranked, query)); }
