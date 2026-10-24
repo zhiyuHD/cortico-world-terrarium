@@ -1,5 +1,5 @@
 import { TERRARIUM_MAX_COINS, type CoinRanking } from './merchant.ts';
-import { photoCaption } from './photo.ts';
+import { photoCaption, parsePhotoLink, type PhotoLink } from './photo.ts';
 import { reportStateHash } from './report-protocol.ts';
 import type { ForumRequest } from './forum.ts';
 import { TERRARIUM_DEFAULTS } from './config.ts';
@@ -55,7 +55,7 @@ export class LeaderboardClient {
 
   get id(): string | undefined { return this.credentials?.id ?? (!this.options.automaticIds && this.options.token ? this.options.id : undefined); }
 
-  async takePhoto(state: TerrariumState | AquariumState, phase: 'day' | 'night', caption: string): Promise<{ bytes: Buffer; stateHash: string; capturedAt: string }> {
+  async takePhoto(state: TerrariumState | AquariumState, phase: 'day' | 'night', caption: string): Promise<{ bytes: Buffer; stateHash: string; capturedAt: string } & Partial<PhotoLink>> {
     caption = photoCaption(caption);
     if (!this.options.url) throw new Error('Photos require a configured server');
     if (!this.id) throw new Error('Claim a box before taking a photo');
@@ -89,7 +89,10 @@ export class LeaderboardClient {
           if (res.headers['content-type'] !== 'image/png' || !bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) || res.headers['x-terrarium-state-hash'] !== stateHash || typeof capturedAt !== 'string' || !Number.isFinite(Date.parse(capturedAt))) {
             reject(new Error('Invalid photo response or mismatched snapshot')); return;
           }
-          resolve({ bytes, stateHash, capturedAt });
+          try {
+            const link = parsePhotoLink(res.headers['x-terrarium-photo-url'], res.headers['x-terrarium-photo-expires-at'], capturedAt);
+            resolve({ bytes, stateHash, capturedAt, ...link });
+          } catch (error) { reject(error); }
         });
       });
       const deadline = setTimeout(() => req.destroy(new Error('Photo request timed out')), Math.max(25000, this.options.requestTimeoutMs ?? 0));

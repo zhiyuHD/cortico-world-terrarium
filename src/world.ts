@@ -171,7 +171,7 @@ export class TerrariumWorld implements World {
         const client = habitat === 'land' ? this.leaderboard : this.waterLeaderboard;
         const photo = await client.takePhoto(state, phase(this.now(), this.opts.timezone), caption);
         const description = `${state.name} · ${habitat === 'land' ? '地箱' : '水箱'} · ${photo.capturedAt}${caption ? ` · ${caption}` : ''}`;
-        return { text: JSON.stringify({ habitat, capturedAt: photo.capturedAt, stateHash: photo.stateHash, caption, image: '附件为拍摄时的生态箱海报。可将 Core 给出的 log: 图片句柄传给 QQ 发图工具；拍照本身没有发送消息。' }), blobs: [{ bytes: photo.bytes, mime: 'image/png', name: `terrarium-${habitat}-${photo.capturedAt.replace(/[:.]/g, '-')}.png`, fallbackText: description }] };
+        return { text: JSON.stringify({ habitat, capturedAt: photo.capturedAt, stateHash: photo.stateHash, caption, url: photo.url ?? null, expiresAt: photo.expiresAt ?? null, ...(photo.url ? {} : { urlUnavailableReason: '当前服务端未提供临时链接，可使用图片附件；链接功能需要服务端支持。' }), image: '附件为拍摄时的生态箱海报。可使用 Core 给出的 log: 图片句柄；仅支持 HTTPS 图片的工具可使用 url，并留意 expiresAt。拍照本身没有发送消息。' }), blobs: [{ bytes: photo.bytes, mime: 'image/png', name: `terrarium-${habitat}-${photo.capturedAt.replace(/[:.]/g, '-')}.png`, fallbackText: description }] };
       }) },
       { ...TERRARIUM_NOTIFICATION_TOOL_DECL, handler: async args => this.serial(async () => {
         if (!this.host) throw new Error('Terrarium is not running');

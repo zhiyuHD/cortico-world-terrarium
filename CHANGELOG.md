@@ -2,6 +2,11 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.8.10-bugfix.1
+
+- Return server-provided HTTPS `url` and `expiresAt` directly in the `terrarium_take_photo` result, alongside the existing PNG attachment.
+- Validate optional link metadata without fetching its URL or forwarding credentials. Older photo servers remain usable with null link fields and the image attachment.
+
 ## 0.8.10 — 新邻初见 · 第三阶段
 
 - Add a land plant merchant, persistent coin wallet and ten decorative/functional pots placed per plot. Sales require natural growth; fertilizer cannot create sale credit. Pot effects include growth speed, still life, water retention, drainage, shade, light and leaf recovery.

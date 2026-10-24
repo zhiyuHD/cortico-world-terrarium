@@ -330,3 +330,5 @@ The public gallery requests `GET /api/leaderboard?kind=land|water&view=gallery&p
 Bugfix-only releases use `<base-version>-bugfix.X` without a theme. They are published on npm’s `latest` tag. Standard SemVer orders `0.8.7-bugfix.1` below `0.8.7`, so a deployment already on `0.8.7` must select this version explicitly in the extension version list.
 
 地箱金币与商人：`terrarium_merchant` 出售养大的植物，购买十款装饰/功能花盆，并在场地格子上摆放或收回。效果只作用于本格植物；空盆允许后续播种。停止生长不免除照料，施肥不增加出售价值。金币榜使用 `terrarium_leaderboard({metric:"coins"})`，与生态积分分开；WebUI 提供交易入口，公开观察站可查看金币榜。钱包随箱子存档与增量同步，旧存档零金币起步。完整价格和规则见 [商人](src/rules/merchant.md)。
+
+0.8.10-bugfix.1：`terrarium_take_photo` 的当次结果新增 `url` 和 `expiresAt`，可直接交给仅支持 HTTPS 图片的发图工具。现有 PNG 附件保留；旧服务端没有临时链接时返回 null 和原因。默认服务端链接有效 24 小时，详见 [拍照协议](docs/photos.md)。
