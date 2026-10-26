@@ -1,3 +1,4 @@
+import { operationTools } from './tool-operations.ts';
 import { mkdir, mkdtemp, readFile, rename, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -49,7 +50,7 @@ it('reports elapsed changes and keeps tool edits across restarts', async () => {
     expect(events.some(({ event }) => event.type === 'terrarium.phase')).toBe(true);
     expect(events.filter(({ event }) => event.type === 'terrarium.care' && event.text.includes('缺水'))).toHaveLength(1);
     expect(events.filter(({ event, options }) => event.type === 'terrarium.care' && event.text.includes('缺水') && options?.trigger === 'debounce')).toHaveLength(1);
-    const tools = world.tools();
+    const tools = operationTools(world);
     const inspect = tools.find(tool => tool.name === 'terrarium_inspect')!;
     const water = tools.find(tool => tool.name === 'terrarium_water')!;
     const move = tools.find(tool => tool.name === 'terrarium_move')!;
@@ -111,7 +112,7 @@ it('delivers birth and hunger events so the bot can inspect the changed state', 
     const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: '' }, timezone: 'Asia/Shanghai', stateFile: file, now: () => now });
     await world.start(host);
     now += 60_000;
-    const inspect = world.tools().find(tool => tool.name === 'terrarium_inspect')!;
+    const inspect = operationTools(world).find(tool => tool.name === 'terrarium_inspect')!;
     const observed = JSON.parse(String(await inspect.handler({ habitat: 'land' }, {} as ToolCallContext)));
     expect(observed.bugs).toHaveLength(4);
     const soil = JSON.parse(String(await inspect.handler({ habitat: 'land', section: 'soil' }, {} as ToolCallContext)));
@@ -119,13 +120,13 @@ it('delivers birth and hunger events so the bot can inspect the changed state', 
     expect(soil.soil[0].light).toBe(soil.soil[0].daylight);
     expect(soil.requirements.moss.maxLight).toBeLessThan(soil.requirements.basil.minLight);
     expect(observed.history.samples).toBe(2);
-    const history = world.tools().find(tool => tool.name === 'terrarium_history')!;
+    const history = operationTools(world).find(tool => tool.name === 'terrarium_history')!;
     const cellHistory = JSON.parse(String(await history.handler({ x: 0, y: 0, limit: 1 }, {} as ToolCallContext)));
     expect(cellHistory.samples).toEqual([{ recordedAtMs: now, x: 0, y: 0, moisture: expect.closeTo(soil.soil[0].moisture, 1) }]);
     await expect(history.handler({ plant: 'fern', x: 0, y: 0 }, {} as ToolCallContext)).rejects.toThrow('OR');
     await expect(history.handler({ x: 9, y: 0 }, {} as ToolCallContext)).rejects.toThrow('grid');
     await expect(history.handler({ plant: 'fern', limit: TERRARIUM_MAX_HISTORY + 1 }, {} as ToolCallContext)).rejects.toThrow('limit');
-    const remove = world.tools().find(tool => tool.name === 'terrarium_remove')!;
+    const remove = operationTools(world).find(tool => tool.name === 'terrarium_remove')!;
     await remove.handler({ id: 'fern' }, {} as ToolCallContext);
     now += 60 * 60_000;
     const plantHistory = JSON.parse(String(await history.handler({ plant: 'fern' }, {} as ToolCallContext))).samples;
@@ -180,7 +181,7 @@ it('advances ants every 10 seconds while reads preserve files and synchronize bo
     const initialLand = await readFile(file, 'utf8'), initialWater = await readFile(waterFile, 'utf8');
     const initialLandTime = (await stat(file)).mtimeMs, initialWaterTime = (await stat(waterFile)).mtimeMs;
     const context = {} as ToolCallContext;
-    const call = async (name: string, args: Record<string, unknown>) => JSON.parse(String(await world.tools().find(tool => tool.name === name)!.handler(args, context)));
+    const call = async (name: string, args: Record<string, unknown>) => JSON.parse(String(await operationTools(world).find(tool => tool.name === name)!.handler(args, context)));
     const panel = world.webUi();
     for (let step = 1; step <= 12; step++) {
       await vi.advanceTimersByTimeAsync(5_000);
@@ -280,7 +281,7 @@ it('runs a newly claimed ant without reads and saves its unsynchronized state on
     await vi.advanceTimersByTimeAsync(10_000);
     await settleScheduledUpdate(async () => { await expect(stat(file)).rejects.toMatchObject({ code: 'ENOENT' }); });
     const context = {} as ToolCallContext;
-    const call = async (name: string, args: Record<string, unknown>) => JSON.parse(String(await world.tools().find(tool => tool.name === name)!.handler(args, context)));
+    const call = async (name: string, args: Record<string, unknown>) => JSON.parse(String(await operationTools(world).find(tool => tool.name === name)!.handler(args, context)));
     const box = await call('terrarium_claim', { habitat: 'land' });
     const released = await call('terrarium_release_bug', { species: 'ant', x: 2, y: 2 });
     const initial = await readFile(file, 'utf8'), initialTime = (await stat(file)).mtimeMs, initialReports = reports;
@@ -358,7 +359,7 @@ it('delivers critical plant events once across a restart and keeps unclaimed wat
   const host = { log: { warn() {} }, async pushEvent(event: Omit<EventEnvelope, 'cursor'>, options?: PushOptions) { events.push({ event, options }); return { ...event, cursor: events.length }; } } as unknown as WorldHost;
   const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: '' }, timezone: 'UTC', stateFile: file, now: () => now });
   const context = {} as ToolCallContext;
-  const area = world.tools().find(tool => tool.name === 'terrarium_water_area')!;
+  const area = operationTools(world).find(tool => tool.name === 'terrarium_water_area')!;
   try {
     await world.start(host);
     await expect(area.handler({ x1: 0, y1: 0, x2: 4, y2: 4 }, context)).rejects.toThrow('not claimed');
@@ -385,7 +386,7 @@ it('persists care settings and collections, waters once after offline catch-up a
   const host = { log: { warn() {} }, async pushEvent(event: Omit<EventEnvelope, 'cursor'>) { return { ...event, cursor: 1 }; } } as unknown as WorldHost;
   const options = { cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: '' }, timezone: 'Asia/Shanghai', stateFile: file, now: () => now };
   let world = new TerrariumWorld(options);
-  const invoke = async (name: string, args: Record<string, unknown>) => JSON.parse(String(await world.tools().find(t => t.name === name)!.handler(args, {} as ToolCallContext)));
+  const invoke = async (name: string, args: Record<string, unknown>) => JSON.parse(String(await operationTools(world).find(t => t.name === name)!.handler(args, {} as ToolCallContext)));
   try {
     await world.start(host);
     await invoke('terrarium_claim', { habitat: 'land' }); await invoke('terrarium_claim', { habitat: 'water' });
@@ -414,7 +415,7 @@ it('exposes retained deaths through a read tool and keeps inspect bounded across
   s.bugs = [{ id: 'bug-fixture', species: 'beetle', x: 2, y: 2, ageHours: 5, energy: 40, hunger: 99.99 }];
   const host = { log: { warn() {} }, async pushEvent(event: Omit<EventEnvelope, 'cursor'>) { return { ...event, cursor: 1 }; } } as unknown as WorldHost;
   const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: '' }, timezone: 'UTC', stateFile: file, now: () => now });
-  const call = async (name: string, args: Record<string, unknown> = {}) => JSON.parse(String(await world.tools().find(t => t.name === name)!.handler(args, {} as ToolCallContext)));
+  const call = async (name: string, args: Record<string, unknown> = {}) => JSON.parse(String(await operationTools(world).find(t => t.name === name)!.handler(args, {} as ToolCallContext)));
   try {
     await saveState(file, s); await world.start(host);
     const result = await call('terrarium_deaths');
@@ -435,7 +436,7 @@ it('returns changed IDs for collection operations and pages listings without ret
   s.collection = Array.from({ length: 47 }, (_, i) => ({ kind: 'plant', specimen: { ...s.plants[0], id: `stored-${i}` } }));
   const host = { log: { warn() {} }, async pushEvent(event: object) { return { ...event, cursor: 1 }; } } as unknown as WorldHost;
   const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: '' }, timezone: 'UTC', stateFile: file, now: () => now });
-  const call = async (name: string, args: Record<string, unknown>) => JSON.parse(String(await world.tools().find(t => t.name === name)!.handler(args, {} as ToolCallContext)));
+  const call = async (name: string, args: Record<string, unknown>) => JSON.parse(String(await operationTools(world).find(t => t.name === name)!.handler(args, {} as ToolCallContext)));
   try {
     await saveState(file, s); await world.start(host);
     const collected = await call('terrarium_collection', { action: 'collect', id: 'fern' });

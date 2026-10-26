@@ -1,3 +1,4 @@
+import { operationTools } from './tool-operations.ts';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -63,7 +64,7 @@ it('delivers broadcasts and targeted notices as external events, deduplicating b
   const host = { log: { warn: (...args: unknown[]) => warnings.push(args) }, async pushEvent(event: Omit<EventEnvelope, 'cursor'>) { events.push(event); return { ...event, cursor: events.length }; } } as unknown as WorldHost;
   const context = {} as ToolCallContext;
   let world = new TerrariumWorld(options);
-  const call = async (name: string, args: Record<string, unknown> = {}) => JSON.parse(String(await world.tools().find(tool => tool.name === name)!.handler(args, context)));
+  const call = async (name: string, args: Record<string, unknown> = {}) => JSON.parse(String(await operationTools(world).find(tool => tool.name === name)!.handler(args, context)));
   const notices = () => events.filter(event => event.type === 'terrarium.announcement');
   const beforeClaim = await admin('publish', '--title', '服务端通知', '--text', '认领前的广播\n第二行正文') as Announcement;
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });

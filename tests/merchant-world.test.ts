@@ -1,3 +1,4 @@
+import { operationTools } from './tool-operations.ts';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,7 +16,7 @@ it('shares persisted merchant transactions between the AI tool and WebUI and res
   const options = { cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: '', tickIntervalMs: 3_600_000 }, stateFile, timezone: 'UTC', now: () => now };
   const host = { log: { warn() {} }, async pushEvent(event: unknown) { return event; } } as unknown as WorldHost;
   let world = new TerrariumWorld(options);
-  const call = async (args: Record<string, unknown>) => JSON.parse(String(await world.tools().find(t => t.name === 'terrarium_merchant')!.handler(args, {} as ToolCallContext)));
+  const call = async (args: Record<string, unknown>) => JSON.parse(String(await operationTools(world).find(t => t.name === 'terrarium_merchant')!.handler(args, {} as ToolCallContext)));
   try {
     await world.start(host);
     expect(await call({ action: 'sell', id: 'fern' })).toMatchObject({ coins: 48 });

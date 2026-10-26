@@ -1,3 +1,4 @@
+import { operationTools } from './tool-operations.ts';
 import { createServer } from 'node:http';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -11,7 +12,7 @@ import { capacity } from '../src/progression.ts';
 const host = { log: { warn() {} }, async pushEvent(event: object) { return { ...event, cursor: 1 }; } } as unknown as WorldHost;
 const at = Date.parse('2026-06-01T08:00:00Z');
 function invoke(world: TerrariumWorld, name: string, args: Record<string, unknown> = {}) {
-  return world.tools().find(t => t.name === name)!.handler(args, {} as ToolCallContext).then(result => JSON.parse(String(result)));
+  return operationTools(world).find(t => t.name === name)!.handler(args, {} as ToolCallContext).then(result => JSON.parse(String(result)));
 }
 it('keeps a locally claimed habitat when registration fails and never queries rankings during claim', async () => {
   let registrations = 0, reads = 0;

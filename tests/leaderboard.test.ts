@@ -1,3 +1,4 @@
+import { operationTools } from './tool-operations.ts';
 import { access, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -208,10 +209,10 @@ it('persists renamed boxes across World restarts without changing credentials', 
     const issued = Object.values(saved)[0];
     expect((await fetch(url + '/api/boxes/' + issued.id)).status).toBe(200);
     const callContext = {} as ToolCallContext;
-    const rename = world.tools().find(tool => tool.name === 'terrarium_rename')!;
+    const rename = operationTools(world).find(tool => tool.name === 'terrarium_rename')!;
     const name = '  苔藓与星光 🌱  ';
     expect(JSON.parse(String(await rename.handler({ name }, callContext)))).toEqual({ name: name.trim() });
-    const inspect = world.tools().find(tool => tool.name === 'terrarium_inspect')!;
+    const inspect = operationTools(world).find(tool => tool.name === 'terrarium_inspect')!;
     expect(JSON.parse(String(await inspect.handler({ habitat: 'land' }, callContext))).name).toBe(name.trim());
     expect(await (await fetch(url + '/api/boxes/' + issued.id)).json()).toMatchObject({ id: issued.id, state: { name: name.trim() } });
     expect(await (await fetch(url + '/api/leaderboard')).json()).toMatchObject([{ id: issued.id, state: { name: name.trim() } }]);
@@ -225,7 +226,7 @@ it('persists renamed boxes across World restarts without changing credentials', 
     try {
       await restarted.start(host);
       expect(JSON.parse(await readFile(credentialsFile, 'utf8'))).toEqual(saved);
-      expect(JSON.parse(String(await restarted.tools().find(tool => tool.name === 'terrarium_inspect')!.handler({ habitat: 'land' }, callContext))).name).toBe(name.trim());
+      expect(JSON.parse(String(await operationTools(restarted).find(tool => tool.name === 'terrarium_inspect')!.handler({ habitat: 'land' }, callContext))).name).toBe(name.trim());
       const second = new LeaderboardClient({ url, id: 'another-box', credentialsFile: join(dir, 'another-client.json') });
       const duplicate = newState(now);
       duplicate.name = name.trim();
@@ -266,7 +267,7 @@ it('reads both rankings before claiming and preserves each claimed identity thro
   const now = Date.now(), stateFile = join(dir, 'deployment', 'land', 'state.json'), waterStateFile = join(dir, 'deployment', 'water', 'state.json');
   const options = { cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: url, rankAlertMinDrop: 1, rankAlertCooldownMinutes: 0 }, stateFile, waterStateFile, timezone: 'Asia/Shanghai', now: () => now };
   let world = new TerrariumWorld(options);
-  const call = async (name: string, args: Record<string, unknown> = {}) => JSON.parse(String(await world.tools().find(tool => tool.name === name)!.handler(args, context)));
+  const call = async (name: string, args: Record<string, unknown> = {}) => JSON.parse(String(await operationTools(world).find(tool => tool.name === name)!.handler(args, context)));
   try {
     await world.start(host);
     expect(await call('terrarium_leaderboard')).toEqual({ habitat: 'land', total: 0, entries: [], own: null });
@@ -324,7 +325,7 @@ it('reports disabled rankings without creating a box or credentials', async () =
   const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: '' }, stateFile: join(dir, 'land', 'state.json'), timezone: 'Asia/Shanghai' });
   try {
     await world.start(host);
-    await expect(world.tools().find(tool => tool.name === 'terrarium_leaderboard')!.handler({}, context)).rejects.toThrow('Leaderboard is disabled');
+    await expect(operationTools(world).find(tool => tool.name === 'terrarium_leaderboard')!.handler({}, context)).rejects.toThrow('Leaderboard is disabled');
     await expect(access(join(dir, 'land', 'state.json'))).rejects.toMatchObject({ code: 'ENOENT' });
   } finally { await world.stop(); }
 });
@@ -342,7 +343,7 @@ it('emits rank drops once per habitat, persists baselines and opt-outs, and sile
   const host = { log: { warn: (...args: unknown[]) => warnings.push(args) }, async pushEvent(event: Omit<EventEnvelope, 'cursor'>) { events.push(event); return { ...event, cursor: events.length }; } } as unknown as WorldHost;
   const options = { cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: url, rankAlertMinDrop: 1, rankAlertCooldownMinutes: 0 }, stateFile: join(dir, 'land', 'state.json'), waterStateFile: join(dir, 'water', 'state.json'), timezone: 'Asia/Shanghai', now: () => now };
   let world = new TerrariumWorld(options);
-  const call = async (name: string, args: Record<string, unknown> = {}) => JSON.parse(String(await world.tools().find(tool => tool.name === name)!.handler(args, context)));
+  const call = async (name: string, args: Record<string, unknown> = {}) => JSON.parse(String(await operationTools(world).find(tool => tool.name === name)!.handler(args, context)));
   const alerts = () => events.filter(event => event.type === 'terrarium.overtaken');
   const tick = async () => {
     now += options.cfg.tickIntervalMs;
@@ -406,8 +407,8 @@ it('can disable reminders before claiming without contacting the server or creat
     await world.start(host);
     await vi.waitFor(() => expect(requests).toBe(1));
     requests = 0;
-    await world.tools().find(tool => tool.name === 'terrarium_set_rank_alerts')!.handler({ enabled: false }, context);
-    expect(JSON.parse(String(await world.tools().find(tool => tool.name === 'terrarium_inspect')!.handler({}, context))).land.claimed).toBe(false);
+    await operationTools(world).find(tool => tool.name === 'terrarium_set_rank_alerts')!.handler({ enabled: false }, context);
+    expect(JSON.parse(String(await operationTools(world).find(tool => tool.name === 'terrarium_inspect')!.handler({}, context))).land.claimed).toBe(false);
     expect(requests).toBe(0);
     await expect(access(join(dir, 'land', 'state.json'))).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(access(join(dir, 'land', 'report-credentials.json'))).rejects.toMatchObject({ code: 'ENOENT' });
@@ -423,15 +424,15 @@ it('checks water ranks when no land box is owned', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   try {
     await world.start(host);
-    await world.tools().find(tool => tool.name === 'terrarium_claim')!.handler({ habitat: 'water' }, context);
+    await operationTools(world).find(tool => tool.name === 'terrarium_claim')!.handler({ habitat: 'water' }, context);
     now += TERRARIUM_DEFAULTS.tickIntervalMs;
     await vi.advanceTimersByTimeAsync(10_000);
-    await world.tools().find(tool => tool.name === 'terrarium_inspect')!.handler({}, context);
+    await operationTools(world).find(tool => tool.name === 'terrarium_inspect')!.handler({}, context);
     const rival = newAquarium(now); stockFish(rival, 'guppy', 2, 2);
     await new LeaderboardClient({ url, id: 'water-rival', kind: 'water', credentialsFile: join(dir, 'rival.json') }).report(rival, 'day');
     now += TERRARIUM_DEFAULTS.tickIntervalMs;
     await vi.advanceTimersByTimeAsync(10_000);
-    await world.tools().find(tool => tool.name === 'terrarium_inspect')!.handler({}, context);
+    await operationTools(world).find(tool => tool.name === 'terrarium_inspect')!.handler({}, context);
     expect(events.filter(event => event.type === 'terrarium.overtaken')).toMatchObject([{ senderKey: 'terrarium.water' }]);
     await expect(access(join(dir, 'land', 'state.json'))).rejects.toMatchObject({ code: 'ENOENT' });
   } finally { await world.stop(); vi.useRealTimers(); }
@@ -525,7 +526,7 @@ it('uses the same WS route for both World habitats and recovers water without ch
   let brokenWaterId: string | undefined;
   const proxy = await createReportProxy(url, undefined, id => id === brokenWaterId);
   const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: proxy.url }, stateFile: join(dir, 'deployment', 'land', 'state.json'), waterStateFile: join(dir, 'deployment', 'water', 'state.json'), timezone: 'UTC' });
-  const call = async (name: string, args: Record<string, unknown>) => JSON.parse(String(await world.tools().find(tool => tool.name === name)!.handler(args, {} as ToolCallContext)));
+  const call = async (name: string, args: Record<string, unknown>) => JSON.parse(String(await operationTools(world).find(tool => tool.name === name)!.handler(args, {} as ToolCallContext)));
   try {
     await world.start(host);
     const land = await call('terrarium_claim', { habitat: 'land' });
@@ -566,4 +567,20 @@ it('syncs wallets over full and incremental reports and reads a separate coin ra
   expect(gallery.entries[0].state.economy.pots).toEqual([{ kind: 'clay', x: 0, y: 0 }]);
   expect((await client.leaderboard(10)).own?.score).toBeGreaterThan(0);
   client.close();
+});
+
+it('coalesces queued automatic snapshots and preserves explicit full submissions', async () => {
+  const { url, dir } = await service();
+  const proxy = await createReportProxy(url);
+  const client = new LeaderboardClient({ url: proxy.url, id: '', credentialsFile: join(dir, 'coalesced.json') });
+  try {
+    const state = newState(Date.now());
+    const first = structuredClone(state); first.name = 'Explicit photo snapshot';
+    const latest = structuredClone(state); latest.name = 'Latest queued snapshot';
+    await Promise.all([client.report(state, 'day'), client.report(first, 'day', true), client.report(latest, 'day')]);
+    expect(proxy.frames).toHaveLength(2);
+    const entry = await (await fetch(url + '/api/boxes/' + client.id)).json() as { state: { name: string } };
+    expect(entry.state.name).toBe(latest.name);
+    expect(client.status().state).toBe('synced');
+  } finally { client.close(); await proxy.close(); }
 });

@@ -1,3 +1,4 @@
+import { operationTools } from './tool-operations.ts';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -23,7 +24,7 @@ it('registers each claimed habitat once across repeated tool calls and World res
   const host = { log: { warn: (...args: unknown[]) => warnings.push(args) }, async pushEvent(event: unknown) { events.push(event); return event; } } as unknown as WorldHost;
   const context = {} as ToolCallContext;
   let world = new TerrariumWorld(options);
-  const call = async (name: string, args: Record<string, unknown> = {}) => JSON.parse(String(await world.tools().find(tool => tool.name === name)!.handler(args, context)));
+  const call = async (name: string, args: Record<string, unknown> = {}) => JSON.parse(String(await operationTools(world).find(tool => tool.name === name)!.handler(args, context)));
   try {
     await world.start(host);
     expect(await call('terrarium_inspect')).toMatchObject({ land: { habitat: 'land', claimed: false, sync: { state: 'idle', mode: TERRARIUM_DEFAULTS.incrementalReports ? 'incremental' : 'full', consecutiveFailures: 0 } }, water: { habitat: 'water', claimed: false, sync: { state: 'idle', mode: TERRARIUM_DEFAULTS.incrementalReports ? 'incremental' : 'full', consecutiveFailures: 0 } } });
@@ -113,7 +114,7 @@ it.each(['https://boxes.example.test', 'custom-land'])('ignores the retired ID %
   let registrations = 0;
   server.on('request', req => { if (req.method === 'POST' && req.url === '/api/registrations') registrations++; });
   let world = new TerrariumWorld(options);
-  const call = async (name: string, args: Record<string, unknown> = {}) => JSON.parse(String(await world.tools().find(tool => tool.name === name)!.handler(args, {} as ToolCallContext)));
+  const call = async (name: string, args: Record<string, unknown> = {}) => JSON.parse(String(await operationTools(world).find(tool => tool.name === name)!.handler(args, {} as ToolCallContext)));
   try {
     await world.start(host);
     expect(Object.hasOwn(TERRARIUM_CONFIG_GROUP.schema.properties, 'worlds.terrarium.leaderboardId')).toBe(false);
@@ -148,7 +149,7 @@ it('restores an existing named land box and its token when the ID config is abse
   const host = { log: { warn() {} }, async pushEvent(event: unknown) { return event; } } as unknown as WorldHost;
   try {
     await world.start(host);
-    const claim = world.tools().find(tool => tool.name === 'terrarium_claim')!;
+    const claim = operationTools(world).find(tool => tool.name === 'terrarium_claim')!;
     expect(JSON.parse(String(await claim.handler({ habitat: 'land' }, {} as ToolCallContext)))).toMatchObject({ id: 'existing-land', name: state.name });
     const migrated = JSON.parse(await readFile(localCredentials, 'utf8'));
     expect(migrated[url + '/auto']).toEqual(original[url + '/id/existing-land']);

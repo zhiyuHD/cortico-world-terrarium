@@ -1,3 +1,4 @@
+import { operationTools } from './tool-operations.ts';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -62,8 +63,9 @@ it('enforces one surface ant through release, relocation, restoration, movement 
   const s = colony(2); fillAntEntrance(s, 0, 0); const [a, b] = s.bugs;
   expect(() => releaseBug(s, 'ant', a.x, a.y)).toThrow('already has an ant');
   expect(() => relocateBug(s, b.id, a.x, a.y)).toThrow('already has an ant');
-  collect(s, b.id); expect(() => restoreCollected(s, b.id, a.x, a.y)).toThrow('remains in collection'); expect(s.collection).toHaveLength(1);
-  restoreCollected(s, b.id, 4, 4);
+  collect(s, b.id); restoreCollected(s, b.id, a.x, a.y);
+  expect(s.collection).toHaveLength(0);
+  expect(s.bugs.find(bug => bug.id === b.id)).not.toMatchObject({ x: a.x, y: a.y });
   s.eggs = [{ id: 'egg-hatch', species: 'ant', x: a.x, y: a.y, laidAtMs: start, hatchesAtMs: start + hour }];
   for (let i = 1; i <= 360; i++) { advance(s, start + i * 10_000, 'UTC'); unique(s); }
   expect(s.bugs).toHaveLength(3); expect(validState(s)).toBe(true);
@@ -98,9 +100,9 @@ it('persists the fill-hole tool result and allows planting through the public Wo
   const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: '' }, timezone: 'UTC', stateFile: file, now: () => start });
   try {
     await world.start({ log: { warn() {} }, async pushEvent(e: unknown) { return { ...(e as object), cursor: 1 }; } } as unknown as WorldHost);
-    const tool = world.tools().find(t => t.name === 'terrarium_fill_ant_hole')!;
+    const tool = operationTools(world).find(t => t.name === 'terrarium_fill_ant_hole')!;
     const result = await tool.handler({ x: 0, y: 0 }, {} as ToolCallContext); expect(JSON.stringify(result)).toContain('removedNest');
-    await world.tools().find(t => t.name === 'terrarium_sow')!.handler({ species: 'mint', x: 0, y: 0 }, {} as ToolCallContext);
+    await operationTools(world).find(t => t.name === 'terrarium_sow')!.handler({ species: 'mint', x: 0, y: 0 }, {} as ToolCallContext);
     const loaded = await loadState(file, start); expect(loaded.nests).toEqual([]); expect(loaded.seeds[0]).toMatchObject({ x: 0, y: 0 }); unique(loaded);
   } finally { await world.stop(); await rm(dir, { recursive: true, force: true }); }
 });

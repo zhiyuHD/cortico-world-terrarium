@@ -1,3 +1,4 @@
+import { operationTools } from './tool-operations.ts';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -91,7 +92,7 @@ it('exposes startup care checks, nest feeding and cell protection through the Wo
   const events: { type: string }[] = [];
   const host = { log: { warn() {} }, async pushEvent(event: { type: string }) { events.push(event); return event; } } as unknown as WorldHost;
   const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: '' }, timezone: 'UTC', stateFile: file, now: () => start + hour });
-  const call = async (name: string, args: Record<string, unknown>) => JSON.parse(String(await world.tools().find(t => t.name === name)!.handler(args, {} as ToolCallContext)));
+  const call = async (name: string, args: Record<string, unknown>) => JSON.parse(String(await operationTools(world).find(t => t.name === name)!.handler(args, {} as ToolCallContext)));
   try {
     await world.start(host);
     const result = await call('terrarium_inspect', { habitat: 'land' });

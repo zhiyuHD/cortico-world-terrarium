@@ -1,3 +1,4 @@
+import { operationTools } from './tool-operations.ts';
 import { createServer, type ServerResponse } from 'node:http';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -39,7 +40,7 @@ it.each(['/api/registrations', '/api/leaderboard', '/api/announcements'])('start
     await saveState(file, newState(Date.now() - 60_000));
     await world.start(host);
     await vi.waitFor(() => expect(held).toHaveLength(1));
-    const inspect = world.tools().find(tool => tool.name === 'terrarium_inspect')!;
+    const inspect = operationTools(world).find(tool => tool.name === 'terrarium_inspect')!;
     const result = JSON.parse(String(await inspect.handler({ habitat: 'land' }, {} as ToolCallContext)));
     expect(result.habitat).toBe('land');
     expect(result.plants.length).toBeGreaterThan(0);

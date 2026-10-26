@@ -1,3 +1,4 @@
+import { operationTools } from './tool-operations.ts';
 import { mkdtemp, readFile, writeFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -84,7 +85,7 @@ it('submits through the AI tool and World panel without claiming boxes or exposi
   const host = { log: { warn() {} }, async pushEvent(event: unknown) { return event; } } as unknown as WorldHost;
   await world.start(host);
   try {
-    const tool = world.tools().find(tool => tool.name === 'terrarium_feedback')!;
+    const tool = operationTools(world).find(tool => tool.name === 'terrarium_feedback')!;
     const receipt = JSON.parse(String(await tool.handler({ text: 'AI suggestion' }, {} as ToolCallContext)));
     expect(receipt).toMatchObject({ id: 1 });
     expect(await world.webUi().invoke!('water', 'feedback', [{ text: 'panel suggestion', contact: 'optional' }])).toMatchObject({ id: 2 });

@@ -1,3 +1,4 @@
+import { operationTools } from './tool-operations.ts';
 import { createServer } from 'node:http';
 import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -52,7 +53,7 @@ it.each(['land', 'water'] as const)('returns a frozen %s PNG through the World w
   const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: f.url, tickIntervalMs: 3600000 }, stateFile: join(f.dir, 'land', 'state.json'), waterStateFile: join(f.dir, 'water', 'state.json'), timezone: 'UTC', now: () => now });
   await world.start({ log: { warn() {} }, async pushEvent() {} } as unknown as WorldHost);
   try {
-    const result = await world.tools().find(tool => tool.name === 'terrarium_take_photo')!.handler({ habitat, caption: '今天也很好' }, {} as ToolCallContext) as ToolOutcome;
+    const result = await operationTools(world).find(tool => tool.name === 'terrarium_take_photo')!.handler({ habitat, caption: '今天也很好' }, {} as ToolCallContext) as ToolOutcome;
     expect(JSON.parse(result.text)).toMatchObject({ habitat, caption: '今天也很好', stateHash: f.photos[0].stateHash, ...f.photoLink });
     expect(result.blobs).toHaveLength(1);
     expect(result.blobs![0]).toMatchObject({ bytes: png, mime: 'image/png', fallbackText: expect.stringContaining('今天也很好') });
@@ -86,7 +87,7 @@ it('returns the attachment with explicit null link fields when an older photo se
   const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: f.url, tickIntervalMs: 3600000 }, stateFile, timezone: 'UTC', now: () => now });
   await world.start({ log: { warn() {} }, async pushEvent() {} } as unknown as WorldHost);
   try {
-    const result = await world.tools().find(t => t.name === 'terrarium_take_photo')!.handler({}, {} as ToolCallContext) as ToolOutcome;
+    const result = await operationTools(world).find(t => t.name === 'terrarium_take_photo')!.handler({}, {} as ToolCallContext) as ToolOutcome;
     expect(JSON.parse(result.text)).toMatchObject({ url: null, expiresAt: null, urlUnavailableReason: expect.any(String) });
     expect(result.blobs![0]).toMatchObject({ bytes: png });
   } finally { await world.stop(); }

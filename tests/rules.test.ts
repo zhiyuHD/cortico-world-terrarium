@@ -1,3 +1,4 @@
+import { operationTools } from './tool-operations.ts';
 import { readFile } from 'node:fs/promises';
 import { expect, it } from 'vitest';
 import type { ToolCallContext } from 'cortico/core/types.ts';
@@ -7,7 +8,7 @@ import { TerrariumWorld } from '../src/world.ts';
 
 it('reads every bundled topic before startup without creating or claiming a habitat', async () => {
   const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: '' }, stateFile: '/unused/state.json', timezone: 'UTC' });
-  const tool = world.tools().find(t => t.name === 'terrarium_rules')!;
+  const tool = operationTools(world).find(t => t.name === 'terrarium_rules')!;
   for (const topic of TERRARIUM_RULE_TOPICS) {
     const result = await tool.handler({ topic }, {} as ToolCallContext);
     expect(result).toBe(await readRules(topic));

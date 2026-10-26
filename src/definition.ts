@@ -1,13 +1,15 @@
+import { TERRARIUM_NEIGHBOR_TOOL_DECL } from './neighbors.ts';
+import { groupTools } from './tool-groups.ts';
 import { TERRARIUM_FORUM_TOOL_DECLS } from './forum.ts';
 import { describeTools, type WorldDefinition } from 'cortico/world.ts';
 import { TERRARIUM_DEFAULTS, type TerrariumConfigSection } from './config.ts';
-import { TERRARIUM_AQUATIC_TOOL_DECLS, TERRARIUM_TOOL_DECLS, TerrariumWorld } from './world.ts';
+import { TERRARIUM_GARDEN_TOOL_DECLS, TERRARIUM_AQUATIC_TOOL_DECLS, TERRARIUM_TOOL_DECLS, TerrariumWorld } from './world.ts';
 
 export const TERRARIUM: WorldDefinition<TerrariumConfigSection> = {
   id: 'terrarium', label: 'Terrarium', defaults: () => ({ ...TERRARIUM_DEFAULTS }),
   create: ctx => new TerrariumWorld({ cfg: ctx.cfg, timezone: ctx.timezone, stateFile: `${ctx.dataDir}/terrarium/land/state.json`, waterStateFile: `${ctx.dataDir}/terrarium/water/state.json`, reportToken: ctx.secret('CORTICO_TERRARIUM_REPORT_TOKEN') }),
   describe: {
-    tools: describeTools([...TERRARIUM_TOOL_DECLS, ...TERRARIUM_AQUATIC_TOOL_DECLS, ...TERRARIUM_FORUM_TOOL_DECLS], {
+    tools: describeTools(groupTools([TERRARIUM_NEIGHBOR_TOOL_DECL, ...TERRARIUM_TOOL_DECLS, ...TERRARIUM_GARDEN_TOOL_DECLS, ...TERRARIUM_AQUATIC_TOOL_DECLS, ...TERRARIUM_FORUM_TOOL_DECLS]), {
       terrarium_forum_read: { zh: '阅读、搜索邻里心得，查看帖子、回复、关注动态与资料。', en: 'Reads and searches neighborhood threads, replies, followed neighbors and profiles.' },
       terrarium_forum_post: { zh: '以已认领的生态箱身份发表养育心得或回复。', en: 'Publishes husbandry threads or replies as an already claimed box.' },
       terrarium_forum_like: { zh: '点赞或取消点赞帖子与回复。', en: 'Likes or unlikes forum threads and replies.' },

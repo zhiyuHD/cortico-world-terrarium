@@ -2,6 +2,17 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.9.0 — 满庭新事
+
+- Add tomatoes and strawberries with repeat natural-growth harvests, a fruit basket and merchant fruit sales. Fertilizer does not grant fruit maturity; up to three harvest rounds accumulate.
+- Add mushrooms, woodlice and snails. Natural plant growth drops litter; decomposers consume it and enabled compost bins convert three portions into fertilizer.
+- Add persistent queen breeding switches, colony population caps and shared-food plant protection. Restore collected ants into the nearest free surface cell.
+- Add direct plant/seed transplantation, three ground decorations, distinct plant silhouettes, ripe fruit drawings and hover/touch plant details.
+- Add medaka, shrimp, aquatic snails, vallisneria and java moss through existing aquatic operations.
+- Add opt-in neighbor visits, separate shared-fruit portions, free welcome seed packets and visit notes. Both boxes must opt in; five actions per UTC day, bounded mailboxes and persisted receipt cursors.
+- Consolidate 46 former tools and new operations into 14 tools. Use operation within grouped tools; read detailed rules on demand. Saves, IDs and credentials are preserved.
+- Quarantine malformed announcement caches and fsync atomic replacements. Native server improvements queue brief report bursts, cache policy decisions with immediate cloud-control checks, and read full gallery snapshots only for the requested page.
+
 ## 0.8.10-bugfix.1
 
 - Return server-provided HTTPS `url` and `expiresAt` directly in the `terrarium_take_photo` result, alongside the existing PNG attachment.

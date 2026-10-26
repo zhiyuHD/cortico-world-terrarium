@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
@@ -34,5 +34,21 @@ it('deduplicates simultaneous socket and polling delivery without skipping older
     const restored = new AnnouncementInbox(file, 'https://service.example'); await restored.restore();
     expect(received).toEqual([30, 1]); expect(restored.cursor('box')).toBe(30); expect(restored.cursor('protocol')).toBe(0);
     await restored.receive('box', { announcements: [notice(30)], nextCursor: 30 }, push); expect(received).toEqual([30, 1]);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+it('quarantines a truncated cache and persists new receipts across restarts', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-corrupt-inbox-'));
+  try {
+    const file = join(dir, 'inbox.json');
+    await writeFile(file, Buffer.alloc(4096));
+    const inbox = new AnnouncementInbox(file, 'https://service.example');
+    await inbox.restore();
+    expect(inbox.cursor('box')).toBe(0);
+    await inbox.receive('box', { announcements: [], nextCursor: 37 }, async () => {});
+    const restarted = new AnnouncementInbox(file, 'https://service.example');
+    await restarted.restore(); expect(restarted.cursor('box')).toBe(37);
+    const backup = (await readdir(dir)).find(name => name.includes('.corrupt-'))!;
+    expect(await readFile(join(dir, backup))).toEqual(Buffer.alloc(4096));
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

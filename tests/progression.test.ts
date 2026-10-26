@@ -1,3 +1,4 @@
+import { operationTools } from './tool-operations.ts';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -139,7 +140,7 @@ it('persists expansion, guide and facility actions through the World tool and pa
   const state = newState(now); state.history[0].score = TERRARIUM_LEVELS[1].requiredScore; await saveState(file, state); await saveState(waterFile, newAquarium(now));
   const host = { log: { warn() {} }, async pushEvent(event: object) { return { ...event, cursor: 1 }; } } as unknown as WorldHost;
   const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: '' }, timezone: 'UTC', stateFile: file, waterStateFile: waterFile, now: () => now });
-  const call = async (name: string, args: Record<string, unknown>) => JSON.parse(String(await world.tools().find(t => t.name === name)!.handler(args, {} as ToolCallContext)));
+  const call = async (name: string, args: Record<string, unknown>) => JSON.parse(String(await operationTools(world).find(t => t.name === name)!.handler(args, {} as ToolCallContext)));
   try {
     await world.start(host);
     expect(await call('terrarium_progress', {})).toMatchObject({ level: 1, next: { available: true } });

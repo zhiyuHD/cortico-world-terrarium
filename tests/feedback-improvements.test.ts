@@ -1,3 +1,4 @@
+import { operationTools } from './tool-operations.ts';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -31,7 +32,7 @@ it('previews single and area watering with real warnings without healing, saving
   const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: '' }, timezone: 'UTC', stateFile: file, now: () => now });
   try {
     await world.start({ log: { warn() {} }, async pushEvent(e: unknown) { return { ...(e as object), cursor: 1 }; } } as unknown as WorldHost);
-    const call = async (name: string, args: Record<string, unknown>) => JSON.parse(await world.tools().find(t => t.name === name)!.handler(args, {} as ToolCallContext) as string);
+    const call = async (name: string, args: Record<string, unknown>) => JSON.parse(await operationTools(world).find(t => t.name === name)!.handler(args, {} as ToolCallContext) as string);
     const before = await readFile(file, 'utf8');
     const single = await call('terrarium_water', { plant: s.plants[0].id, amount: 100, preview: true });
     const area = await call('terrarium_water_area', { x1: 0, y1: 0, x2: 4, y2: 4, targetMoisture: 100, preview: true });

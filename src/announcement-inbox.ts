@@ -1,4 +1,5 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, rename } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { dirname } from 'node:path';
 import { TERRARIUM_MAX_ANNOUNCEMENTS, type AnnouncementPage, type Announcement } from './announcements.ts';
 
@@ -8,14 +9,27 @@ export class AnnouncementInbox {
   private inbox: Inbox = { cursors: Object.create(null), seen: [] };
   constructor(private readonly file: string, private readonly origin: string) {}
   async restore(): Promise<void> {
-    let saved: Record<string, Inbox>;
-    try { saved = JSON.parse(await readFile(this.file, 'utf8')); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw error; }
-    const inbox = saved?.[this.origin];
-    if (inbox === undefined) return;
-    if (!inbox || !inbox.cursors || typeof inbox.cursors !== 'object' || Array.isArray(inbox.cursors) || Object.values(inbox.cursors).some(cursor => !Number.isSafeInteger(cursor) || cursor < 0) || !Array.isArray(inbox.seen) || inbox.seen.length > TERRARIUM_MAX_ANNOUNCEMENTS || inbox.seen.some(id => !Number.isSafeInteger(id) || id < 1)) throw new Error('Invalid announcement inbox');
-    this.inbox = { cursors: Object.assign(Object.create(null), inbox.cursors), seen: inbox.seen };
+    const saved = await this.read();
+    const inbox = saved[this.origin];
+    if (inbox) this.inbox = { cursors: Object.assign(Object.create(null), inbox.cursors), seen: inbox.seen };
   }
+  private async read(): Promise<Record<string, Inbox>> {
+    try {
+      const saved: unknown = JSON.parse(await readFile(this.file, 'utf8'));
+      if (!saved || typeof saved !== 'object' || Array.isArray(saved) || Object.values(saved).some(inbox =>
+        !inbox || !inbox.cursors || typeof inbox.cursors !== 'object' || Array.isArray(inbox.cursors) ||
+        Object.values(inbox.cursors).some(cursor => !Number.isSafeInteger(cursor) || Number(cursor) < 0) ||
+        !Array.isArray(inbox.seen) || inbox.seen.length > TERRARIUM_MAX_ANNOUNCEMENTS ||
+        inbox.seen.some((id: unknown) => !Number.isSafeInteger(id) || Number(id) < 1))) throw new SyntaxError('Invalid announcement inbox');
+      return saved as Record<string, Inbox>;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return Object.create(null);
+      if (!(error instanceof SyntaxError)) throw error;
+      await rename(this.file, `${this.file}.corrupt-${Date.now()}-${randomUUID()}`);
+      return Object.create(null);
+    }
+  }
+
   cursor(id: string): number { return this.inbox.cursors[id] ?? 0; }
   receive(id: string, page: AnnouncementPage, push: (notice: Announcement) => Promise<void>): Promise<void> {
     const result = this.queue.then(() => this.deliver(id, page, push)); this.queue = result.catch(() => {}); return result;
@@ -31,11 +45,14 @@ export class AnnouncementInbox {
     if (page.nextCursor > this.cursor(id)) { this.inbox.cursors[id] = page.nextCursor; await this.save(); }
   }
   private async save(): Promise<void> {
-    let saved: Record<string, Inbox> = Object.create(null);
-    try { saved = JSON.parse(await readFile(this.file, 'utf8')); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    const saved = await this.read();
     await mkdir(dirname(this.file), { recursive: true });
-    await writeFile(`${this.file}.tmp`, JSON.stringify({ ...saved, [this.origin]: this.inbox }), { mode: 0o600 });
-    await rename(`${this.file}.tmp`, this.file);
+    const temporary = `${this.file}.${randomUUID()}.tmp`;
+    const file = await open(temporary, 'wx', 0o600);
+    try { await file.writeFile(JSON.stringify({ ...saved, [this.origin]: this.inbox })); await file.sync(); }
+    finally { await file.close(); }
+    await rename(temporary, this.file);
+    const directory = await open(dirname(this.file), 'r');
+    try { await directory.sync(); } finally { await directory.close(); }
   }
 }

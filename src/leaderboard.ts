@@ -45,6 +45,7 @@ export class LeaderboardClient {
   private reportSocket: ReportSocket | undefined;
   private requests = new AbortController();
   private reportQueue: Promise<unknown> = Promise.resolve();
+  private reportGeneration = 0;
   private syncStatus: TerrariumSyncStatus;
 
   constructor(private readonly options: LeaderboardClientOptions) {
@@ -99,6 +100,16 @@ export class LeaderboardClient {
       deadline.unref(); req.once('close', () => clearTimeout(deadline));
       req.on('error', reject); req.end(payload);
     });
+  }
+
+  async neighbors(input: Record<string, unknown>): Promise<unknown> {
+    if (!this.options.url || !this.id) throw new Error('Claim a land box and enable reporting before visiting neighbors');
+    const url = new URL('/api/neighbors', this.options.url); requireHttps(url);
+    const credentials = await this.authorize(url);
+    const response = await this.request(url, 'POST', { ...input, id: credentials.id, clientVersion: TERRARIUM_CLIENT_VERSION }, credentials.token, 65536);
+    const result = parseJson(response.body) as { error?: string };
+    if (response.status !== 200) throw new Error(`Neighbors HTTP ${response.status}: ${result?.error ?? 'Upgrade the server or retry later'}`);
+    return result;
   }
 
   async forum(input: ForumRequest): Promise<unknown> {
@@ -236,8 +247,9 @@ export class LeaderboardClient {
     if (!this.options.url) return Promise.resolve();
     const snapshot = JSON.parse(JSON.stringify(state)) as TerrariumState | AquariumState;
     const signal = this.requests.signal;
+    const generation = ++this.reportGeneration;
     const result = this.reportQueue.then(async () => {
-      if (signal.aborted) return;
+      if (signal.aborted || !full && generation !== this.reportGeneration) return;
       if (!full && this.syncStatus.nextRetryAt && Date.now() < Date.parse(this.syncStatus.nextRetryAt)) return;
       if (full) this.close();
       this.syncStatus.state = 'syncing';
@@ -251,7 +263,7 @@ export class LeaderboardClient {
         this.syncStatus.state = 'error';
         this.syncStatus.lastError = error instanceof Error ? error.message : String(error);
         this.syncStatus.consecutiveFailures++;
-        this.syncStatus.nextRetryAt = new Date(Date.now() + Math.min(300_000, 30_000 * 2 ** Math.min(4, this.syncStatus.consecutiveFailures - 1))).toISOString();
+        this.syncStatus.nextRetryAt = new Date(Date.now() + Math.round(Math.min(240_000, 30_000 * 2 ** Math.min(4, this.syncStatus.consecutiveFailures - 1)) * (.8 + Math.random() * .4))).toISOString();
         throw error;
       }
     });

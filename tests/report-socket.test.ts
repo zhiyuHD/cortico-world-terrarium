@@ -135,7 +135,7 @@ it.each(['land', 'water'] as const)('sends %s full/delta reports and restores fu
 it('serializes concurrent water reports against the acknowledged snapshot without retaining caller mutations', async () => {
   const { client, get, proxy } = await fixture(true, false, 'water');
   const state = newAquarium(Date.now()); stockFish(state, 'guppy', 2, 2);
-  const first = client.report(state, 'day');
+  const first = client.report(state, 'day', true);
   state.fish[0].x = 3; state.name = '水庭';
   const expected = structuredClone(state), second = client.report(state, 'night');
   state.name = '未投递修改'; await Promise.all([first, second]);

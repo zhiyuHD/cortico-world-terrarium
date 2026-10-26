@@ -1,3 +1,4 @@
+import { operationTools } from './tool-operations.ts';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -30,7 +31,7 @@ function fixture(dir: string, now: () => number) {
   const host = { log: { warn() {} }, async pushEvent(event: typeof events[number]) { events.push(event); return event; } } as unknown as WorldHost;
   const options = { cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: '', tickIntervalMs: 3_600_000 }, stateFile: join(dir, 'land', 'state.json'), waterStateFile: join(dir, 'water', 'state.json'), timezone: 'UTC', now };
   let world = new TerrariumWorld(options);
-  const call = async (name: string, args: Record<string, unknown>) => JSON.parse(String(await world.tools().find(t => t.name === name)!.handler(args, {} as ToolCallContext)));
+  const call = async (name: string, args: Record<string, unknown>) => JSON.parse(String(await operationTools(world).find(t => t.name === name)!.handler(args, {} as ToolCallContext)));
   return { events, host, options, get world() { return world; }, replace() { world = new TerrariumWorld(options); }, call };
 }
 

@@ -1,3 +1,4 @@
+import { operationTools } from './tool-operations.ts';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,7 +18,7 @@ it('persists compost tools, emits fertilizer growth events and exposes inventory
   const events: { text: string }[] = [];
   const host = { log: { warn() {} }, async pushEvent(event: { text: string }) { events.push(event); return event; } } as unknown as WorldHost;
   let world = new TerrariumWorld(options);
-  const call = async (name: string, args: Record<string, unknown>) => JSON.parse(String(await world.tools().find(t => t.name === name)!.handler(args, {} as ToolCallContext)));
+  const call = async (name: string, args: Record<string, unknown>) => JSON.parse(String(await operationTools(world).find(t => t.name === name)!.handler(args, {} as ToolCallContext)));
   try {
     await world.start(host);
     expect(await call('terrarium_compost', { action: 'compost', id: 'fern' })).toMatchObject({ fertilizer: 11 });

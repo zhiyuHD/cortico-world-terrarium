@@ -1,3 +1,4 @@
+import { operationTools } from './tool-operations.ts';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -79,7 +80,7 @@ it('keeps complete browser snapshots while default tool inspection stays compact
   const state = matureLand(); await saveState(file, state);
   const host = { log: { warn() {} }, async pushEvent(event: object) { return { ...event, cursor: 1 }; } } as unknown as WorldHost;
   const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: '' }, timezone: 'UTC', stateFile: file, now: () => now });
-  const inspect = world.tools().find(t => t.name === 'terrarium_inspect')!;
+  const inspect = operationTools(world).find(t => t.name === 'terrarium_inspect')!;
   const call = async (args: Record<string, unknown>) => String(await inspect.handler(args, {} as ToolCallContext));
   try {
     await world.start(host);
