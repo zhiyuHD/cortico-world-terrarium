@@ -10,7 +10,7 @@ import { advanceAquarium, newAquarium, validAquarium } from '../src/aquarium.ts'
 import { collect, restoreCollected } from '../src/collection.ts';
 import { TERRARIUM_DEFAULTS } from '../src/config.ts';
 import { TerrariumWorld } from '../src/world.ts';
-import { score } from '../src/scoring.ts';
+import { curvedScore, score } from '../src/scoring.ts';
 const start = Date.parse('2026-06-01T00:00:00Z');
 const hour = 3_600_000;
 
@@ -116,5 +116,15 @@ it('hides numeric legacy scores from the current-formula score curve', () => {
     if ('fish' in state) advanceAquarium(state, start + hour, 'UTC'); else advance(state, start + hour, 'UTC');
     expect(recentScores(state, start + hour)[0].score).toBeNull();
     expect(recentScores(state, start + hour).at(-1)?.score).toBe(score(state));
+  }
+});
+
+it('converts version-two history for score charts without rewriting snapshots', () => {
+  for (const state of [newState(start), newAquarium(start)]) {
+    state.history[0].scoreVersion = 2;
+    state.history[0].score = 1000;
+    if ('fish' in state) advanceAquarium(state, start + hour, 'UTC'); else advance(state, start + hour, 'UTC');
+    expect(recentScores(state, start + hour)[0].score).toBe(curvedScore(1000));
+    expect(state.history[0]).toMatchObject({ scoreVersion: 2, score: 1000 });
   }
 });

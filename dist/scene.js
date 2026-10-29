@@ -1,11 +1,16 @@
+// src/scoring.ts
+function curvedScore(base) {
+  return Math.round(base <= 200 ? base : 200 + 200 * Math.log(base / 200));
+}
+
 // src/progression.ts
 var TERRARIUM_LEVELS = [
   { level: 1, requiredScore: 0, size: 5, organisms: 12, collection: 48 },
   { level: 2, requiredScore: 120, size: 6, organisms: 18, collection: 64 },
-  { level: 3, requiredScore: 260, size: 7, organisms: 24, collection: 96 },
-  { level: 4, requiredScore: 420, size: 8, organisms: 32, collection: 128 }
+  { level: 3, requiredScore: curvedScore(260), size: 7, organisms: 24, collection: 96 },
+  { level: 4, requiredScore: curvedScore(420), size: 8, organisms: 32, collection: 128 }
 ];
-var TERRARIUM_WATER_LEVELS = TERRARIUM_LEVELS.map((level, index) => ({ ...level, requiredScore: [0, 120, 240, 360][index] }));
+var TERRARIUM_WATER_LEVELS = TERRARIUM_LEVELS.map((level, index) => ({ ...level, requiredScore: [0, 120, 240, 360].map(curvedScore)[index] }));
 function expansionLevels(state) {
   return "kind" in state && state.kind === "water" ? TERRARIUM_WATER_LEVELS : TERRARIUM_LEVELS;
 }

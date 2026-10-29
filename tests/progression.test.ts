@@ -12,7 +12,7 @@ import { daylight } from '../src/habitat.ts';
 import { landHistory } from '../src/history-query.ts';
 import { reportChanges, applyReportChanges } from '../src/report-protocol.ts';
 import { compactNumbers, inspectState } from '../src/inspect.ts';
-import { score, TERRARIUM_SCORE_VERSION } from '../src/scoring.ts';
+import { score, curvedScore, TERRARIUM_SCORE_VERSION } from '../src/scoring.ts';
 import { captureFrame } from '../src/replay.ts';
 import { TerrariumWorld } from '../src/world.ts';
 import { TERRARIUM_DEFAULTS } from '../src/config.ts';
@@ -238,4 +238,18 @@ it('reaches every water expansion gate without predators or edited health, energ
   expect(reached).toEqual(expansionLevels(state).slice(1).map(level => level.level));
   expect(state.fish).toHaveLength(6);
   expect(state.fish.every(f => f.species !== 'perch')).toBe(true);
+});
+
+it.each(['land', 'water'] as const)('converts second-version %s peaks once and preserves expanded saves and history', habitat => {
+  const state = qualify(habitat === 'land' ? newState(now) : newAquarium(now), 3);
+  state.progression!.scoreVersion = 2; state.progression!.peakScore = 700;
+  state.history[0].scoreVersion = 2; state.history[0].score = 900;
+  expect(habitat === 'land' ? validState(state) : validAquarium(state)).toBe(true);
+  expect(development(state).peakScore).toBe(curvedScore(900));
+  expect(observeProgress(state)).toMatchObject({ level: 3, scoreVersion: TERRARIUM_SCORE_VERSION, peakScore: curvedScore(900) });
+  expect(observeProgress(state).peakScore).toBe(curvedScore(900));
+  expect(state.history[0]).toMatchObject({ scoreVersion: 2, score: 900 });
+  upgradeHabitat(state);
+  expect(capacity(state).level).toBe(4);
+  expect(habitat === 'land' ? validState(state) : validAquarium(state)).toBe(true);
 });

@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { newState, releaseBug, sow } from '../src/state.ts';
 import { newAquarium, stockFish, plantAquatic } from '../src/aquarium.ts';
-import { score, scoreParts } from '../src/scoring.ts';
+import { score, scoreParts, curvedScore } from '../src/scoring.ts';
 
 const now = Date.parse('2026-06-01T00:00:00Z');
 it('limits duplicate species contributions and scores diverse water plants above a monoculture', () => {
@@ -58,6 +58,31 @@ it('makes the highest expansion threshold attainable with healthy, diverse matur
     Object.assign(stockFish(state, fish[i % 3], 4, 4), { health: 100, energy: 100, ageHours: 24 });
   }
   state.oxygen = 100; state.cleanliness = 100;
-  expect(scoreParts(state)).toEqual({ plants: 210, fish: 210, water: 40 });
-  expect(score(state)).toBe(460);
+  expect(score(state)).toBe(curvedScore(460));
+  expect(Object.values(scoreParts(state)).reduce((sum, value) => sum + value, 0)).toBe(score(state));
+});
+
+it('keeps early scores unchanged, then grows with diminishing returns and no fixed ceiling', () => {
+  for (let base = 0; base <= 200; base++) expect(curvedScore(base)).toBe(base);
+  const bases = [200, 400, 600, 800, 1000, 1200];
+  const values = bases.map(curvedScore);
+  const gains = values.slice(1).map((value, index) => value - values[index]);
+  expect(gains.every((gain, index) => gain > 0 && (index === 0 || gain < gains[index - 1]))).toBe(true);
+  for (let base = 0; base < 10000; base++) expect(curvedScore(base + 1)).toBeGreaterThanOrEqual(curvedScore(base));
+  expect(curvedScore(1e9)).toBeGreaterThan(curvedScore(1e6));
+});
+
+it('keeps curved shares integral, preserves zero categories and ignores organism order', () => {
+  const state = newAquarium(now); state.plants = []; state.fish = [];
+  for (let i = 0; i < 9; i++) {
+    Object.assign(plantAquatic(state, (['waterweed', 'algae', 'waterlily'] as const)[i % 3], i % 5, Math.floor(i / 5)), { health: 100, stage: 3 });
+    Object.assign(stockFish(state, (['guppy', 'goldfish', 'perch'] as const)[i % 3], 4, 4), { health: 100, energy: 100, ageHours: 24 });
+  }
+  state.oxygen = 100; state.cleanliness = 100;
+  const parts = scoreParts(state);
+  expect(Object.values(parts).every(Number.isSafeInteger)).toBe(true);
+  expect(Object.values(parts).reduce((sum, value) => sum + value, 0)).toBe(curvedScore(460));
+  state.plants.reverse(); state.fish.reverse(); expect(scoreParts(state)).toEqual(parts);
+  state.fish = [];
+  expect(scoreParts(state)).toEqual({ plants: curvedScore(210), fish: 0, water: 0 });
 });

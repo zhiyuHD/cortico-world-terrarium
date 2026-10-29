@@ -2,6 +2,11 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.9.1 — 积分平衡调整
+
+- Apply an unbounded logarithmic score curve above 200 base points; client and server use proportional integer breakdowns.
+- Convert version-2 recorded peaks and expansion thresholds together; preserve earned space, guide progress and organisms.
+
 ## 0.9.0 — 满庭新事
 
 - Add tomatoes and strawberries with repeat natural-growth harvests, a fruit basket and merchant fruit sales. Fertilizer does not grant fruit maturity; up to three harvest rounds accumulate.
