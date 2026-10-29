@@ -1,3 +1,4 @@
+import { readSnapshot } from './state-storage.ts';
 import { TERRARIUM_NEIGHBOR_TOOL_DECL, receiveNeighborMail } from './neighbors.ts';
 import { bindToolGroups } from './tool-groups.ts';
 import { gardenStatus, harvest, sellProduce, transplant } from './garden.ts';
@@ -366,11 +367,11 @@ export class TerrariumWorld implements World {
   }
 
   async start(host: WorldHost): Promise<void> {
-    const read = async (file: string): Promise<unknown | null> => {
-      try { return JSON.parse(await readFile(file, 'utf8')); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
-    };
-    const land = await read(this.opts.stateFile), water = await read(this.waterFile);
+    const landSaved = await readSnapshot(this.opts.stateFile), waterSaved = await readSnapshot(this.waterFile);
+    for (const [habitat, saved] of [['land', landSaved], ['water', waterSaved]] as const) {
+      if (saved.recoveredFrom) host.log.warn('terrarium.state.recovered', { habitat, recoveredFrom: saved.recoveredFrom, corruptFile: saved.corruptFile });
+    }
+    const land = landSaved.value, water = waterSaved.value;
     this.state = land === null ? null : migrateState(land);
     if (water !== null && !validAquarium(water)) throw new Error('Invalid aquarium state file');
     this.waterState = water;

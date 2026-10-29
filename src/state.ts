@@ -11,8 +11,7 @@ import { score, TERRARIUM_SCORE_VERSION } from './scoring.ts';
 import { plantCareAdvice, TERRARIUM_LEAF_DAMAGE, sunflowerSeedRounds, TERRARIUM_SUNFLOWER } from './habitat.ts';
 import { validateWatering, waterAdded, type WateringOptions } from './habitat.ts';
 import { isFlying, flightDraw, TERRARIUM_FLY_ACTION_INTERVAL_MS, TERRARIUM_FLY_MOVE_PROBABILITY, type FlyingSpecies } from './flight.ts';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { readSnapshot, saveSnapshot } from './state-storage.ts';
 import { ensureQueen, spreadAnts, surfaceAntOccupied, emptyEntrancePlot, isNestEntrance, nestEntrances, nestSize, digColony, fillAntEntrance, enterNest, walkInside, validColony, TERRARIUM_NEST_ENTRANCE, TERRARIUM_NEST_STORAGE, TERRARIUM_NEST_NURSERY, type NestPosition } from './colony.ts';
 import { flowerStage, daylight, TERRARIUM_MAX_HISTORY, TERRARIUM_PLANT_LOW_HEALTH, TERRARIUM_PLANT_RECOVERED_HEALTH, TERRARIUM_PLANT_REQUIREMENTS, type HistorySample, type PlantSpecies, type SoilCell } from './habitat.ts';
 
@@ -617,10 +616,9 @@ export function move(state: TerrariumState, id: ItemId, x: number, y: number): I
 }
 
 export async function loadState(file: string, nowMs: number): Promise<TerrariumState> {
-  let raw: string;
-  try { raw = await readFile(file, 'utf8'); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return newState(nowMs); throw error; }
-  const state = migrateState(JSON.parse(raw)); spreadAnts(state); return state;
+  const { value } = await readSnapshot(file);
+  if (value === null) return newState(nowMs);
+  const state = migrateState(value); spreadAnts(state); return state;
 }
 
 /** Reads earlier saves and reports without advancing their simulation time. */
@@ -704,8 +702,5 @@ export function validState(value: unknown): value is TerrariumState {
 }
 
 export async function saveState(file: string, state: TerrariumState | import('./aquarium.ts').AquariumState): Promise<void> {
-  await mkdir(dirname(file), { recursive: true });
-  const temporary = `${file}.tmp`;
-  await writeFile(temporary, JSON.stringify(state, null, 2), 'utf8');
-  await rename(temporary, file);
+  await saveSnapshot(file, state);
 }

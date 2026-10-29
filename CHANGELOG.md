@@ -2,6 +2,12 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.9.1-bugfix.1
+
+- Flush unique temporary snapshot files before replacement, flush directories on POSIX, and serialize saves per path.
+- Retain a separate previous snapshot for each habitat. Recover missing or unparseable primary files from a parseable backup while preserving damaged bytes; fail when no usable JSON backup exists.
+- Reject stored JSON null as a missing habitat. Keep the logarithmic scoring and peak conversion from 0.9.1.
+
 ## 0.9.1 — 积分平衡调整
 
 - Apply an unbounded logarithmic score curve above 200 base points; client and server use proportional integer breakdowns.

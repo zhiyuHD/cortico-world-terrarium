@@ -1,6 +1,6 @@
 import { operationTools } from './tool-operations.ts';
 import { createServer, type ServerResponse } from 'node:http';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ToolCallContext, WorldHost } from 'cortico/core/types.ts';
@@ -98,4 +98,22 @@ it('synchronizes water while land awaits its first WS acknowledgement and cancel
     await new Promise<void>(resolve => server.close(() => resolve()));
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+it('starts both habitats after recovering a NUL-filled water file without changing land', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-recovery-startup-'));
+  const now = Date.now(), file = join(dir, 'land', 'state.json'), waterFile = join(dir, 'water', 'state.json');
+  const land = newState(now), water = newAquarium(now);
+  land.name = 'Unchanged land'; water.name = 'Recovered water';
+  const world = new TerrariumWorld({ cfg: { ...TERRARIUM_DEFAULTS, leaderboardUrl: '' }, stateFile: file, waterStateFile: waterFile, now: () => now, timezone: 'UTC' });
+  const host = { log: { warn() {} }, async pushEvent(event: unknown) { return event; } } as unknown as WorldHost;
+  try {
+    await saveState(file, land); await saveState(waterFile, water);
+    await writeFile(waterFile, Buffer.alloc(178000));
+    await world.start(host);
+    expect(JSON.parse(await readFile(file, 'utf8')).name).toBe(land.name);
+    expect(JSON.parse(await readFile(waterFile, 'utf8')).name).toBe(water.name);
+    expect((await readdir(join(dir, 'water'))).filter(name => name.includes('.corrupt-'))).toHaveLength(1);
+    expect(await readFile(join(dir, 'water', (await readdir(join(dir, 'water'))).find(name => name.includes('.corrupt-'))!))).toEqual(Buffer.alloc(178000));
+  } finally { await world.stop(); await rm(dir, { recursive: true, force: true }); }
 });
