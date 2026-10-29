@@ -43,8 +43,9 @@ export function groupTools(tools: ReadonlyArray<Omit<ToolDef, 'handler'>>): Arra
     const entries = operations.map(operation => tools.find(t => t.name === `terrarium_${operation}`)).filter((t): t is Omit<ToolDef, 'handler'> => !!t);
     if (!entries.length) return [];
     if (entries.length === 1 && entries[0].name === name) return [{ ...entries[0], description: descriptions[name], parameters: concise(entries[0].parameters) }];
+    const properties = Object.fromEntries(entries.flatMap(t => Object.entries(concise(t.parameters).properties ?? {})));
     return [{ name, description: descriptions[name], tags: [...new Set(entries.flatMap(t => t.tags ?? []))], parameters: {
-      type: 'object', oneOf: entries.map(t => ({ ...concise(t.parameters), properties: { ...concise(t.parameters).properties, operation: { type: 'string', const: t.name.slice(10) } }, required: ['operation', ...(t.parameters.required as string[] ?? [])] })),
+      type: 'object', additionalProperties: false, properties: { operation: { type: 'string', enum: operations }, ...properties }, required: ['operation'],
     } }];
   });
 }

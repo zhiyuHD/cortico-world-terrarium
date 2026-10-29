@@ -26,6 +26,15 @@ it('accepts new flower species through sowing and distinguishes self visits, for
   expect(visitFlower(bee, state.plants[0], start + 2 * hour)).toBe(false);
   expect(state.plants[0].pollination).toBe(TERRARIUM_POLLINATION.maxCharges);
 });
+it('lets pollinators cross-pollinate tomato flowers for fruit bonuses', () => {
+  const state = newState(start);
+  state.plants = [0, 1].map(x => ({ id: `tomato-${x}`, species: 'tomato' as const, x, y: 4, moisture: 50, growthHours: 30, fruitGrowthHours: 18, stage: 3, dry: false, health: 100 }));
+  const bee = releaseBug(state, 'bee', 0, 4);
+  expect(visitFlower(bee, state.plants[0], start)).toBe(false);
+  bee.x = 1;
+  expect(visitFlower(bee, state.plants[1], start + TERRARIUM_POLLINATION.nectarIntervalMs)).toBe(true);
+  expect(state.plants[1].pollination).toBe(1);
+});
 it('converts a pollination charge into extra seed food once and preserves completed rounds through collection', () => {
   const state = meadow(), plant = state.plants[0];
   plant.growthHours = TERRARIUM_SUNFLOWER.seedHours;

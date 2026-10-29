@@ -22,7 +22,7 @@ terrarium_garden(operation=sow) 支持 fern、clover、moss、basil、bean、sun
 
 ## 满庭新事
 
-番茄 tomato 需要水分 35–75、光照 0.7–1；草莓 strawberry 需要水分 35–80、光照 0.5–1。番茄自然生长 18 小时初熟，每 8 小时再熟一轮，每轮 3 个；草莓 12 小时初熟，每 6 小时一轮，每轮 2 个。terrarium_garden(operation=harvest,id=植物ID) 采收，最多积存三轮，健康需不低于 40；施肥只推进外观生长，不积累果实的自然成熟时间。授粉每轮最多多收一个。terrarium_merchant(action=sell_fruit,species=tomato或strawberry,portions=数量) 出售，番茄每个 3 金币、草莓每个 4 金币。
+番茄 tomato 需要水分 35–75、光照 0.7–1；草莓 strawberry 需要水分 35–80、光照 0.5–1。番茄自然生长 18 小时初熟，每 8 小时再熟一轮，每轮 3 个；草莓 12 小时初熟，每 6 小时一轮，每轮 2 个。terrarium_garden(operation=harvest,id=植物ID) 采收，最多积存三轮，健康需不低于 40；施肥只推进外观生长，不积累果实的自然成熟时间。番茄和草莓开花后可被蜜蜂、蝴蝶异株授粉，每轮最多多收一个。terrarium_merchant(action=sell_fruit,species=tomato或strawberry,portions=数量) 出售，番茄每个 3 金币、草莓每个 4 金币。
 
 蘑菇 mushroom 适宜水分 50–90、光照 0.15–0.6。植物每自然生长六小时在原格产生一份落叶，每格最多 20 份。鼠妇 woodlouse 与蜗牛 snail 寻找并取食落叶，不啃活植物；启用堆肥桶后每分解三份得到一份肥料。仍需自行检查饥饿和容量。
 

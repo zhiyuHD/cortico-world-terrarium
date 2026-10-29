@@ -2,6 +2,15 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.9.1-bugfix.3
+
+- Publish the pollination and flat-tool-schema fixes after the previous prerelease upload was staged by the registry.
+
+## 0.9.1-bugfix.2
+
+- Let bees and butterflies pollinate blooming tomatoes and strawberries so their documented fruit bonus can be reached.
+- Flatten grouped tool schemas to an operation enum and shared properties for OpenAI-compatible endpoints that reject top-level `oneOf`.
+
 ## 0.9.1-bugfix.1
 
 - Flush unique temporary snapshot files before replacement, flush directories on POSIX, and serialize saves per path.
