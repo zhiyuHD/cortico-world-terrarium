@@ -1,6 +1,7 @@
 import { advanceFishBreeding, fishPopulation, TERRARIUM_FISH_BREEDING, TERRARIUM_SPAWNING_SPECIES, type FishEgg } from './fish-breeding.ts';
 import { capacity, inHabitat, hasFacility, observeProgress, recordAction, validDevelopment, type DevelopmentState } from './progression.ts';
 import type { CareAlertState } from './care-alerts.ts';
+import type { PauseState } from './pause.ts';
 import { validCareAlerts } from './care-alerts.ts';
 import { recordDeath, validDeaths, type DeathHistory } from './deaths.ts';
 import { validCollection, type CollectionItem } from './collection.ts';
@@ -18,7 +19,7 @@ export interface FishFood { id: string; x: number; y: number; portions: number; 
 export interface AquariumFrame extends DevelopmentState { kind: 'water'; phase: 'day' | 'night'; oxygen: number; cleanliness: number; fish: FishState[]; eggs?: FishEgg[]; plants: AquaticPlantState[]; food: FishFood[] }
 export interface AquariumReplay { id: string; recordedAtMs: number; hunterId: string; preyId: string; frames: [AquariumFrame, AquariumFrame, AquariumFrame] }
 export interface AquariumHistory extends DevelopmentState { recordedAtMs: number; score?: number; scoreVersion?: number; oxygen: number; cleanliness: number; fish: FishState[] }
-export interface AquariumState extends DeathHistory, CareAlertState, DevelopmentState { collection?: CollectionItem[]; oxygenWarning?: boolean; version: 1; kind: 'water'; name?: string; updatedAtMs: number; nextId: number; oxygen: number; cleanliness: number; fish: FishState[]; eggs?: FishEgg[]; plants: AquaticPlantState[]; food: FishFood[]; history: AquariumHistory[]; replays: AquariumReplay[] }
+export interface AquariumState extends DeathHistory, CareAlertState, DevelopmentState, PauseState { collection?: CollectionItem[]; oxygenWarning?: boolean; version: 1; kind: 'water'; name?: string; updatedAtMs: number; nextId: number; oxygen: number; cleanliness: number; fish: FishState[]; eggs?: FishEgg[]; plants: AquaticPlantState[]; food: FishFood[]; history: AquariumHistory[]; replays: AquariumReplay[] }
 export interface AquariumChange { kind: 'hunt' | 'hungry' | 'ecosystem' | 'oxygen' | 'egg' | 'birth'; text: string }
 const HOUR_MS = 3_600_000;
 export const TERRARIUM_FISH_ACTION_INTERVAL_MS = 10 * 60_000;
@@ -33,7 +34,7 @@ export function newAquarium(nowMs: number): AquariumState {
   return state;
 }
 export function stockFish(state: AquariumState, species: unknown, x: number, y: number): FishState {
-  if (!(TERRARIUM_FISH_SPECIES as readonly unknown[]).includes(species)) throw new Error('Unknown fish species');
+  if (!(TERRARIUM_FISH_SPECIES as readonly unknown[]).includes(species)) throw new Error(`Unknown fish species; use ${TERRARIUM_FISH_SPECIES.join(', ')}`);
   if (!inHabitat(state, x, y)) throw new Error('Position must be in the current habitat grid');
   if (fishPopulation(state) >= capacity(state).organisms) throw new Error('Fish capacity reached');
   const fish: FishState = { id: `fish-${state.nextId++}`, species: species as FishSpecies, x, y, health: 100, energy: 60, ageHours: 0 };
@@ -120,6 +121,7 @@ function actFish(state: AquariumState, fish: FishState, atMs: number, timezone: 
   } else { fish.lastMeal = { atMs, kind: 'algae', id: target.id }; damage(target as AquaticPlantState, 2, `${fish.id} 啃食`); fish.energy = clamp(fish.energy + 5); }
 }
 export function advanceAquarium(state: AquariumState, nowMs: number, timezone: string): AquariumChange[] {
+  if (state.pausedAtMs !== undefined) return [];
   const changes: AquariumChange[] = [];
   const breeding = { laid: 0, hatched: 0, lost: 0 };
   const losses = new Map<string, Map<string, number>>();
@@ -193,7 +195,7 @@ function validFrame(value: unknown, atMs: number): value is AquariumFrame {
 export function validAquarium(value: unknown): value is AquariumState {
   if (!value || typeof value !== 'object') return false;
   const s = value as AquariumState;
-  return validCareAlerts(s.careAlerts) && validDeaths(s.deaths, s.updatedAtMs, capacity(s).size) && validCollection(s.collection, 'water', capacity(s).collection) && (s.oxygenWarning === undefined || typeof s.oxygenWarning === 'boolean') && s.version === 1 && Number.isFinite(s.updatedAtMs) && Number.isSafeInteger(s.nextId) && s.nextId >= 1 && (s.name === undefined || (typeof s.name === 'string' && s.name === s.name.trim() && Array.from(s.name).length >= 1 && Array.from(s.name).length <= TERRARIUM_MAX_NAME_LENGTH && !/[\u0000-\u001f\u007f-\u009f]/.test(s.name))) && validFrame({ ...s, phase: 'day' }, s.updatedAtMs) && new Set([...s.fish, ...s.plants, ...s.food, ...(s.eggs ?? []), ...(s.collection ?? []).map(e => e.specimen)].map(e => e.id)).size === s.fish.length + s.plants.length + s.food.length + (s.eggs?.length ?? 0) + (s.collection?.length ?? 0) &&
+  return validCareAlerts(s.careAlerts) && validDeaths(s.deaths, s.updatedAtMs, capacity(s).size) && validCollection(s.collection, 'water', capacity(s).collection) && (s.oxygenWarning === undefined || typeof s.oxygenWarning === 'boolean') && s.version === 1 && Number.isFinite(s.updatedAtMs) && (s.pausedAtMs === undefined || Number.isFinite(s.pausedAtMs) && s.pausedAtMs <= s.updatedAtMs) && Number.isSafeInteger(s.nextId) && s.nextId >= 1 && (s.name === undefined || (typeof s.name === 'string' && s.name === s.name.trim() && Array.from(s.name).length >= 1 && Array.from(s.name).length <= TERRARIUM_MAX_NAME_LENGTH && !/[\u0000-\u001f\u007f-\u009f]/.test(s.name))) && validFrame({ ...s, phase: 'day' }, s.updatedAtMs) && new Set([...s.fish, ...s.plants, ...s.food, ...(s.eggs ?? []), ...(s.collection ?? []).map(e => e.specimen)].map(e => e.id)).size === s.fish.length + s.plants.length + s.food.length + (s.eggs?.length ?? 0) + (s.collection?.length ?? 0) &&
     Array.isArray(s.history) && s.history.length <= 168 && s.history.every((h, i) => h && Number.isFinite(h.recordedAtMs) && (h.scoreVersion === undefined || h.scoreVersion === 1 || h.scoreVersion === 2 || h.scoreVersion === TERRARIUM_SCORE_VERSION) && (h.score === undefined || Number.isSafeInteger(h.score) && h.score >= 0) && h.recordedAtMs <= s.updatedAtMs && (i === 0 || h.recordedAtMs > s.history[i - 1].recordedAtMs) && percent(h.oxygen) && percent(h.cleanliness) && validFrame({ progression: h.progression, kind: 'water', phase: 'day', oxygen: h.oxygen, cleanliness: h.cleanliness, fish: h.fish, plants: [], food: [] }, h.recordedAtMs)) &&
     Array.isArray(s.replays) && s.replays.length <= TERRARIUM_MAX_REPLAYS && new Set(s.replays.map(r => r?.id)).size === s.replays.length && s.replays.every((r, i) => {
       if (!r || typeof r.id !== 'string' || r.id.length > 160 || !Number.isFinite(r.recordedAtMs) || r.recordedAtMs > s.updatedAtMs || (i > 0 && r.recordedAtMs < s.replays[i - 1].recordedAtMs) || !Array.isArray(r.frames) || r.frames.length !== 3 || !r.frames.every(f => validFrame(f, r.recordedAtMs))) return false;

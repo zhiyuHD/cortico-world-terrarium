@@ -3,13 +3,19 @@ import type { AquariumState } from './aquarium.ts';
 import { inHabitat, capacity, hasFacility } from './progression.ts';
 import { isNestEntrance } from './colony.ts';
 import { TERRARIUM_PLANT_REQUIREMENTS } from './habitat.ts';
+import { type CropSpecies } from './crops.ts';
+export type { CropSpecies } from './crops.ts';
 import { TERRARIUM_MAX_COINS } from './merchant.ts';
 
-export const TERRARIUM_CROPS = {
+export interface CropDefinition { name: string; firstHours: number; intervalHours: number; portions: number; price: number }
+/** Crops ripen natural daylight hours into rounds; harvesting pays portions times price. */
+export const TERRARIUM_CROPS: Record<CropSpecies, CropDefinition> = {
   tomato: { name: '番茄', firstHours: 18, intervalHours: 8, portions: 3, price: 3 },
   strawberry: { name: '草莓', firstHours: 12, intervalHours: 6, portions: 2, price: 4 },
-} as const;
-export type CropSpecies = keyof typeof TERRARIUM_CROPS;
+  watermelon: { name: '西瓜', firstHours: 30, intervalHours: 24, portions: 1, price: 12 },
+  melon: { name: '甜瓜', firstHours: 22, intervalHours: 12, portions: 2, price: 6 },
+  wheat: { name: '小麦', firstHours: 20, intervalHours: 10, portions: 3, price: 3 },
+};
 export interface GardenState {
   neighborCursor?: number;
   seedPackets?: Record<string, number>;
@@ -28,7 +34,7 @@ export function gardenStatus(state: TerrariumState) {
 }
 export function harvest(state: TerrariumState, id: unknown) {
   const plant = state.plants.find(p => p.id === id);
-  if (!plant || !Object.hasOwn(TERRARIUM_CROPS, plant.species)) throw new Error('Select a tomato or strawberry plant');
+  if (!plant || !Object.hasOwn(TERRARIUM_CROPS, plant.species)) throw new Error(`Select a fruiting crop: ${Object.keys(TERRARIUM_CROPS).join(', ')}`);
   const species = plant.species as CropSpecies, crop = TERRARIUM_CROPS[species];
   const rounds = Math.min(3, Math.max(0, cropRounds(plant) - (plant.harvestRounds ?? 0)));
   if (!rounds || plant.health < 40) throw new Error('No ripe healthy fruit; fruit needs natural growth, fertilizer does not ripen it');

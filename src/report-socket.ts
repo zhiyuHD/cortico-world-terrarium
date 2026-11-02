@@ -22,17 +22,17 @@ export class ReportSocket {
 
   close(): void { this.disconnect(new Error('Report connection closed')); }
 
-  report(state: unknown, phase: 'day' | 'night'): Promise<void> {
+  report(state: unknown, phase: 'day' | 'night', full = false): Promise<void> {
     const snapshot: unknown = JSON.parse(JSON.stringify(state));
-    const task = this.reportQueue.then(() => this.reportSnapshot(snapshot, phase));
+    const task = this.reportQueue.then(() => this.reportSnapshot(snapshot, phase, full));
     this.reportQueue = task.catch(() => {});
     return task;
   }
 
-  private async reportSnapshot(snapshot: unknown, phase: 'day' | 'night'): Promise<void> {
+  private async reportSnapshot(snapshot: unknown, phase: 'day' | 'night', full = false): Promise<void> {
     for (let attempt = 0; ; attempt++) {
       this.options.signal?.throwIfAborted();
-      try { await this.deliver(snapshot, phase); return; }
+      try { await this.deliver(snapshot, phase, full); return; }
       catch (error) {
         this.disconnect(error instanceof Error ? error : new Error(String(error)));
         if (attempt > 0 || error instanceof ReportSocketError) throw error;
@@ -40,10 +40,10 @@ export class ReportSocket {
     }
   }
 
-  private async deliver(state: unknown, phase: 'day' | 'night'): Promise<void> {
+  private async deliver(state: unknown, phase: 'day' | 'night', forceFull = false): Promise<void> {
     const socket = await this.connect();
     this.options.signal?.throwIfAborted();
-    const changes = this.options.incremental && this.revision && this.baselineHash && reportStateHash(this.baseline) === this.baselineHash ? reportChanges(this.baseline, state) : undefined;
+    const changes = !forceFull && this.options.incremental && this.revision && this.baselineHash && reportStateHash(this.baseline) === this.baselineHash ? reportChanges(this.baseline, state) : undefined;
     const stateHash = reportStateHash(state);
     const header = { protocol: 1 as const, seq: ++this.seq, ...reportClientMetadata(), phase, stateHash };
     let message: ReportMessage = changes && changes.length <= TERRARIUM_REPORT_MAX_CHANGES
@@ -87,12 +87,12 @@ export class ReportSocket {
         const pending = this.pending; this.pending = undefined; this.settledSeq = reply.seq; clearTimeout(pending.timer); pending.resolve(reply);
       } catch { this.disconnect(new Error('Invalid report acknowledgement')); }
     });
-    socket.on('error', () => { if (this.socket === socket) this.disconnect(new Error('Report connection failed')); });
-    socket.on('close', () => { if (this.socket === socket) this.disconnect(new Error('Report connection closed')); });
+    socket.on('error', error => { if (this.socket === socket) this.disconnect(new Error(`Report connection failed: ${error.message}`)); });
+    socket.on('close', (code, reason) => { if (this.socket === socket) this.disconnect(new Error(`Report connection closed (${code}${reason.length ? ` ${reason.toString()}` : ''})`)); });
     return new Promise((resolve, reject) => {
       socket.once('open', () => resolve(socket));
       socket.once('error', reject);
-      socket.once('close', () => reject(new Error('Report connection closed')));
+      socket.once('close', (code, reason) => reject(new Error(`Report connection closed (${code}${reason.length ? ` ${reason.toString()}` : ''})`)));
       socket.once('unexpected-response', (_request, response) => {
         response.resume();
         reject(new ReportSocketError(`Report WebSocket HTTP ${response.statusCode}`, response.statusCode));

@@ -52,7 +52,9 @@ it('reports completed guide tasks, retries chapters without skipping and counts 
     expect(await invoke(world, 'terrarium_progress', { action: 'guide', step: 0 })).toMatchObject({ guideAdvanced: false, guide: { step: 1 } });
     expect(await invoke(world, 'terrarium_progress', { action: 'guide' })).toMatchObject({ guideAdvanced: false, guide: { step: 1 } });
     const noop = await invoke(world, 'terrarium_water_area', { x1: 0, y1: 0, x2: 4, y2: 4, onlyDry: true });
-    expect(noop.watering).toEqual({ requested: 25, watered: 0, skipped: 25, reason: 'Skipped cells already meet onlyDry threshold or target moisture.' });
+    expect(noop.watering).toMatchObject({ requested: 25, watered: 0, skipped: 25 });
+    expect(noop.watering.reason).toBeTruthy();
+    expect(noop.skippedCells).toHaveLength(25);
     expect(noop.guide.ready).toBe(false);
     expect(await invoke(world, 'terrarium_water', { x: 0, y: 0, amount: 1 })).toMatchObject({ watering: { watered: 1, skipped: 0 }, guide: { ready: true } });
     const initial = JSON.parse(await readFile(file, 'utf8'));

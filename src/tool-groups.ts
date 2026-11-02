@@ -4,9 +4,9 @@ import type { ToolDef } from 'cortico/core/types.ts';
 export const TERRARIUM_TOOL_GROUPS: Record<string, string[]> = {
   terrarium_inspect: ['inspect'],
   terrarium_rules: ['rules'],
-  terrarium_manage: ['claim', 'rename', 'progress', 'sync', 'notifications', 'set_rank_alerts'],
+  terrarium_manage: ['claim', 'rename', 'progress', 'sync', 'notifications', 'set_rank_alerts', 'pause'],
   terrarium_garden: ['water', 'water_area', 'sow', 'sow_area', 'move', 'drain', 'set_irrigation', 'compost', 'transplant', 'harvest', 'decorate', 'garden_status'],
-  terrarium_residents: ['release_bug', 'feed_bug', 'relocate_bug', 'remove', 'drop_food', 'cleanup_food', 'set_ant_foraging', 'feed_nest', 'fill_ant_hole', 'ant_policy'],
+  terrarium_residents: ['release_bug', 'feed_bug', 'relocate_bug', 'remove', 'drop_food', 'set_ant_foraging', 'feed_nest', 'fill_ant_hole', 'ant_policy'],
   terrarium_aquarium: ['stock_fish', 'plant_aquatic', 'plant_aquatic_area', 'feed_fish', 'change_water', 'relocate_fish', 'remove_aquatic', 'reuse_water'],
   terrarium_collection: ['collection'],
   terrarium_merchant: ['merchant'],
@@ -38,12 +38,36 @@ function concise(value: unknown): any {
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'description' && key !== 'default').map(([key, v]) => [key, concise(v)]));
 }
+/**
+ * One property name can mean different things across a group's operations, such as species.
+ * The merged property accepts every branch's values, so widening keeps each operation callable.
+ */
+function mergeProperty(first: any, next: any): any {
+  const merged = { ...first, ...next };
+  const enums = [first.enum, next.enum].filter(Array.isArray);
+  if (enums.length < 2) delete merged.enum;
+  else merged.enum = [...new Set(enums.flat())];
+  for (const [key, pick] of [['minimum', Math.min], ['minLength', Math.min], ['maximum', Math.max], ['maxLength', Math.max]] as const) {
+    const values = [first[key], next[key]].filter((value): value is number => typeof value === 'number');
+    if (values.length === 2) merged[key] = pick(...values);
+  }
+  return merged;
+}
+function mergeProperties(entries: ReadonlyArray<Omit<ToolDef, 'handler'>>): Record<string, any> {
+  const merged: Record<string, any> = {};
+  for (const entry of entries) {
+    for (const [key, property] of Object.entries(concise(entry.parameters).properties ?? {})) {
+      merged[key] = merged[key] === undefined ? property : mergeProperty(merged[key], property);
+    }
+  }
+  return merged;
+}
 export function groupTools(tools: ReadonlyArray<Omit<ToolDef, 'handler'>>): Array<Omit<ToolDef, 'handler'>> {
   return Object.entries(TERRARIUM_TOOL_GROUPS).flatMap(([name, operations]) => {
     const entries = operations.map(operation => tools.find(t => t.name === `terrarium_${operation}`)).filter((t): t is Omit<ToolDef, 'handler'> => !!t);
     if (!entries.length) return [];
     if (entries.length === 1 && entries[0].name === name) return [{ ...entries[0], description: descriptions[name], parameters: concise(entries[0].parameters) }];
-    const properties = Object.fromEntries(entries.flatMap(t => Object.entries(concise(t.parameters).properties ?? {})));
+    const properties = mergeProperties(entries);
     return [{ name, description: descriptions[name], tags: [...new Set(entries.flatMap(t => t.tags ?? []))], parameters: {
       type: 'object', additionalProperties: false, properties: { operation: { type: 'string', enum: operations }, ...properties }, required: ['operation'],
     } }];

@@ -251,12 +251,11 @@ export class LeaderboardClient {
     const result = this.reportQueue.then(async () => {
       if (signal.aborted || !full && generation !== this.reportGeneration) return;
       if (!full && this.syncStatus.nextRetryAt && Date.now() < Date.parse(this.syncStatus.nextRetryAt)) return;
-      if (full) this.close();
       this.syncStatus.state = 'syncing';
       this.syncStatus.lastAttemptAt = new Date().toISOString();
       this.syncStatus.lastAttemptStateAt = new Date(snapshot.updatedAtMs).toISOString();
       try {
-        const transport = await this.deliver(snapshot, phase);
+        const transport = await this.deliver(snapshot, phase, full);
         this.syncStatus = { ...this.syncStatus, state: 'synced', transport, lastSuccessStateAt: new Date(snapshot.updatedAtMs).toISOString(), lastSuccessAt: new Date().toISOString(), lastError: undefined, nextRetryAt: undefined, consecutiveFailures: 0 };
       } catch (error) {
         if (signal.aborted) throw error;
@@ -271,7 +270,7 @@ export class LeaderboardClient {
     return result;
   }
 
-  private async deliver(state: TerrariumState | AquariumState, phase: 'day' | 'night'): Promise<'ws'> {
+  private async deliver(state: TerrariumState | AquariumState, phase: 'day' | 'night', full = false): Promise<'ws'> {
     const url = new URL(this.options.url);
     requireHttps(url);
     const habitat = this.options.kind ?? 'land';
@@ -281,7 +280,7 @@ export class LeaderboardClient {
     this.requests.signal.throwIfAborted();
     this.syncStatus.transport = 'ws';
     this.reportSocket ??= new ReportSocket({ url, ...credentials, incremental: (this.options.incrementalReports ?? TERRARIUM_DEFAULTS.incrementalReports) === true, timeoutMs: this.options.requestTimeoutMs, onNotice: this.options.onNotice, signal: this.requests.signal });
-    try { await this.reportSocket.report(state, phase); return 'ws'; }
+    try { await this.reportSocket.report(state, phase, full); return 'ws'; }
     catch (error) { throw new Error(`${habitat} WebSocket report: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
   }
 

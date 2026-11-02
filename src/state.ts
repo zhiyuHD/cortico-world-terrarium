@@ -1,4 +1,4 @@
-import { validGarden, addLitter, actDecomposer, type GardenState } from './garden.ts';
+import { validGarden, addLitter, actDecomposer, TERRARIUM_CROPS, type GardenState } from './garden.ts';
 import { potAt, validEconomy, type Economy } from './merchant.ts';
 import { isPollinator, producesSeeds, visitFlower, TERRARIUM_POLLINATION, type Pollen } from './pollination.ts';
 import { clutchCapacity } from './fish-breeding.ts';
@@ -13,7 +13,8 @@ import { validateWatering, waterAdded, type WateringOptions } from './habitat.ts
 import { isFlying, flightDraw, TERRARIUM_FLY_ACTION_INTERVAL_MS, TERRARIUM_FLY_MOVE_PROBABILITY, type FlyingSpecies } from './flight.ts';
 import { readSnapshot, saveSnapshot } from './state-storage.ts';
 import { ensureQueen, spreadAnts, surfaceAntOccupied, emptyEntrancePlot, isNestEntrance, nestEntrances, nestSize, digColony, fillAntEntrance, enterNest, walkInside, validColony, TERRARIUM_NEST_ENTRANCE, TERRARIUM_NEST_STORAGE, TERRARIUM_NEST_NURSERY, type NestPosition } from './colony.ts';
-import { flowerStage, daylight, TERRARIUM_MAX_HISTORY, TERRARIUM_PLANT_LOW_HEALTH, TERRARIUM_PLANT_RECOVERED_HEALTH, TERRARIUM_PLANT_REQUIREMENTS, type HistorySample, type PlantSpecies, type SoilCell } from './habitat.ts';
+import type { PauseState } from './pause.ts';
+import { flowerStage, daylight, minimumMoisture, TERRARIUM_MAX_HISTORY, TERRARIUM_PLANT_LOW_HEALTH, TERRARIUM_PLANT_RECOVERED_HEALTH, TERRARIUM_PLANT_REQUIREMENTS, type HistorySample, type PlantSpecies, type SoilCell } from './habitat.ts';
 
 import { captureFrame, TERRARIUM_MAX_REPLAYS, TERRARIUM_REPLAY_RETENTION_MS, type HuntReplay } from './replay.ts';
 
@@ -29,7 +30,7 @@ export interface NestState { id: string; x: number; y: number; depth: number; fo
 export interface SpiderWeb { id: string; spiderId: string; x: number; y: number; createdAtMs: number }
 export interface LandFood { id: string; x: number; y: number; portions: number; droppedAtMs: number; kind?: 'sunflower_seed' | 'flower_seed' }
 export interface ItemState { id: ItemId; x: number; y: number }
-export interface TerrariumState extends DeathHistory, CareAlertState, DevelopmentState, GardenState { economy?: Economy; fertilizer?: number; collection?: CollectionItem[]; irrigation?: Array<{ x: number; y: number; targetMoisture: number; intervalMinutes: number; lastWateredAtMs: number }>; version: 3; name?: string; webs?: SpiderWeb[]; eggs?: EggState[]; nests?: NestState[]; food?: LandFood[]; replays?: HuntReplay[]; soil: SoilCell[]; history: HistorySample[]; updatedAtMs: number; nextId: number; plants: PlantState[]; seeds: SeedState[]; bugs: BugState[]; items: ItemState[] }
+export interface TerrariumState extends DeathHistory, CareAlertState, DevelopmentState, GardenState, PauseState { economy?: Economy; fertilizer?: number; collection?: CollectionItem[]; irrigation?: Array<{ x: number; y: number; targetMoisture: number; intervalMinutes: number; lastWateredAtMs: number }>; version: 3; name?: string; webs?: SpiderWeb[]; eggs?: EggState[]; nests?: NestState[]; food?: LandFood[]; replays?: HuntReplay[]; soil: SoilCell[]; history: HistorySample[]; updatedAtMs: number; nextId: number; plants: PlantState[]; seeds: SeedState[]; bugs: BugState[]; items: ItemState[] }
 export interface Change { kind: 'stage' | 'dry' | 'health' | 'phase' | 'sprout' | 'hunt' | 'death' | 'birth' | 'hungry' | 'egg' | 'nest' | 'web' | 'irrigation'; text: string }
 
 export const TERRARIUM_MAX_NAME_LENGTH = 64;
@@ -379,6 +380,7 @@ function advanceSoil(state: TerrariumState, hours: number, isDay: boolean): void
 }
 
 export function advance(state: TerrariumState, nowMs: number, timezone: string): Change[] {
+  if (state.pausedAtMs !== undefined) return [];
   spreadAnts(state);
   for (const egg of state.eggs ?? []) egg.hatchesAtMs = Math.min(egg.hatchesAtMs, egg.laidAtMs + TERRARIUM_BREEDING.incubationHours * HOUR_MS);
   ensureQueen(state);
@@ -452,7 +454,7 @@ export function advance(state: TerrariumState, nowMs: number, timezone: string):
         const pot = potAt(state, plant.x, plant.y);
         const growth = hours * (pot?.growth ?? 1) * (plant.species === 'basil' && state.plants.some(p => p.species === 'bean' && p.health >= 60 && Math.abs(p.x - plant.x) + Math.abs(p.y - plant.y) === 1) ? 1.1 : 1);
         plant.naturalGrowthHours = Math.min(48, (plant.naturalGrowthHours ?? Math.min(48, plant.growthHours)) + growth);
-        if (plant.species === 'tomato' || plant.species === 'strawberry') plant.fruitGrowthHours = (plant.fruitGrowthHours ?? 0) + growth;
+        if (Object.hasOwn(TERRARIUM_CROPS, plant.species)) plant.fruitGrowthHours = (plant.fruitGrowthHours ?? 0) + growth;
         const oldGrowth = plant.growthHours;
         plant.growthHours += growth;
         if (Math.floor(oldGrowth / 6) !== Math.floor(plant.growthHours / 6)) addLitter(state, plant.x, plant.y);
@@ -581,9 +583,7 @@ export function waterSoil(state: TerrariumState, x: number, y: number, options: 
   if (!inHabitat(state, x, y)) throw new Error('Position must be in the current habitat grid');
   const cell = state.soil[y * capacity(state).size + x];
   validateWatering(options);
-  const occupant = state.plants.find(p => p.x === x && p.y === y) ?? state.seeds.find(p => p.x === x && p.y === y);
-  const minimum = occupant ? TERRARIUM_PLANT_REQUIREMENTS[occupant.species].minMoisture : 30;
-  if (options.onlyDry && cell.moisture >= minimum) return cell;
+  if (options.onlyDry && cell.moisture >= minimumMoisture(state, x, y)) return cell;
   const added = waterAdded(cell.moisture, options);
   cell.moisture += added;
   if (added > 0) recordAction(state, 'care');
@@ -684,7 +684,7 @@ export function validState(value: unknown): value is TerrariumState {
   if (!value || typeof value !== 'object') return false;
   const state = value as Partial<TerrariumState>;
   if (!Array.isArray(state.plants) || !validGarden(state as TerrariumState) || !validEconomy(state) || (state.fertilizer !== undefined && (!Number.isSafeInteger(state.fertilizer) || state.fertilizer < 0)) || !validDevelopment(state, 'land') || !validCareAlerts(state.careAlerts) || !validDeaths(state.deaths, state.updatedAtMs!, capacity(state).size) || !validCollection(state.collection, 'land', capacity(state).collection) || (state.irrigation !== undefined && (!Array.isArray(state.irrigation) || state.irrigation.length > capacity(state).size ** 2 || new Set(state.irrigation.map(c => `${c?.x},${c?.y}`)).size !== state.irrigation.length || !state.irrigation.every(c => c && inHabitat(state, c.x, c.y) && Number.isFinite(c.targetMoisture) && c.targetMoisture >= 0 && c.targetMoisture <= 100 && Number.isFinite(c.intervalMinutes) && c.intervalMinutes >= 1 && c.intervalMinutes <= 1440 && Number.isFinite(c.lastWateredAtMs))))) return false;
-  return state.version === 3 && (state.name === undefined || validName(state.name)) && validHabitat(state) && validReplays(state) && Number.isFinite(state.updatedAtMs) && Number.isSafeInteger(state.nextId) && state.nextId! >= 1 &&
+  return state.version === 3 && (state.name === undefined || validName(state.name)) && validHabitat(state) && validReplays(state) && Number.isFinite(state.updatedAtMs) && (state.pausedAtMs === undefined || Number.isFinite(state.pausedAtMs) && state.pausedAtMs <= state.updatedAtMs!) && Number.isSafeInteger(state.nextId) && state.nextId! >= 1 &&
     Array.isArray(state.plants) && state.plants.length <= capacity(state).organisms &&
     state.plants.every(p => p && typeof p.id === 'string' && p.id.length <= 32 && Object.hasOwn(TERRARIUM_PLANT_REQUIREMENTS, p.species) && inHabitat(state, p.x, p.y) && Number.isFinite(p.moisture) && p.moisture >= 0 && p.moisture <= 100 && Number.isFinite(p.growthHours) && p.growthHours >= 0 && (p.naturalGrowthHours === undefined || Number.isFinite(p.naturalGrowthHours) && p.naturalGrowthHours >= 0 && p.naturalGrowthHours <= 48 && p.naturalGrowthHours <= p.growthHours + 1e-8) && Number.isInteger(p.stage) && p.stage >= 0 && p.stage <= 3 && typeof p.dry === 'boolean' && Number.isFinite(p.health) && p.health >= 0 && p.health <= 100 && (p.pollination === undefined || Number.isSafeInteger(p.pollination) && p.pollination >= 0 && p.pollination <= TERRARIUM_POLLINATION.maxCharges) && (p.healthWarning === undefined || typeof p.healthWarning === 'boolean') && (p.leafDamage === undefined || (Number.isFinite(p.leafDamage) && p.leafDamage >= 0 && p.leafDamage <= 100)) && (p.seedRounds === undefined || (producesSeeds(p.species) && Number.isSafeInteger(p.seedRounds) && p.seedRounds >= 0 && p.seedRounds <= sunflowerSeedRounds(p.growthHours)))) &&
     Array.isArray(state.seeds) && state.seeds.length <= capacity(state).organisms && state.plants.length + state.seeds.length <= capacity(state).organisms && state.seeds.every(s => s && typeof s.id === 'string' && Object.hasOwn(TERRARIUM_PLANT_REQUIREMENTS, s.species) && inHabitat(state, s.x, s.y) && Number.isFinite(s.ageHours) && s.ageHours >= 0) &&

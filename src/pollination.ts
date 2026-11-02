@@ -4,7 +4,8 @@ import type { BugState, PlantState } from './state.ts';
 export const TERRARIUM_POLLINATION = { nectarIntervalMs: 30 * 60_000, maxCharges: 3, bonusSeedPortions: 2 } as const;
 export function isPollinator(species: string): boolean { return species === 'bee' || species === 'butterfly'; }
 export function producesSeeds(species: string): boolean { return ['sunflower', 'daisy', 'lavender'].includes(species); }
-export function receivesPollination(species: string): boolean { return producesSeeds(species) || species === 'tomato' || species === 'strawberry'; }
+/** Melons and tomatoes need a cross visit to seed; wheat and clover-like plants seed without one. */
+export function receivesPollination(species: string): boolean { return producesSeeds(species) || ['tomato', 'strawberry', 'watermelon', 'melon'].includes(species); }
 export interface Pollen { species: PlantSpecies; plantId: string }
 
 /** Only a visit carrying pollen from a different plant of the same species fertilizes a flower. */

@@ -2,6 +2,15 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.9.2 — 新收成
+
+- Add watermelon, melon and wheat as fruiting crops with their own growth hours, fruit prices and merchant listings. Wheat self-pollinates; melons gain the cross-pollination bonus.
+- Add `terrarium_manage(operation=pause)`: a paused box keeps saving and reporting but stops simulating, and resuming shifts its stored timestamps so no absence is caught up.
+- Let the water panel stock, feed, relocate and remove fish and change water, and the land panel harvest fruit and sell produce. Both panels report a missing 2D context, a zero-size canvas or a drawing error instead of staying blank, and paint once before the first animation frame.
+- Water each dry cell against its own species minimum and return every skipped cell with its moisture, minimum and reason.
+- Keep the report socket across a manual full sync and include the close code and socket error text in failures.
+- Regenerate the capability snapshot and build the panel bundle against renderer 0.1.5, which draws the three crops, installs `roundRect` on older engines and survives a failing frame.
+
 ## 0.9.1-bugfix.3
 
 - Publish the pollination and flat-tool-schema fixes after the previous prerelease upload was staged by the registry.

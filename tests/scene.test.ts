@@ -35,13 +35,14 @@ it('finishes a bug move when an unchanged report arrives during animation', () =
     phase: 'day', plants: [], seeds: [], items: [], bugs: [{ id: 'bug-1', species: 'beetle', x, y: 2 }],
   });
   const scene = createScene(canvas);
+  // The first state paints once immediately, so a slow first animation frame cannot show a blank canvas.
   scene.setState(state(1));
   render!(0);
   now = 100; scene.setState(state(2));
   render!(550);
   now = 600; scene.setState(state(2));
   render!(1000);
-  expect(beetleCenters).toEqual([plotPosition(1, 2).x, (plotPosition(1, 2).x + plotPosition(2, 2).x) / 2, plotPosition(2, 2).x]);
+  expect(beetleCenters).toEqual([plotPosition(1, 2).x, plotPosition(1, 2).x, (plotPosition(1, 2).x + plotPosition(2, 2).x) / 2, plotPosition(2, 2).x]);
   scene.dispose();
 });
 

@@ -1,6 +1,6 @@
 import { potAt, type Economy } from './merchant.ts';
 import { capacity, nearFacility, type DevelopmentState } from './progression.ts';
-export type PlantSpecies = 'fern' | 'clover' | 'moss' | 'basil' | 'bean' | 'sunflower' | 'mint' | 'daisy' | 'lavender' | 'tomato' | 'strawberry' | 'mushroom';
+export type PlantSpecies = 'fern' | 'clover' | 'moss' | 'basil' | 'bean' | 'sunflower' | 'mint' | 'daisy' | 'lavender' | 'tomato' | 'strawberry' | 'mushroom' | 'watermelon' | 'melon' | 'wheat';
 export interface PlantRequirements { minMoisture: number; maxMoisture: number; minLight: number; maxLight: number }
 export interface SoilCell { x: number; y: number; moisture: number; allowAntForaging?: boolean; antBackfilled?: boolean }
 export const TERRARIUM_LEAF_DAMAGE = { perHarvestHealth: 5, recoveryPerGrowthHour: 2 } as const;
@@ -22,6 +22,9 @@ export const TERRARIUM_PLANT_REQUIREMENTS: Record<PlantSpecies, PlantRequirement
   daisy: { minMoisture: 25, maxMoisture: 75, minLight: .6, maxLight: 1 },
   lavender: { minMoisture: 20, maxMoisture: 60, minLight: .7, maxLight: 1 },
   mint: { minMoisture: 35, maxMoisture: 85, minLight: .3, maxLight: .85 },
+  watermelon: { minMoisture: 40, maxMoisture: 80, minLight: .75, maxLight: 1 },
+  melon: { minMoisture: 35, maxMoisture: 75, minLight: .7, maxLight: 1 },
+  wheat: { minMoisture: 30, maxMoisture: 65, minLight: .7, maxLight: 1 },
 };
 
 export interface WateredPlant {
@@ -73,12 +76,14 @@ export function hasSeedHead(plant: { species: string; growthHours?: number }): b
 }
 export const TERRARIUM_FLOWER_BUD_HOURS = 12;
 export const TERRARIUM_FLOWER_BLOOM_HOURS = 18;
+/** Species that grow a bud and then a bloom; fern, moss and mushroom never flower. */
+export const TERRARIUM_FLOWERING_SPECIES: readonly PlantSpecies[] = ['tomato', 'strawberry', 'clover', 'basil', 'bean', 'sunflower', 'mint', 'daisy', 'lavender', 'watermelon', 'melon', 'wheat'];
 
 /** Flowers follow accumulated suitable daylight growth; fern and moss do not flower. */
 export function flowerStage(plant: { species: string; growthHours?: number; health: number; moisture: number; dry: boolean }): 'bud' | 'bloom' | undefined {
-  if (plant.species !== 'tomato' && plant.species !== 'strawberry' && plant.species !== 'clover' && plant.species !== 'basil' && plant.species !== 'bean' && plant.species !== 'sunflower' && plant.species !== 'mint' && plant.species !== 'daisy' && plant.species !== 'lavender') return;
+  if (!(TERRARIUM_FLOWERING_SPECIES as readonly string[]).includes(plant.species)) return;
   if (hasSeedHead(plant)) return;
-  const needs = TERRARIUM_PLANT_REQUIREMENTS[plant.species];
+  const needs = TERRARIUM_PLANT_REQUIREMENTS[plant.species as PlantSpecies];
   if (plant.health < TERRARIUM_PLANT_RECOVERED_HEALTH || plant.dry || plant.moisture < needs.minMoisture || plant.moisture > needs.maxMoisture) return;
   if ((plant.growthHours ?? 0) >= TERRARIUM_FLOWER_BLOOM_HOURS) return 'bloom';
   if ((plant.growthHours ?? 0) >= TERRARIUM_FLOWER_BUD_HOURS) return 'bud';
@@ -90,6 +95,12 @@ export function validateWatering(options: WateringOptions): void {
       (options.targetMoisture !== undefined && (typeof options.targetMoisture !== 'number' || !Number.isFinite(options.targetMoisture) || options.targetMoisture < 0 || options.targetMoisture > 100)) ||
       (options.amount !== undefined && options.targetMoisture !== undefined) || (options.onlyDry !== undefined && typeof options.onlyDry !== 'boolean')) throw new Error('Supply amount (0..100, excluding zero) OR targetMoisture (0..100), and optional onlyDry');
 }
+/** Moisture below which the occupant of a cell counts as dry; empty soil uses 30. */
+export function minimumMoisture(state: { plants: ReadonlyArray<{ x: number; y: number; species: PlantSpecies }>; seeds: ReadonlyArray<{ x: number; y: number; species: PlantSpecies }> }, x: number, y: number): number {
+  const occupant = state.plants.find(p => p.x === x && p.y === y) ?? state.seeds.find(p => p.x === x && p.y === y);
+  return occupant ? TERRARIUM_PLANT_REQUIREMENTS[occupant.species].minMoisture : 30;
+}
+
 export function waterAdded(moisture: number, options: WateringOptions): number {
   validateWatering(options);
   return Math.max(0, Math.min(100 - moisture, options.targetMoisture === undefined ? options.amount ?? 35 : options.targetMoisture - moisture));

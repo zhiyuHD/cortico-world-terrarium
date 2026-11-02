@@ -13,7 +13,7 @@ import type { TerrariumSyncStatus } from '../src/leaderboard.ts';
 import { mountWater } from './water-client.ts';
 import type { WebUiClientBundle, WebUiPanelContext } from 'cortico/web/shared/client-panel.ts';
 import { pick } from 'cortico/core/language.ts';
-import { createScene, createReplayControls, type SceneState } from './scene.ts';
+import { createScene, createReplayControls, canvasProblem, type SceneState } from './scene.ts';
 import { flowerStage, hasSeedHead, daylight, TERRARIUM_PLANT_LOW_HEALTH, TERRARIUM_PLANT_REQUIREMENTS, type PlantSpecies } from '../src/habitat.ts';
 import { drawHistory, drawScoreHistory } from './history.ts';
 import './style.css';
@@ -88,6 +88,8 @@ function mount(ctx: WebUiPanelContext): void {
       status.textContent = `${state.phase === 'day' ? copy.day : copy.night}${response.id ? ` · ID ${response.id}` : ''}`;
       canvas.setAttribute('aria-label', `${name.textContent} · ${status.textContent}${copy.scene}: ${state.plants.length} plants, ${state.seeds?.length ?? 0} ${copy.seed}, ${state.bugs?.length ?? 0} ${copy.bug}`);
       scene.setState(state);
+      const problem = scene.error ?? canvasProblem(canvas);
+      if (problem) status.textContent = `${status.textContent} · ${pick(ctx.language, { zh: '画面异常', en: 'Canvas problem' })}: ${problem}`;
       replay.setReplays(state.replays ?? []);
       current = state;
       deathHistory.update(state.deaths);

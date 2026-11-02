@@ -1,5 +1,7 @@
 <!-- Owner: src/merchant.ts, webui/merchant.ts, server/gallery.ts, server/index.html, webui/public-controls.ts, src/version-notice.ts, src/scoring.ts, src/progression.ts, webui/progression.ts, webui/geometry.ts, webui/scene.ts, webui/water-scene.ts, webui/style.css, src/inspect.ts, src/deaths.ts, src/care-alerts.ts, webui/deaths.ts, webui/sync.ts, src/return-report.ts, src/definition.ts, src/care.ts, src/rules.ts, src/rules/, src/ENV_PROMPT.md, src/collection.ts, webui/care.ts, src/state.ts, src/world.ts, src/config.ts, src/leaderboard.ts, server/index.ts, server/controls.ts, server/admin.ts, server/admin-network.ts, server/console/client.ts, server/protocol-notices.ts, src/flight.ts, webui/client.ts, webui/flowers.ts, src/habitat.ts, src/forum.ts, src/client-system.ts, src/version.ts, src/report-protocol.ts, src/report-socket.ts, src/photo.ts, src/pollination.ts, src/fish-breeding.ts -->
 
+[维护交接入口](HANDOVER.md)：生产位置、原子部署/回滚、发布同步和待核实问题。
+
 0.9.0「满庭新事」：果蔬采收、落叶分解、蚁群管理、新水族、移栽和默认关闭的邻里来往。模型工具合并为 14 个入口，组合工具使用 `operation`；完整机制通过 `terrarium_rules` 按需读取。旧存档与凭据保留。
 
 
