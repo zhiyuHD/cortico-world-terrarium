@@ -46,11 +46,19 @@ curl -fsS http://127.0.0.1:8787/health
 
 最后核实：
 
-- `current -> versions/server-rust-20261029-heap-trim`
+- `current -> versions/server-rust-20261102-harvest-logo`（源码提交 `c19bef1`，含报告写入调优与 0.9.2 站点 Logo）
 - `manager -> versions/controller-20261020-native-98dfb72`
-- 源码提交 `8487382`，线上 manifest 的 revision 曾错误写成字面量 `HEAD`；新发布必须填实际 SHA。
+- 更早的源码提交 `8487382` 仍写在旧 manifest 里；线上 `revision` 以发布包的 `release.json` 为准，新发布必须填实际 SHA。
+- 报告写入按 `synchronous=NORMAL`（崩溃不丢已确认报告，断电可能丢最近几批，靠客户端全量重传修复）、`wal_autocheckpoint=4000`、`journal_size_limit=64MiB`、`cache_size=64MiB`、`malloc_trim` 独立线程、阻塞线程池 64。`/health` 的 `reportProcessing` 给出 policy/prepare/validate/checksum/commit 各阶段 mean/max 与 `admissionBusy`：2026-11-02 部署后一小时的均值是 commit 190ms、prepare 54ms、validate 77ms、checksum 9ms、wait 1.6s，机器只有 2 vCPU、负载 8–9，`admissionBusy` 仍占 30–47%。写入不再是单次 fsync 那么贵，下一步要压每批的解析与校验开销、减少检查点单次搬运的页数。
 - schema 2 Native Linux x64，data epoch 2；Node 22+ 仍用于控制器及旧版状态校验桥。
-- 云控最后核实为 HTTP Push 关闭、最低客户端 `0.8.0`，不是历史讨论中的 `0.7.4`。运行时以 `/health` 与 `/api/admin/controls` 为准。
+- 云控最后核实为 HTTP Push 关闭、最低客户端 `0.8.0`、Logo 版本 `0.9.2`、论坛开启，不是历史讨论中的 `0.7.4`。运行时以 `/health` 与 `/api/admin/controls` 为准。切换 Logo 版本：
+
+```sh
+curl -fsS -X PUT -H 'Content-Type: application/json' -H "Authorization: Bearer $(cat data/admin-token)" \
+  --data '{"version":"0.9.2"}' http://192.168.22.219:8788/api/admin/controls/logo
+```
+
+管理 API 只监听 `192.168.22.219:8788`，在机器上访问 `127.0.0.1:8788` 会连接被拒。
 
 ## 部署目录与数据
 

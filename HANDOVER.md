@@ -24,7 +24,7 @@
 
 **扩展源码推送到扩展独立仓库。不要把发布扩展等同于推送 Cortico 上游。** 原会话曾对主仓库执行 push，被权限拒绝；随后独立仓库通过 HTTPS + gh 凭据成功推送。不要为此重写主仓库历史或改动其他人的提交。
 
-独立发布 checkout 最后核实提交 `a888188`；World 开发目录 package.json 为 `0.9.2`；渲染器 package.json 为 `0.1.5`（已发布 npm）。生产 Rust 最后核实提交 `8487382`。这些不是自动保证的远端/npm 最新版本。
+独立发布 checkout 最后核实提交 `c77eef1`；World 开发目录 package.json 为 `0.9.2-bugfix.1`，npm `latest` 也是它，`0.9.2` 仍可安装；渲染器 package.json 为 `0.1.5`（已发布 npm，npmmirror 已同步）。生产 Rust 最后核实提交 `c19bef1`，线上发布 `server-rust-20261102-harvest-logo`。这些不是自动保证的远端/npm 最新版本。
 
 World 中的 `server/`、`dist/server.mjs` 是兼容的 TS 服务端及构建产物，**公网上当前跑的是独立 Rust 仓库**。客户端模拟也仍是 TypeScript；服务端重写没有把生态模拟迁到服务器。改客户端模拟通常需要用户升级 World；只改论坛、管理台、公告、服务端提交策略，通常不必发 World 版。
 
