@@ -48,10 +48,24 @@ it('ripens melon and wheat fruit only after their own natural hours', () => {
     expect(() => harvest(state, plant.id)).toThrow('No ripe healthy fruit');
     plant.fruitGrowthHours = crop.firstHours;
     expect(cropRounds(plant)).toBe(1);
-    expect(harvest(state, plant.id).portions).toBe(crop.portions);
+    expect(harvest(state, plant.id)).toMatchObject({ rounds: 1, pollinated: 0, portions: crop.portions });
     plant.fruitGrowthHours = crop.firstHours + crop.intervalHours * 2;
     expect(cropRounds(plant)).toBe(3);
   }
+});
+
+it('reports the rounds it picked and the pollination bonus it spent', () => {
+  const { state } = cropBox('melon');
+  const crop = TERRARIUM_CROPS.melon;
+  const plant = state.plants[0];
+  plant.fruitGrowthHours = crop.firstHours + crop.intervalHours;
+  plant.pollination = 1;
+  expect(harvest(state, plant.id)).toMatchObject({ rounds: 2, pollinated: 1, portions: crop.portions * 2 + 1 });
+  expect(plant.pollination).toBe(0);
+  plant.fruitGrowthHours = crop.firstHours + crop.intervalHours * 2;
+  plant.pollination = 5;
+  expect(harvest(state, plant.id)).toMatchObject({ rounds: 1, pollinated: 1, portions: crop.portions + 1 });
+  expect(plant.pollination).toBe(4);
 });
 
 it('sells the new crops at their own prices', () => {

@@ -48,19 +48,20 @@ export function plantAquatic(state: AquariumState, species: unknown, x: number, 
   const plant: AquaticPlantState = { id: `aquatic-${state.nextId++}`, species: species as AquaticPlantSpecies, x, y, health: 100, growthHours: 0, stage: 0 };
   state.plants.push(plant); recordAction(state, 'plant'); return plant;
 }
-export function dropFishFood(state: AquariumState, x: number, y: number, portions: number): FishFood {
+export function dropFishFood(state: AquariumState, x: number, y: number, portions: number): FishFood & { piles: number } {
   if (!inHabitat(state, x, y)) throw new Error('Position must be in the current habitat grid');
   if (!Number.isInteger(portions) || portions < 1 || portions > 10) throw new Error('Food portions must be 1..10');
   if (state.food.length >= 20) throw new Error('Food capacity reached');
   const food = { id: `food-${state.nextId++}`, x, y, portions, droppedAtMs: state.updatedAtMs };
-  state.food.push(food); recordAction(state, 'care'); return food;
+  state.food.push(food); recordAction(state, 'care'); return { ...food, piles: state.food.length };
 }
-export function changeWater(state: AquariumState, percent: number): void {
+export function changeWater(state: AquariumState, percent: number): { percent: number; oxygen: number; cleanliness: number; food: number } {
   if (!Number.isFinite(percent) || percent < 1 || percent > 100) throw new Error('Water change must be 1..100 percent');
   recordAction(state, 'care');
   state.cleanliness += (100 - state.cleanliness) * percent / 100;
   state.oxygen += (90 - state.oxygen) * percent / 100;
   state.food = state.food.filter(food => { food.portions = Math.floor(food.portions * (1 - percent / 100)); return food.portions > 0; });
+  return { percent, oxygen: state.oxygen, cleanliness: state.cleanliness, food: state.food.length };
 }
 export function removeAquatic(state: AquariumState, id: string): void {
   for (const values of [state.fish, state.plants, state.food, state.eggs ?? []]) {

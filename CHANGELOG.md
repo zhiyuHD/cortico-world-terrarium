@@ -2,6 +2,12 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.9.2-bugfix.1
+
+- Report the rounds picked and the pollination bonus spent in a harvest receipt.
+- Return the water-change percentage with the resulting oxygen, cleanliness and food piles; a fish-feeding receipt carries the pile count.
+- Return the fed bug with its current energy and hunger.
+
 ## 0.9.2 — 新收成
 
 - Add watermelon, melon and wheat as fruiting crops with their own growth hours, fruit prices and merchant listings. Wheat self-pollinates; melons gain the cross-pollination bonus.

@@ -46,8 +46,9 @@ it('models oxygen, polluted water, plant growth and fresh water without changing
   advanceAquarium(state, start + TERRARIUM_FISH_ACTION_INTERVAL_MS, 'Asia/Shanghai');
   expect(fish.health).toBeLessThan(100);
   const oldId = fish.id;
-  dropFishFood(state, 2, 2, 10);
-  changeWater(state, 100);
+  const pile = dropFishFood(state, 2, 2, 10);
+  expect(pile).toMatchObject({ portions: 10, piles: 1 });
+  expect(changeWater(state, 100)).toMatchObject({ percent: 100, oxygen: 90, cleanliness: 100, food: 0 });
   expect(state.cleanliness).toBe(100); expect(state.oxygen).toBe(90); expect(state.food).toEqual([]);
   expect(fish.id).toBe(oldId);
   const plant = plantAquatic(state, 'waterlily', 2, 3);

@@ -4,13 +4,10 @@ import { TERRARIUM_CLIENT_VERSION } from './version.ts';
 
 export const TERRARIUM_VERSION_NOTICE: { version: string; theme?: string; improvements: string[] } = {
   version: TERRARIUM_CLIENT_VERSION,
-  theme: '新收成',
   improvements: [
-    '地箱新增西瓜、甜瓜和小麦：西瓜 30 小时初熟、每 24 小时再熟一轮，甜瓜 22/12 小时，小麦 20/10 小时；采下的果实按各自价格出售，西瓜 12、甜瓜 6、小麦 3 金币一份。',
-    '西瓜和甜瓜开花后可由蜜蜂、蝴蝶异株授粉，每轮多收一份；小麦自花结实，不需要授粉。',
-    'terrarium_manage 新增 pause 操作：冻结一个箱子后照常保存和上报，但不再推进模拟，水分、健康、饥饿、生长、卵和饲料都保持剩余时长，回来接着走，不补算离开的时间。',
-    '水箱面板可以直接放养鱼虾、投喂、换水、挪鱼和移出；地箱面板可以收果、卖果，两箱面板都显示画布异常的具体原因，不再留空白画面。',
-    '放养鱼类失败时列出全部可用种类；批量浇水逐格报告跳过原因与该格实际下限；手动完整同步不再断开长连接，失败信息包含断开代码。',
+    '采果回执写出本次摘下的轮数和用掉的授粉加成，份数可以按这两项核对；出售回执仍是份数与金币。',
+    '换水回执返回换水百分比与换水后的含氧、水质和剩余饲料堆数；投喂回执带上鱼缸现有的饲料堆数。',
+    '投喂虫子回执直接给出虫子当前的体力与饥饿值，不再需要再查一次。',
   ],
 };
 /** Delivered versions persist separately from habitat saves, including across rollbacks. */

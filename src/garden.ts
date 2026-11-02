@@ -43,7 +43,7 @@ export function harvest(state: TerrariumState, id: unknown) {
   if ((state.produce?.[species] ?? 0) + portions > 10000) throw new Error('Fruit basket is full');
   (state.produce ??= {})[species] = (state.produce?.[species] ?? 0) + portions;
   plant.harvestRounds = cropRounds(plant); plant.pollination = Math.max(0, bonus - rounds);
-  return { id: plant.id, species, portions, basket: state.produce };
+  return { id: plant.id, species, rounds, pollinated: Math.min(rounds, bonus), portions, basket: state.produce };
 }
 export function sellProduce(state: TerrariumState, species: unknown, portions: unknown) {
   if (typeof species !== 'string' || !Object.hasOwn(TERRARIUM_CROPS, species) || !Number.isSafeInteger(portions) || Number(portions) < 1) throw new Error('Supply crop species and positive integer portions');

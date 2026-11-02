@@ -597,7 +597,7 @@ export class TerrariumWorld implements World {
       let care: unknown;
       if (name === 'terrarium_stock_fish') care = stockFish(state, args.species, Number(args.x), Number(args.y));
       else if (name === 'terrarium_feed_fish') care = dropFishFood(state, Number(args.x), Number(args.y), Number(args.portions));
-      else if (name === 'terrarium_change_water') { changeWater(state, Number(args.percent)); care = { oxygen: state.oxygen, cleanliness: state.cleanliness }; }
+      else if (name === 'terrarium_change_water') care = changeWater(state, Number(args.percent));
       else if (name === 'terrarium_relocate_fish') care = relocateFish(state, String(args.fish), Number(args.x), Number(args.y));
       else { removeAquatic(state, String(args.id)); care = { removed: args.id }; }
       await this.persistWater();
@@ -663,8 +663,8 @@ export class TerrariumWorld implements World {
       const land = this.current(), water = this.currentWater(), percent = Number(args.percent);
       if (!Number.isFinite(percent) || percent < 1 || percent > 100) throw new Error('Water change must be 1..100 percent');
       const cells = (area.x2 - area.x1 + 1) * (area.y2 - area.y1 + 1), amount = Math.min(100, percent * 5 / cells);
-      changeWater(water, percent); const soil = waterArea(land, area.x1, area.y1, area.x2, area.y2, { amount });
-      await this.persist(); await this.persistWater(); return { reusedPercent: percent, soil, oxygen: water.oxygen, cleanliness: water.cleanliness };
+      const changed = changeWater(water, percent); const soil = waterArea(land, area.x1, area.y1, area.x2, area.y2, { amount });
+      await this.persist(); await this.persistWater(); return { reusedPercent: percent, ...changed, soil };
     }
     throw new Error('Unknown care tool');
   }
@@ -721,7 +721,7 @@ export class TerrariumWorld implements World {
       case 'terrarium_stock_fish': result = stockFish(state, args.species, Number(args.x), Number(args.y)); break;
       case 'terrarium_plant_aquatic': result = plantAquatic(state, args.species, Number(args.x), Number(args.y)); break;
       case 'terrarium_feed_fish': result = dropFishFood(state, Number(args.x), Number(args.y), Number(args.portions)); break;
-      case 'terrarium_change_water': changeWater(state, Number(args.percent)); result = { oxygen: state.oxygen, cleanliness: state.cleanliness }; break;
+      case 'terrarium_change_water': result = changeWater(state, Number(args.percent)); break;
       case 'terrarium_relocate_fish': result = relocateFish(state, String(args.fish), Number(args.x), Number(args.y)); break;
       case 'terrarium_remove_aquatic': removeAquatic(state, String(args.id)); result = { removed: args.id }; break;
       case 'terrarium_water_history': return JSON.stringify(waterHistory(state, args));
