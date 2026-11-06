@@ -52,7 +52,9 @@ export class AnnouncementInbox {
     try { await file.writeFile(JSON.stringify({ ...saved, [this.origin]: this.inbox })); await file.sync(); }
     finally { await file.close(); }
     await rename(temporary, this.file);
-    const directory = await open(dirname(this.file), 'r');
-    try { await directory.sync(); } finally { await directory.close(); }
+    if (process.platform !== 'win32') {
+      const directory = await open(dirname(this.file), 'r');
+      try { await directory.sync(); } finally { await directory.close(); }
+    }
   }
 }

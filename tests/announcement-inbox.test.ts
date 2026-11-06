@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile, readFile, readdir } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, writeFile, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
@@ -35,6 +35,26 @@ it('deduplicates simultaneous socket and polling delivery without skipping older
     expect(received).toEqual([30, 1]); expect(restored.cursor('box')).toBe(30); expect(restored.cursor('protocol')).toBe(0);
     await restored.receive('box', { announcements: [notice(30)], nextCursor: 30 }, push); expect(received).toEqual([30, 1]);
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+it('writes receipt progress on Windows where a directory handle cannot be opened for fsync', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'terrarium-win32-inbox-')), file = join(dir, 'inbox.json'), platform = process.platform;
+  try {
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    // Windows rejects directory fsync (and cannot open the directory read-only); drop the read bit so an attempted open fails here too.
+    await chmod(dir, 0o300);
+    const inbox = new AnnouncementInbox(file, 'https://service.example');
+    await inbox.restore();
+    await inbox.receive('box', { announcements: [], nextCursor: 9 }, async () => {});
+    expect(inbox.cursor('box')).toBe(9);
+    const restarted = new AnnouncementInbox(file, 'https://service.example');
+    await restarted.restore();
+    expect(restarted.cursor('box')).toBe(9);
+  } finally {
+    Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+    await chmod(dir, 0o700);
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 it('quarantines a truncated cache and persists new receipts across restarts', async () => {
