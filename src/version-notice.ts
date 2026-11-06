@@ -5,9 +5,7 @@ import { TERRARIUM_CLIENT_VERSION } from './version.ts';
 export const TERRARIUM_VERSION_NOTICE: { version: string; theme?: string; improvements: string[] } = {
   version: TERRARIUM_CLIENT_VERSION,
   improvements: [
-    '采果回执写出本次摘下的轮数和用掉的授粉加成，份数可以按这两项核对；出售回执仍是份数与金币。',
-    '换水回执返回换水百分比与换水后的含氧、水质和剩余饲料堆数；投喂回执带上鱼缸现有的饲料堆数。',
-    '投喂虫子回执直接给出虫子当前的体力与饥饿值，不再需要再查一次。',
+    '在 Windows 上写公告收件箱进度不再打开目录做 fsync：之前每次写回执都会在重命名成功后报错，游标不推进，重启后又从头拉取公告。现在与非 Windows 平台的存档落盘一致，只跳过这一步。',
   ],
 };
 /** Delivered versions persist separately from habitat saves, including across rollbacks. */

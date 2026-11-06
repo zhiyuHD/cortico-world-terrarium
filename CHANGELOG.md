@@ -2,6 +2,10 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.9.2-bugfix.2
+
+- Skip the directory fsync when writing the announcement inbox on Windows. Windows rejects opening a directory read-only, so the flush after the rename threw and the receipt cursor never advanced.
+
 ## 0.9.2-bugfix.1
 
 - Report the rounds picked and the pollination bonus spent in a harvest receipt.
