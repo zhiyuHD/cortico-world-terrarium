@@ -64,6 +64,27 @@ curl -fsS -X PUT -H 'Content-Type: application/json' -H "Authorization: Bearer $
 
 写入服务用常驻 Node 子进程校验上报状态，快照在服务端仓库 `bridge/legacy-src/`（World 的校验器副本），打包成 `bridge/validator.mjs`。World 新增物种或状态字段后必须先把 `legacy-src/` 同步到该版本并重新打包，否则带新字段的上报全部被拒为 `Invalid report`——0.9.2 的西瓜、甜瓜、小麦与 `pausedAtMs` 就是这样漏掉的。
 
+## 停服与自建
+
+2026-11-14 20:00 起官方服务器停止服务，公告由用户侧发布。停机由用户级 systemd 定时器执行，不依赖维护会话：
+
+```sh
+systemctl --user list-timers cortico-box-shutdown.timer   # 下一次触发时间
+systemctl --user cat cortico-box-shutdown.service         # 执行的脚本
+tail -n 5 /home/zhiyu/services/cortico-box/data/shutdown.log
+```
+
+`stop-at-shutdown.sh` 停止 `cortico-box.service` 并 `disable`，重启后不会自动拉起。恢复服务：
+
+```sh
+systemctl --user enable --now cortico-box.service
+systemctl --user disable --now cortico-box-shutdown.timer   # 定时器只针对这一次停服
+```
+
+停服后客户端仍可完整游玩：0.9.3 起 `terrarium_offline` 关闭全部在线功能，模拟与存档留在本地。种子包（原先只能由邻里赠种获得）改由商人 `buy_seed` 出售，价格见 `src/rules/merchant.md`。
+
+自建服务：克隆 `zhiyuHD/terrarium-server`，按 README 建库、`pack-release` 打包、`box-release install/activate` 上线，并把 `worlds.terrarium.leaderboardUrl` 指向自有 HTTPS 域名。校验桥 `bridge/legacy-src/` 必须与客户端版本同步，否则新字段一律被判 `Invalid report`。
+
 ## 部署目录与数据
 
 ```text
