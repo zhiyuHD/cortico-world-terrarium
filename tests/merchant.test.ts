@@ -100,3 +100,23 @@ it('ranks wallet balances separately from lifetime earnings, includes own rank a
   const result = coinRanking([{ id: 'a', state: a, reportedAt: new Date(now).toISOString() }, { id: 'b', state: b, reportedAt: new Date(now).toISOString() }, { id: 'c', state: c, reportedAt: new Date(now).toISOString() }], 1, 'a');
   expect(result.entries[0].id).toBe('b'); expect(result.total).toBe(2); expect(result.own).toMatchObject({ rank: 2, coins: 1840, earned: 2000 }); expect(merchantStatus(c).coins).toBe(0);
 });
+it('sells seed packets that the wallet ledger accounts for and sowing consumes', () => {
+  const s = funded();
+  trade(s, { action: 'buy_seed', species: 'watermelon', portions: 2 });
+  expect(s.seedPackets?.watermelon).toBe(2);
+  expect(balance(s)).toBe(2000 - 26);
+  expect(s.economy?.seedSpent).toBe(26);
+  expect(validState(s)).toBe(true);
+  const status = merchantStatus(s);
+  expect(status.coins).toBe(2000 - 26);
+  expect(merchantStatus(s, true)).toMatchObject({ seeds: { catalog: expect.arrayContaining([{ species: 'watermelon', price: 13 }]), owned: { watermelon: 2 } } });
+  const seed = sow(s, 'watermelon', 2, 2);
+  expect(seed.ageHours).toBe(1);
+  expect(s.seedPackets?.watermelon).toBe(1);
+  const poor = garden();
+  expect(() => trade(poor, { action: 'buy_seed', species: 'fern', portions: 5 })).toThrow('coins');
+  expect(poor.seedPackets).toBeUndefined(); expect(poor.economy).toBeUndefined();
+  expect(() => trade(s, { action: 'buy_seed', species: 'banana' })).toThrow('Unknown seed species');
+  expect(() => trade(s, { action: 'buy_seed', species: 'fern', portions: 0 })).toThrow('1..10');
+  expect(s.seedPackets?.watermelon).toBe(1);
+});

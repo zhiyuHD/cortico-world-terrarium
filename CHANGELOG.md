@@ -2,6 +2,15 @@
 
 Versions marked unreleased were local development versions and were not published to npm.
 
+## 0.9.3 — 离别
+
+服务器停服前的离线版本。地箱与水箱不再依赖排行榜服务即可完整游玩。
+
+- 新增 `terrarium_offline`：`action: "enable"` 停用上报、公告、名次提醒、排行榜、论坛、邻里、反馈和海报渲染，同时不再写网络失败告警；`action: "disable"` 恢复。选择存在 `offline.json`，重启保持。
+- 商人新增 `buy_seed`：邻里赠种才能得到的种子包现在可以买，1 到 10 包一次，播种自动消耗一包获得一小时起步进度。钱包新增 `seedSpent` 账本字段，累计支出仍等于花盆与种子包的总价。
+- 离线时排行榜、论坛、邻里、反馈、同步与海报返回 `offline: true` 和本地说明，不再抛传输错误。
+- 规则新增 `offline` 主题；商人规则补种子包价格表。
+
 ## 0.9.2-bugfix.2
 
 - Skip the directory fsync when writing the announcement inbox on Windows. Windows rejects opening a directory read-only, so the flush after the rename threw and the receipt cursor never advanced.

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 
-export const TERRARIUM_RULE_TOPICS = ['overview', 'land', 'water', 'care', 'records', 'ranking', 'reporting', 'expansion', 'forum', 'merchant', 'neighbors'] as const;
+export const TERRARIUM_RULE_TOPICS = ['overview', 'land', 'water', 'care', 'records', 'ranking', 'reporting', 'expansion', 'forum', 'merchant', 'neighbors', 'offline'] as const;
 
 /** Topics select bundled documentation and never resolve caller-supplied paths. */
 export async function readRules(topic: unknown): Promise<string> {

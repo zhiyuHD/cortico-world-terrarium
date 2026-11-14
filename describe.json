@@ -65,7 +65,8 @@
               "expansion",
               "forum",
               "merchant",
-              "neighbors"
+              "neighbors",
+              "offline"
             ]
           }
         },
@@ -621,6 +622,7 @@
               "sell",
               "sell_fruit",
               "buy",
+              "buy_seed",
               "place",
               "remove"
             ]
@@ -632,7 +634,17 @@
               "strawberry",
               "watermelon",
               "melon",
-              "wheat"
+              "wheat",
+              "mushroom",
+              "fern",
+              "clover",
+              "moss",
+              "basil",
+              "bean",
+              "sunflower",
+              "daisy",
+              "lavender",
+              "mint"
             ]
           },
           "portions": {
@@ -673,8 +685,8 @@
         "write"
       ],
       "summary": {
-        "zh": "出售养大的地箱植物换金币，购买、摆放或收回十款装饰与功能花盆。",
-        "en": "Sells cultivated land plants for coins and buys, places or stores ten decorative and functional pots."
+        "zh": "出售养大的地箱植物换金币，购买种子包，购买、摆放或收回十款装饰与功能花盆。",
+        "en": "Sells cultivated land plants and buys seed packets, plus ten decorative and functional pots to buy, place or store."
       }
     },
     {
@@ -990,6 +1002,32 @@
         "read",
         "write"
       ]
+    },
+    {
+      "name": "terrarium_offline",
+      "description": "Switch to local-only play when no service is reachable; keeps simulation, saves and care working without network errors.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "status",
+              "enable",
+              "disable"
+            ]
+          }
+        }
+      },
+      "tags": [
+        "read",
+        "write"
+      ],
+      "summary": {
+        "zh": "切换无服务器模式：停用上报、公告、排行榜、论坛、邻里、反馈与海报，模拟和存档照常。",
+        "en": "Switches local-only play: stops reports, announcements, rankings, forum, neighbors, feedback and posters while simulation and saves continue."
+      }
     }
   ],
   "events": [

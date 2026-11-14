@@ -57,9 +57,9 @@ it('supports new aquatic residents and plants through simulation and save valida
   plantAquatic(s,'vallisneria',1,1);plantAquatic(s,'java_moss',2,2);transplant(s,s.plants[2].id,3,3);
   advanceAquarium(s,now+600_000,'UTC');expect(validAquarium(s)).toBe(true);expect(s.fish).toHaveLength(3);
 });
-it('exposes fourteen compact tools while preserving every prior operation', () => {
+it('exposes fifteen compact tools while preserving every prior operation', () => {
   const w=new TerrariumWorld({cfg:{...TERRARIUM_DEFAULTS,leaderboardUrl:''},timezone:'UTC',stateFile:'/unused/state.json'}), tools=w.tools();
-  expect(tools).toHaveLength(14);expect(tools.map(t=>t.name)).toContain('terrarium_garden');expect(tools.map(t=>t.name)).not.toContain('terrarium_sow');
+  expect(tools).toHaveLength(15);expect(tools.map(t=>t.name)).toContain('terrarium_garden');expect(tools.map(t=>t.name)).not.toContain('terrarium_sow');
   const operations=new Set(Object.values(TERRARIUM_TOOL_GROUPS).flat().map(op=>`terrarium_${op}`));
   for(const tool of [...TERRARIUM_TOOL_DECLS,...TERRARIUM_AQUATIC_TOOL_DECLS,...TERRARIUM_FORUM_TOOL_DECLS])expect(operations.has(tool.name),tool.name).toBe(true);
   const old=JSON.stringify([...TERRARIUM_TOOL_DECLS,...TERRARIUM_AQUATIC_TOOL_DECLS,...TERRARIUM_FORUM_TOOL_DECLS]).length;

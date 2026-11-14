@@ -16,6 +16,7 @@ export const TERRARIUM_TOOL_GROUPS: Record<string, string[]> = {
   terrarium_feedback: ['feedback'],
   terrarium_take_photo: ['take_photo'],
   terrarium_neighbors: ['neighbors'],
+  terrarium_offline: ['offline'],
 };
 const descriptions: Record<string, string> = {
   terrarium_inspect: 'Read compact box state; select a section for detail. Never claims a box.',
@@ -32,6 +33,7 @@ const descriptions: Record<string, string> = {
   terrarium_feedback: 'Submit feedback about the ecosystem.',
   terrarium_take_photo: 'Photograph your box as a captioned poster. Returns an image and, when supported, a 24-hour HTTPS URL. Does not send messages.',
   terrarium_neighbors: 'Opt into neighbor visits, share ripe crops, leave notes and exchange seed packets. Both parties must opt in.',
+  terrarium_offline: 'Switch to local-only play when no service is reachable; keeps simulation, saves and care working without network errors.',
 };
 function concise(value: unknown): any {
   if (Array.isArray(value)) return value.map(concise);

@@ -1,4 +1,5 @@
 import { TERRARIUM_NEIGHBOR_TOOL_DECL } from './neighbors.ts';
+import { TERRARIUM_OFFLINE_TOOL_DECL } from './offline.ts';
 import { groupTools } from './tool-groups.ts';
 import { TERRARIUM_FORUM_TOOL_DECLS } from './forum.ts';
 import { describeTools, type WorldDefinition } from 'cortico/world.ts';
@@ -9,7 +10,7 @@ export const TERRARIUM: WorldDefinition<TerrariumConfigSection> = {
   id: 'terrarium', label: 'Terrarium', defaults: () => ({ ...TERRARIUM_DEFAULTS }),
   create: ctx => new TerrariumWorld({ cfg: ctx.cfg, timezone: ctx.timezone, stateFile: `${ctx.dataDir}/terrarium/land/state.json`, waterStateFile: `${ctx.dataDir}/terrarium/water/state.json`, reportToken: ctx.secret('CORTICO_TERRARIUM_REPORT_TOKEN') }),
   describe: {
-    tools: describeTools(groupTools([TERRARIUM_NEIGHBOR_TOOL_DECL, ...TERRARIUM_TOOL_DECLS, ...TERRARIUM_GARDEN_TOOL_DECLS, ...TERRARIUM_AQUATIC_TOOL_DECLS, ...TERRARIUM_FORUM_TOOL_DECLS]), {
+    tools: describeTools(groupTools([TERRARIUM_OFFLINE_TOOL_DECL, TERRARIUM_NEIGHBOR_TOOL_DECL, ...TERRARIUM_TOOL_DECLS, ...TERRARIUM_GARDEN_TOOL_DECLS, ...TERRARIUM_AQUATIC_TOOL_DECLS, ...TERRARIUM_FORUM_TOOL_DECLS]), {
       terrarium_forum_read: { zh: '阅读、搜索邻里心得，查看帖子、回复、关注动态与资料。', en: 'Reads and searches neighborhood threads, replies, followed neighbors and profiles.' },
       terrarium_forum_post: { zh: '以已认领的生态箱身份发表养育心得或回复。', en: 'Publishes husbandry threads or replies as an already claimed box.' },
       terrarium_forum_like: { zh: '点赞或取消点赞帖子与回复。', en: 'Likes or unlikes forum threads and replies.' },
@@ -17,7 +18,8 @@ export const TERRARIUM: WorldDefinition<TerrariumConfigSection> = {
       terrarium_rules: { zh: '按场景读取完整生态规则；不推进模拟或请求网络。', en: 'Reads bundled ecosystem rules by topic without advancing simulation or network requests.' },
       terrarium_deaths: { zh: '查看持久保存的死亡原因、最终状态和环境记录。', en: 'Reads persisted death causes, final states and environment.' },
       terrarium_take_photo: { zh: '拍摄当前地箱或水箱，配文生成 Material You 海报；当次返回图片附件及服务端提供的临时 HTTPS URL 和到期时间。', en: 'Photographs your land or water box as a captioned Material You poster, returning an attachment and server-provided HTTPS URL and expiry in the same result.' },
-      terrarium_merchant: { zh: '出售养大的地箱植物换金币，购买、摆放或收回十款装饰与功能花盆。', en: 'Sells cultivated land plants for coins and buys, places or stores ten decorative and functional pots.' },
+      terrarium_merchant: { zh: '出售养大的地箱植物换金币，购买种子包，购买、摆放或收回十款装饰与功能花盆。', en: 'Sells cultivated land plants and buys seed packets, plus ten decorative and functional pots to buy, place or store.' },
+      terrarium_offline: { zh: '切换无服务器模式：停用上报、公告、排行榜、论坛、邻里、反馈与海报，模拟和存档照常。', en: 'Switches local-only play: stops reports, announcements, rankings, forum, neighbors, feedback and posters while simulation and saves continue.' },
       terrarium_compost: { zh: '二级堆肥桶：植物换肥料，每份让指定格作物立即生长两小时，无冷却。', en: 'Level-two composting: exchange plants for fertilizer and add two growth hours per portion without cooldown.' },
       terrarium_progress: { zh: '查看观察站来信、积分扩建和设施解锁；扩建或建造设施。', en: 'Reads the optional guide, expands habitats and builds unlocked facilities.' },
       terrarium_score_history: { zh: '读取自己生态箱最近 24 小时的本地分数曲线。', en: 'Reads your local score samples for the last 24 hours.' },
