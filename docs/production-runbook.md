@@ -66,7 +66,7 @@ curl -fsS -X PUT -H 'Content-Type: application/json' -H "Authorization: Bearer $
 
 ## 停服与自建
 
-2026-11-14 20:00 起官方服务器停止服务，公告由用户侧发布。停机由用户级 systemd 定时器执行，不依赖维护会话：
+2026-11-14 19:30 起官方服务器停止服务（原定 20:00，当天提前 30 分钟）。停机由用户级 systemd 定时器执行，不依赖维护会话：
 
 ```sh
 systemctl --user list-timers cortico-box-shutdown.timer   # 下一次触发时间
